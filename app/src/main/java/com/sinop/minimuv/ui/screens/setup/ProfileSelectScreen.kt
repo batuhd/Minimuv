@@ -32,6 +32,7 @@ import androidx.compose.ui.unit.dp
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
+import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.theme.Baloo2
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.OutlineSoft
@@ -75,7 +76,26 @@ fun ProfileSelectScreen(
 
         when {
             error != null -> {
-                Text(error!!, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
+                Text(
+                    "Bağlanamadık 😵‍💫",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    error!!,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                )
+                Spacer(Modifier.height(16.dp))
+                MinimuvButton(
+                    label = "🔧 Bağlantı bilgilerini düzelt",
+                    onClick = {
+                        scope.launch {
+                            settings.clearConnection()
+                        }
+                    },
+                )
             }
             profiles == null -> CircularProgressIndicator()
             else -> profiles!!.forEach { profile ->

@@ -28,6 +28,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.sinop.minimuv.R
+import com.sinop.minimuv.core.ConnectionValidator
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.theme.Baloo2
@@ -114,10 +115,12 @@ fun SupabaseSetupScreen(
                         saving = true
                         error = null
                         try {
+                            // Kaydetmeden önce gerçekten çalışıyor mu? Başarısızsa burada kalırız.
+                            ConnectionValidator.test(url, key).getOrThrow()
                             settings.saveConnection(url, key)
                             onDone()
                         } catch (e: Exception) {
-                            error = "Kaydedilemedi: ${e.message}"
+                            error = "Bağlanamadım 😵‍💫 URL ve anahtarı kontrol et.\n(${e.message})"
                         } finally {
                             saving = false
                         }

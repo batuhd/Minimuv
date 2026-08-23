@@ -29,9 +29,10 @@ class AchievementsViewModel : ViewModel() {
 
     fun refresh() {
         viewModelScope.launch {
-            val unlockedList = repo.getAchievements()
-            unlocked.value = unlockedList
-            checkNew(unlockedList)
+            runCatching { repo.getAchievements() }
+                .onSuccess { unlocked.value = it }
+                .onSuccess { checkNew(it) }
+                .onFailure { /* çevrimdışı — çökme yok, değerler eski halinde kalır */ }
         }
     }
 
@@ -46,22 +47,26 @@ class AchievementsViewModel : ViewModel() {
     }
 
     private suspend fun checkNew(existing: List<Achievement>) {
-        val titles = repo.getTitles()
-        val log = repo.getWatchLog()
-        val s = Achievements.computeStats(titles, log)
-        stats.value = s
-        val existingKeys = existing.map { it.achievementKey }.toSet()
-        val fresh = Achievements.ALL
-            .filter { it.key !in existingKeys && it.progress(s) >= it.target }
-            .toList()
-        if (fresh.isNotEmpty()) {
-            fresh.forEach { def ->
-                runCatching { repo.unlockAchievement(def.key, def.progress(s), def.target) }
+        try {
+            val titles = repo.getTitles()
+            val log = repo.getWatchLog()
+            val s = Achievements.computeStats(titles, log)
+            stats.value = s
+            val existingKeys = existing.map { it.achievementKey }.toSet()
+            val fresh = Achievements.ALL
+                .filter { it.key !in existingKeys && it.progress(s) >= it.target }
+                .toList()
+            if (fresh.isNotEmpty()) {
+                fresh.forEach { def ->
+                    runCatching { repo.unlockAchievement(def.key, def.progress(s), def.target) }
+                }
+                newlyUnlocked.value = fresh.map { def ->
+                    Achievement(achievementKey = def.key, progressCurrent = def.progress(s), progressTarget = def.target)
+                }
+                unlocked.value = unlocked.value + newlyUnlocked.value
             }
-            newlyUnlocked.value = fresh.map { def ->
-                Achievement(achievementKey = def.key, progressCurrent = def.progress(s), progressTarget = def.target)
-            }
-            unlocked.value = unlocked.value + newlyUnlocked.value
+        } catch (_: Exception) {
+            // çevrimdışı — sessizce geç
         }
     }
 }

@@ -59,7 +59,9 @@ class RealtimeService : Service() {
             .setContentText("Partner bildirimleri açık")
             .setContentIntent(pi)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
             .build()
 
         startForeground(NOTIF_ID, notification)

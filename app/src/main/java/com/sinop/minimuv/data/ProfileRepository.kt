@@ -53,9 +53,22 @@ class ProfileRepository {
     /** Tüm izleme verisini sıfırlar (profiller kalır). */
     suspend fun resetAllData() {
         val client = SupabaseProvider.client
-        for (table in listOf("title_scores", "episode_notes", "episode_progress_per_profile", "watch_log", "achievements")) {
-            client.postgrest.from(table).delete { }
+        val tables = listOf(
+            "partner_pings",
+            "title_scores",
+            "episode_notes",
+            "episode_progress_per_profile",
+            "watch_log",
+            "achievements",
+            "titles",
+        )
+        tables.forEach { table ->
+            try {
+                client.postgrest.from(table).delete { }
+                android.util.Log.d("MinimuvReset", "$table temizlendi")
+            } catch (e: Exception) {
+                android.util.Log.e("MinimuvReset", "$table silinemedi", e)
+            }
         }
-        client.postgrest.from("titles").delete { }
     }
 }

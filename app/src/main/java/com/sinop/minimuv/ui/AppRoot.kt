@@ -184,7 +184,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     "📋 Liste: izlediklerimiz, puanlarımız, notlarımız.\n" +
                         "🎡 Çark: kararsız kaldığımızda karar versin.\n" +
                         "🔒 Ayrı ayrı izlerken bölüm notları, diğeri o bölüme gelene kadar kilitli kalır.\n" +
-                        "🏅 Rozetler: sizin değil, İKİMİZİN başarıları.",
+                        "🏅 Rozetler: sizin değil, ikinizin birlikte kazandığı başarılar.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

@@ -127,44 +127,52 @@ class PartnerEventWatcher(
     }
 
     private suspend fun onTitlesChanged() {
-        val current = repo.getTitles().associateBy { it.id }
-        val previous = lastTitles
-        current.values.forEach { t ->
-            val old = previous[t.id]
-            if (old != null) {
-                if (old.status != WatchStatus.COMPLETED.db && t.status == WatchStatus.COMPLETED.db) {
-                    notify("🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!")
-                }
-                if (old.status == WatchStatus.COMPLETED.db && t.status == WatchStatus.REWATCHING.db) {
-                    notify("🔁 ${t.title}", "Yeniden izlemeye başladınız!")
-                }
-            } else {
-                if (t.status == WatchStatus.PLAN.db) {
-                    notify("✨ ${t.title}", "Sırada listesine yeni bir şey eklendi!")
-                } else if (t.status == WatchStatus.WATCHING.db) {
-                    notify("▶️ ${t.title}", "Yeni bir serüven başladı!")
+        try {
+            val current = repo.getTitles().associateBy { it.id }
+            val previous = lastTitles
+            current.values.forEach { t ->
+                val old = previous[t.id]
+                if (old != null) {
+                    if (old.status != WatchStatus.COMPLETED.db && t.status == WatchStatus.COMPLETED.db) {
+                        notify("🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!")
+                    }
+                    if (old.status == WatchStatus.COMPLETED.db && t.status == WatchStatus.REWATCHING.db) {
+                        notify("🔁 ${t.title}", "Yeniden izlemeye başladınız!")
+                    }
+                } else {
+                    if (t.status == WatchStatus.PLAN.db) {
+                        notify("✨ ${t.title}", "Sırada listesine yeni bir şey eklendi!")
+                    } else if (t.status == WatchStatus.WATCHING.db) {
+                        notify("▶️ ${t.title}", "Yeni bir serüven başladı!")
+                    }
                 }
             }
+            lastTitles = current
+        } catch (_: Exception) {
+            // çevrimdışı — sessizce geç
         }
-        lastTitles = current
     }
 
     private suspend fun onProgressChanged() {
-        // Ayrı moddaki başlıklar için bölüm kilometre taşları
-        val titles = repo.getTitles()
-        titles.forEach { title ->
-            if (title.watchMode != "ayri") return@forEach
-            val progress = repo.getEpisodeProgress(title.id)
-            val mine = progress.firstOrNull { it.profileId == profileId }?.currentEpisode ?: 0
-            val partner = progress.firstOrNull { it.profileId != profileId }?.currentEpisode ?: 0
-            val milestone = (minOf(mine, partner) / 10) * 10
-            if (milestone >= 10 && milestoneNotified[title.id] != milestone) {
-                milestoneNotified[title.id] = milestone
-                notify(
-                    "🎊 ${title.title}",
-                    "İkiniz de $milestone. bölümü geçtiniz!",
-                )
+        try {
+            // Ayrı moddaki başlıklar için bölüm kilometre taşları
+            val titles = repo.getTitles()
+            titles.forEach { title ->
+                if (title.watchMode != "ayri") return@forEach
+                val progress = repo.getEpisodeProgress(title.id)
+                val mine = progress.firstOrNull { it.profileId == profileId }?.currentEpisode ?: 0
+                val partner = progress.firstOrNull { it.profileId != profileId }?.currentEpisode ?: 0
+                val milestone = (minOf(mine, partner) / 10) * 10
+                if (milestone >= 10 && milestoneNotified[title.id] != milestone) {
+                    milestoneNotified[title.id] = milestone
+                    notify(
+                        "🎊 ${title.title}",
+                        "İkiniz de $milestone. bölümü geçtiniz!",
+                    )
+                }
             }
+        } catch (_: Exception) {
+            // çevrimdışı — sessizce geç
         }
     }
 

@@ -11,11 +11,17 @@ object SupabaseProvider {
     @Volatile
     private var _client: SupabaseClient? = null
 
+    @Volatile
+    private var configuredUrl: String? = null
+
+    @Volatile
+    private var configuredKey: String? = null
+
     val client: SupabaseClient
         get() = checkNotNull(_client) { "Supabase client henüz yapılandırılmadı." }
 
     fun configure(url: String, anonKey: String) {
-        if (_client != null) return
+        if (_client != null && configuredUrl == url && configuredKey == anonKey) return
         _client = createSupabaseClient(
             supabaseUrl = url,
             supabaseKey = anonKey,
@@ -24,5 +30,7 @@ object SupabaseProvider {
             install(Realtime)
             install(Storage)
         }
+        configuredUrl = url
+        configuredKey = anonKey
     }
 }
