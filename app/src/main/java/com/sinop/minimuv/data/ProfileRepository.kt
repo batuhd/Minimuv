@@ -50,25 +50,11 @@ class ProfileRepository {
         return bucket.publicUrl(path)
     }
 
-    /** Tüm izleme verisini sıfırlar (profiller kalır). */
+    /** Tüm izleme verisini sıfırlar (profiller kalır).
+     *  Tek atomik Postgres TRUNCATE ile — yarıda kesilme ihtimali yok. */
     suspend fun resetAllData() {
-        val client = SupabaseProvider.client
-        val tables = listOf(
-            "partner_pings",
-            "title_scores",
-            "episode_notes",
-            "episode_progress_per_profile",
-            "watch_log",
-            "achievements",
-            "titles",
-        )
-        tables.forEach { table ->
-            try {
-                client.postgrest.from(table).delete { }
-                android.util.Log.d("MinimuvReset", "$table temizlendi")
-            } catch (e: Exception) {
-                android.util.Log.e("MinimuvReset", "$table silinemedi", e)
-            }
-        }
+        android.util.Log.d("MinimuvReset", "rpc reset_all_data çağrılıyor")
+        SupabaseProvider.client.postgrest.rpc("reset_all_data")
+        android.util.Log.d("MinimuvReset", "sıfırlama tamamlandı")
     }
 }

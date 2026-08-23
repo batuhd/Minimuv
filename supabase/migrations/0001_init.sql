@@ -150,6 +150,24 @@ alter table public.partner_pings enable row level security;
 create policy anon_all on public.partner_pings for all to anon, authenticated using (true) with check (true);
 alter publication supabase_realtime add table public.partner_pings;
 
+-- ── Tek seferde atomik sıfırlama (uygulamadaki "verileri sıfırla") ─────
+create or replace function public.reset_all_data()
+returns void
+language sql
+security definer
+set search_path = public
+as $$
+  truncate table public.partner_pings,
+    public.title_scores,
+    public.episode_notes,
+    public.episode_progress_per_profile,
+    public.watch_log,
+    public.achievements,
+    public.titles
+  restart identity cascade;
+$$;
+grant execute on function public.reset_all_data() to anon, authenticated;
+
 -- ── RLS: auth kullanılmıyor; anon anahtara tam erişim ────────
 -- (Uygulama özel kullanım içindir, APK paylaşılmaz.)
 alter table public.profiles enable row level security;

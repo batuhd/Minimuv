@@ -67,6 +67,10 @@ object SearchApi {
         val response = client.post("https://graphql.anilist.co") {
             contentType(KtorContentType.Application.Json)
             header("Accept", "application/json")
+            // Cloudflare tarayıcı dışı istekleri engelliyor — tarayıcı başlıkları şart
+            header("Origin", "https://anilist.co")
+            header("Referer", "https://anilist.co/")
+            header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
             setBody(AniListRequest(graphQl, mapOf("search" to query)))
         }.body<AniListResponse>()
         return response.data?.page?.media.orEmpty().mapNotNull { media ->
