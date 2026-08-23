@@ -13,3 +13,9 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Android Studio crash replays
+replay_pid*.log
+*.hprof
+.idea/*
+
