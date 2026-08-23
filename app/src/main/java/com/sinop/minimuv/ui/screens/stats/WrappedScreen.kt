@@ -1,0 +1,289 @@
+package com.sinop.minimuv.ui.screens.stats
+
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import coil3.compose.AsyncImage
+import com.sinop.minimuv.data.ContentType
+import com.sinop.minimuv.data.Title
+import com.sinop.minimuv.data.TitleRepository
+import com.sinop.minimuv.data.WatchLog
+import com.sinop.minimuv.data.WatchStatus
+import com.sinop.minimuv.ui.theme.Gold
+import com.sinop.minimuv.ui.theme.MidnightCard
+import com.sinop.minimuv.ui.theme.MidnightElevated
+import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.typeColor
+import com.sinop.minimuv.ui.theme.typeEmoji
+import java.time.LocalDate
+
+@Composable
+fun WrappedScreen(onBack: () -> Unit) {
+    val repo = remember { TitleRepository() }
+    var data by remember { mutableStateOf<Pair<List<Title>, List<WatchLog>>?>(null) }
+    var year by remember { mutableStateOf(LocalDate.now().year) }
+
+    LaunchedEffect(Unit) {
+        runCatching { repo.getTitles() to repo.getWatchLog() }
+            .onSuccess { data = it }
+    }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+        ) {
+            IconButton(onClick = onBack) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri")
+            }
+            Text("Yıl Özetimiz", style = MaterialTheme.typography.titleLarge)
+            Spacer(Modifier.weight(1f))
+            IconButton(onClick = {
+                year = (year - 1).coerceAtLeast(2000)
+            }) { Text("◀", color = TextSecondary) }
+            Text("$year", style = MaterialTheme.typography.titleMedium)
+            IconButton(onClick = {
+                year = (year + 1).coerceAtMost(LocalDate.now().year)
+            }) { Text("▶", color = TextSecondary) }
+        }
+
+        val pair = data
+        if (pair == null) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text("Hesaplanıyor…", color = TextSecondary)
+            }
+            return@Column
+        }
+
+        val (titles, log) = pair
+        val yearPrefix = year.toString()
+        val completedThisYear = titles.filter {
+            it.status == WatchStatus.COMPLETED.db &&
+                (it.finishDate?.startsWith(yearPrefix) == true ||
+                    (it.finishDate == null && it.startDate?.startsWith(yearPrefix) == true))
+        }
+        val episodesThisYear = log.filter { it.date.startsWith(yearPrefix) }.sumOf { it.episodesWatched }
+
+        if (completedThisYear.isEmpty() && episodesThisYear == 0) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text("🤷", style = MaterialTheme.typography.displayLarge)
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "$year için kayıt yok. Bu yıl birlikte izlemeye başlayın!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary,
+                    )
+                }
+            }
+            return@Column
+        }
+
+        val byType = completedThisYear.groupBy { it.type }.mapValues { it.value.size }
+        val topType = byType.maxByOrNull { it.value }?.key
+        val favorites = completedThisYear.filter { (it.score ?: 0.0) >= 9.0 }.take(5)
+        val totalHours = completedThisYear.sumOf { t ->
+            when (ContentType.fromDb(t.type)) {
+                ContentType.FILM -> 2.0
+                ContentType.DIZI -> (t.totalEpisodes ?: 0) * 0.75
+                ContentType.ANIME -> (t.totalEpisodes ?: 0) * 0.4
+            }
+        }.toInt()
+        val longestBinge = log.filter { it.date.startsWith(yearPrefix) }
+            .groupBy { it.date }
+            .mapValues { it.value.sumOf { e -> e.episodesWatched } }
+            .maxByOrNull { it.value }
+
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp),
+        ) {
+            // Spotify Wrapped esintili kapak kartı
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(16f / 9f)
+                    .clip(RoundedCornerShape(24.dp))
+                    .background(
+                        Brush.linearGradient(
+                            listOf(Brand1, Brand2, Brand3),
+                        ),
+                    ),
+            ) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Text(
+                        "Minimuv Wrapped",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color.White.copy(alpha = 0.85f),
+                    )
+                    Column {
+                        Text(
+                            "$year",
+                            style = MaterialTheme.typography.displayLarge,
+                            color = Color.White,
+                        )
+                        Text(
+                            "Birlikte geçirdiğimiz ekran yılı",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = Color.White.copy(alpha = 0.9f),
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatCard("🎬", "${completedThisYear.size}", "Tamamlanan", Modifier.weight(1f))
+                StatCard("📺", "$episodesThisYear", "İzlenen Bölüm", Modifier.weight(1f))
+            }
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatCard("⏱️", "${totalHours}h", "Ekran Saati", Modifier.weight(1f))
+                StatCard("🌪️", "${longestBinge?.value ?: 0}", "En Uzun Binge", Modifier.weight(1f))
+            }
+
+            Spacer(Modifier.height(24.dp))
+            Text("En çok izlediğimiz tür", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(8.dp))
+            if (topType != null) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(typeColor(topType).copy(alpha = 0.12f))
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(typeEmoji(topType), style = MaterialTheme.typography.headlineMedium)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            ContentType.fromDb(topType).label,
+                            style = MaterialTheme.typography.titleLarge,
+                            color = typeColor(topType),
+                        )
+                        Text(
+                            "${byType[topType] ?: 0} yapım tamamlandı",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                    }
+                }
+            }
+
+            if (favorites.isNotEmpty()) {
+                Spacer(Modifier.height(24.dp))
+                Text("Birlikte bayıldıklarımız (9+)", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                favorites.forEach { t ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp)
+                            .clip(RoundedCornerShape(12.dp))
+                            .background(MidnightCard)
+                            .padding(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .width(40.dp)
+                                .aspectRatio(2f / 3f)
+                                .clip(RoundedCornerShape(6.dp))
+                                .background(MidnightElevated),
+                        ) {
+                            if (t.posterUrl != null) {
+                                AsyncImage(
+                                    model = t.posterUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            t.title,
+                            style = MaterialTheme.typography.titleSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "★ ${String.format(java.util.Locale.US, "%.1f", t.score ?: 0.0)}",
+                            style = MaterialTheme.typography.titleSmall,
+                            color = Gold,
+                        )
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(32.dp))
+            Text(
+                "Bir yıl daha birlikte izlemeye… 💑",
+                style = MaterialTheme.typography.titleMedium,
+                color = TextSecondary,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(32.dp))
+        }
+    }
+}
+
+@Composable
+private fun StatCard(emoji: String, value: String, label: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(MidnightCard)
+            .padding(16.dp),
+    ) {
+        Text(emoji, style = MaterialTheme.typography.headlineSmall)
+        Text(value, style = MaterialTheme.typography.titleLarge)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+    }
+}
+
+private val Brand1 = Color(0xFF7B2CBF)
+private val Brand2 = Color(0xFFC85E7A)
+private val Brand3 = Color(0xFFF5A623)
