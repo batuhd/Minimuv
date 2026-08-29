@@ -10,14 +10,9 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.sinop.minimuv.R
-import com.sinop.minimuv.data.EpisodeProgress
-import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleRepository
-import com.sinop.minimuv.data.WatchStatus
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
-import java.time.LocalDate
-import java.time.Period
 
 object NotificationHelper {
 
@@ -67,29 +62,24 @@ object NotificationHelper {
     }
 }
 
+/**
+ * Uygulama açıkken realtime olaylarını dinleyen watcher. Bildirim kararları
+ * ortak PingNotifier / TitleTransitionTracker / AnniversaryChecker ile alınır —
+ * böylece WorkManager worker'ı ile aynı olay iki kez bildirilmez.
+ */
 class PartnerEventWatcher(
     private val context: Context,
     private val profileId: String,
 ) {
     private val repo = TitleRepository()
-    private val profileRepo = com.sinop.minimuv.data.ProfileRepository()
-    private var lastTitles: Map<String, Title> = emptyMap()
-    private var milestoneNotified: MutableMap<String, Int> = mutableMapOf()
-    private val seenPingIds = mutableSetOf<String>()
-    private val startedAt = java.time.Instant.now().minusSeconds(2)
 
     suspend fun init() {
-        lastTitles = repo.getTitles().associateBy { it.id }
-        // Açılıştan önceki pingleri "görülmüş" say; yenileri bildirilir
-        runCatching { repo.getRecentPings(20) }
-            .onSuccess { pings ->
-                pings.forEach { ping ->
-                    val ts = runCatching { java.time.Instant.parse(ping.createdAt) }.getOrNull()
-                    if (ts != null && ts.isAfter(startedAt)) return@forEach
-                    seenPingIds.add(ping.id ?: return@forEach)
-                }
-            }
-        checkAnniversaries()
+        // Uygulama kapalıyken gelen yeni olaylar açılır açılmaz bildirilir
+        PingNotifier.process(context, profileId)
+        ScoreNotifier.process(context, profileId)
+        NoteNotifier.process(context, profileId, NoteKind.TITLE)
+        NoteNotifier.process(context, profileId, NoteKind.EPISODE)
+        AnniversaryChecker.process(context)
     }
 
     fun observe(scope: CoroutineScope) {
@@ -101,120 +91,45 @@ class PartnerEventWatcher(
                     "titles" -> onTitlesChanged()
                     "episode_progress_per_profile" -> onProgressChanged()
                     "partner_pings" -> onNewPings()
+                    "title_scores" -> onScoresChanged()
+                    "title_notes" -> onTitleNotesChanged()
+                    "episode_notes" -> onEpisodeNotesChanged()
+                    "profiles" -> Unit // profil yenileme ekranlarda yapılır
                 }
             }
         }
     }
 
     private suspend fun onNewPings() {
-        runCatching { repo.getRecentPings(10) }.onSuccess { pings ->
-            android.util.Log.d("MinimuvWatcher", "pings fetched: ${pings.size}")
-            pings.forEach { ping ->
-                val id = ping.id ?: return@forEach
-                android.util.Log.d("MinimuvWatcher", "ping id=$id from=${ping.fromProfile} me=$profileId seen=${id in seenPingIds}")
-                if (id in seenPingIds) return@forEach
-                seenPingIds.add(id)
-                if (ping.fromProfile == profileId) return@forEach
-                val senderName = runCatching { profileRepo.getProfile(ping.fromProfile) }.getOrNull()
-                NotificationHelper.show(
-                    context,
-                    "💌 ${senderName?.name ?: "Partnerin"} sana yazdı",
-                    ping.message,
-                    id = id.hashCode(),
-                )
-            }
-        }
+        PingNotifier.process(context, profileId)
+    }
+
+    private suspend fun onScoresChanged() {
+        ScoreNotifier.process(context, profileId)
+    }
+
+    private suspend fun onTitleNotesChanged() {
+        NoteNotifier.process(context, profileId, NoteKind.TITLE)
+    }
+
+    private suspend fun onEpisodeNotesChanged() {
+        NoteNotifier.process(context, profileId, NoteKind.EPISODE)
     }
 
     private suspend fun onTitlesChanged() {
         try {
-            val current = repo.getTitles().associateBy { it.id }
-            val previous = lastTitles
-            current.values.forEach { t ->
-                val old = previous[t.id]
-                if (old != null) {
-                    // Durum geçişleri (kimin değiştirdiği bilinemediğinden çifte kutlama olarak ikisine de düşer)
-                    if (old.status != WatchStatus.COMPLETED.db && t.status == WatchStatus.COMPLETED.db) {
-                        notify("🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!")
-                    }
-                    if (old.status == WatchStatus.COMPLETED.db && t.status == WatchStatus.REWATCHING.db) {
-                        notify("🔁 ${t.title}", "Yeniden izlemeye başladınız!")
-                    }
-                    if (old.status != WatchStatus.PAUSED.db && t.status == WatchStatus.PAUSED.db) {
-                        notify("⏸️ ${t.title}", "Duraklatıldı — sonra devam ederiz.")
-                    }
-                    if (old.status != WatchStatus.DROPPED.db && t.status == WatchStatus.DROPPED.db) {
-                        notify("🚪 ${t.title}", "Bırakıldı olarak işaretlendi.")
-                    }
-                } else if (t.createdByProfileId != profileId) {
-                    // Yeni eklenen başlık: hangi durumda eklenirse eklensin haber ver.
-                    // (Kendi eklediklerimiz için kendimize bildirim gitmez.)
-                    when (t.status) {
-                        WatchStatus.PLAN.db ->
-                            notify("✨ ${t.title}", "Sırada listesine yeni bir şey eklendi!")
-                        WatchStatus.WATCHING.db ->
-                            notify("▶️ ${t.title}", "Yeni bir serüven başladı!")
-                        WatchStatus.COMPLETED.db ->
-                            notify("🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!")
-                        WatchStatus.REWATCHING.db ->
-                            notify("🔁 ${t.title}", "Yeniden izlemeye başladınız!")
-                        WatchStatus.PAUSED.db ->
-                            notify("⏸️ ${t.title}", "Duraklatılanlar listesine eklendi.")
-                        WatchStatus.DROPPED.db ->
-                            notify("🚪 ${t.title}", "Bırakılanlara eklendi.")
-                    }
-                }
+            val current = repo.getTitles()
+            TitleTransitionTracker.diff(context, profileId, current).forEach { (title, text) ->
+                notify(title, text)
             }
-            lastTitles = current
         } catch (_: Exception) {
             // çevrimdışı — sessizce geç
         }
     }
 
     private suspend fun onProgressChanged() {
-        try {
-            // Ayrı moddaki başlıklar için bölüm kilometre taşları
-            val titles = repo.getTitles()
-            titles.forEach { title ->
-                if (title.watchMode != "ayri") return@forEach
-                val progress = repo.getEpisodeProgress(title.id)
-                val mine = progress.firstOrNull { it.profileId == profileId }?.currentEpisode ?: 0
-                val partner = progress.firstOrNull { it.profileId != profileId }?.currentEpisode ?: 0
-                val milestone = (minOf(mine, partner) / 10) * 10
-                if (milestone >= 10 && milestoneNotified[title.id] != milestone) {
-                    milestoneNotified[title.id] = milestone
-                    notify(
-                        "🎊 ${title.title}",
-                        "İkiniz de $milestone. bölümü geçtiniz!",
-                    )
-                }
-            }
-        } catch (_: Exception) {
-            // çevrimdışı — sessizce geç
-        }
-    }
-
-    suspend fun checkAnniversaries() {
-        val titles = repo.getTitles()
-        val today = LocalDate.now()
-        titles.forEach { t ->
-            val date = t.startDate ?: return@forEach
-            runCatching {
-                val d = LocalDate.parse(date)
-                if (d.monthValue == today.monthValue && d.dayOfMonth == today.dayOfMonth && d.year < today.year) {
-                    val years = Period.between(d, today).years
-                    if (years >= 1) {
-                        NotificationHelper.show(
-                            context,
-                            "💌 Tam $years yıl önce bugün",
-                            "${t.title} dizisine başlamıştık… Ne günlerdi!",
-                            id = t.id.hashCode(),
-                            channel = NotificationHelper.CHANNEL_ANNIVERSARY,
-                        )
-                    }
-                }
-            }
-        }
+        // Ayrı moddaki başlıklar için bölüm kilometre taşları (kalıcı durumla)
+        MilestoneTracker.process(context, profileId)
     }
 
     private fun notify(title: String, text: String) {

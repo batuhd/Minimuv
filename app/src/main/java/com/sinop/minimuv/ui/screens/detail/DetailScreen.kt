@@ -237,6 +237,10 @@ fun DetailScreen(
                     selected = status,
                     onSelect = {
                         status = it
+                        // İzlemeye başlayınca başlangıç tarihi boşsa bugün damgalanır
+                        if (it == WatchStatus.WATCHING.db && startDate == null) {
+                            startDate = java.time.LocalDate.now().toString()
+                        }
                         // Tamamlandı seçilince bitiş tarihi boşsa bugün damgalanır
                         if (it == WatchStatus.COMPLETED.db && finishDate == null) {
                             finishDate = java.time.LocalDate.now().toString()
@@ -357,6 +361,10 @@ fun DetailScreen(
                     // Otomatik tamamlama yolu da bitiş tarihini damgalar (buildChanges'ten ÖNCE)
                     if ((autoComplete || status == WatchStatus.COMPLETED.db) && finishDate == null) {
                         finishDate = java.time.LocalDate.now().toString()
+                    }
+                    // İzlemeye geçilen her durumda başlangıç tarihi boşsa bugün damgalanır
+                    if (status == WatchStatus.WATCHING.db && startDate == null) {
+                        startDate = java.time.LocalDate.now().toString()
                     }
                     val changes = buildChanges()
                     val scoreToSave = myScore?.let {
@@ -733,7 +741,6 @@ internal fun DetailViewContent(
                 .padding(14.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (details?.statusText != null) InfoLine("Durum", details.statusText)
             if (!details?.studios.isNullOrEmpty()) {
                 InfoLine(if (type == "anime") "Stüdyo" else "Yapımcı", details!!.studios.joinToString(", "))
             }
@@ -763,7 +770,7 @@ internal fun DetailViewContent(
             Text(
                 story,
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.95f),
             )
         }
 

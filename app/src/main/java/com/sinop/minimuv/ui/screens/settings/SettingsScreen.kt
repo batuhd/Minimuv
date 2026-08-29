@@ -1,5 +1,11 @@
 package com.sinop.minimuv.ui.screens.settings
 
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
+import android.os.PowerManager
+import android.provider.Settings
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -25,6 +31,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -36,7 +43,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import com.sinop.minimuv.BuildConfig
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
@@ -98,10 +110,21 @@ fun SettingsScreen(
                             .clickable { scope.launch { settings.setThemeAccent(a.name) } },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (a == accent) Text("✓", color = Color.White)
+                        if (a == accent) Text("✓", color = com.sinop.minimuv.ui.theme.onColorFor(a.primary))
                     }
                 }
             }
+        }
+
+        Spacer(Modifier.padding(top = 14.dp))
+        SectionCard("Bildirimler") {
+            BatteryOptimizationRow()
+            Text(
+                "Uygulama kapalıyken bile ~15 dakikada bir kontrol edip bildirim düşürürüz. Kalıcı bildirim göstermeyiz.",
+                style = MaterialTheme.typography.bodySmall,
+                color = TextSecondary,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
         }
 
         Spacer(Modifier.padding(top = 14.dp))
@@ -117,7 +140,7 @@ fun SettingsScreen(
                         }
                     },
             ) {
-                Text("Minimuv v1.0", style = MaterialTheme.typography.titleSmall)
+                Text("Minimuv v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleSmall)
                 if (aboutTaps in 1..6) {
                     Text(
                         "${7 - aboutTaps} tane daha… 🤫",
@@ -213,6 +236,42 @@ fun SettingsScreen(
                 TextButton(onClick = { showSecretMenu = false }) { Text("Kapat") }
             },
         )
+    }
+}
+
+@Composable
+private fun BatteryOptimizationRow() {
+    val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    fun isIgnoring(): Boolean =
+        if (Build.VERSION.SDK_INT >= 23) {
+            val pm = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            pm.isIgnoringBatteryOptimizations(context.packageName)
+        } else {
+            true
+        }
+    var ignoring by remember { mutableStateOf(isIgnoring()) }
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) ignoring = isIgnoring()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    }
+    SettingsRow(
+        if (ignoring) "🔋 Pil tasarrufu kapalı ✓" else "🔋 Bildirimler için pil tasarrufunu kapat",
+        color = if (ignoring) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onBackground,
+    ) {
+        if (!ignoring && Build.VERSION.SDK_INT >= 23) {
+            runCatching {
+                context.startActivity(
+                    Intent(
+                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                        Uri.parse("package:${context.packageName}"),
+                    ),
+                )
+            }
+        }
     }
 }
 

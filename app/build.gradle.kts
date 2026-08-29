@@ -1,3 +1,4 @@
+import groovy.json.JsonSlurper
 import java.util.Properties
 
 plugins {
@@ -17,6 +18,34 @@ val tmdbApiKey = if (overrideKey != null) {
     overrideKey.trim()
 } else {
     (localProps.getProperty("tmdb.api.key") ?: "").trim()
+}
+
+// ── FCM (Firebase) ayarları ────────────────────────────────────────────────
+// google-services.json uygulama klasöründeyse değerler oradan okunur.
+// Dosya yoksa (GitHub derlemesi vb.) boş değerlerle derlenir; FCM pasif kalır.
+// Böylece TMDB anahtarı gibi repodan çıkarma derdi olmaz.
+var firebaseAppId = ""
+var firebaseApiKey = ""
+var firebaseProjectId = ""
+var firebaseSenderId = ""
+val gsFile = file("google-services.json")
+if (gsFile.exists()) {
+    val root = JsonSlurper().parse(gsFile) as? Map<*, *>
+    val projectInfo = root?.get("project_info") as? Map<*, *>
+    firebaseProjectId = projectInfo?.get("project_id")?.toString() ?: ""
+    firebaseSenderId = projectInfo?.get("project_number")?.toString() ?: ""
+    val clients = (root?.get("client") as? List<*>) ?: emptyList<Any?>()
+    for (c in clients) {
+        val cm = c as? Map<*, *> ?: continue
+        val clientInfo = cm["client_info"] as? Map<*, *> ?: continue
+        val androidInfo = clientInfo["android_client_info"] as? Map<*, *> ?: continue
+        if (androidInfo["package_name"] == "com.sinop.minimuv") {
+            firebaseAppId = clientInfo["mobilesdk_app_id"]?.toString() ?: ""
+            val keys = cm["api_key"] as? List<*> ?: emptyList<Any?>()
+            firebaseApiKey = ((keys.firstOrNull() as? Map<*, *>)?.get("current_key")?.toString()) ?: ""
+            break
+        }
+    }
 }
 
 android {
@@ -41,12 +70,16 @@ android {
         applicationId = "com.sinop.minimuv"
         minSdk = 26
         targetSdk = 36
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
+        buildConfigField("String", "FCM_APP_ID", "\"$firebaseAppId\"")
+        buildConfigField("String", "FCM_API_KEY", "\"$firebaseApiKey\"")
+        buildConfigField("String", "FCM_PROJECT_ID", "\"$firebaseProjectId\"")
+        buildConfigField("String", "FCM_SENDER_ID", "\"$firebaseSenderId\"")
     }
 
     buildTypes {
@@ -77,6 +110,7 @@ dependencies {
     implementation(libs.androidx.compose.ui.tooling.preview)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.navigation.compose)
 
@@ -98,6 +132,8 @@ dependencies {
     implementation(libs.coil.network.okhttp)
     implementation(libs.reorderable)
     implementation(libs.android.image.cropper)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.firebase.messaging.ktx)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

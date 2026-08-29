@@ -8,7 +8,7 @@ val MidnightCard = Color(0xFF171C23)
 val MidnightElevated = Color(0xFF1F2630)
 val OutlineSoft = Color(0xFF2B333F)
 val TextPrimary = Color(0xFFF2EFE9)
-val TextSecondary = Color(0xFF98A1AD)
+val TextSecondary = Color(0xFFAEB7C2)
 
 // ── Marka rengi (mavi) ──────────────────────────────────────────────────
 val BrandBlue = Color(0xFF3D8BFF)
@@ -25,7 +25,7 @@ val StatusWatching = Color(0xFF35D461)
 val StatusPlan = Color(0xFFF2C94C)
 val StatusCompleted = Color(0xFFA678F0)
 val StatusRewatching = Color(0xFF4DD9E8)
-val StatusPaused = Color(0xFF8D99AE)
+val StatusPaused = Color(0xFF9AA7BF)
 val StatusDropped = Color(0xFFEF476F)
 
 // ── Kutlama paleti (rozetler / konfeti) ─────────────────────────────────

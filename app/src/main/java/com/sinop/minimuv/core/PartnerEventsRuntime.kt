@@ -20,6 +20,9 @@ object PartnerEventsRuntime {
     @Volatile
     private var started = false
 
+    /** Realtime watcher'ı aktif mi? (FCM mesaj yolu çifte bildirim yapmasın.) */
+    fun isRunning(): Boolean = started
+
     fun start(context: Context) {
         if (started) return
         started = true

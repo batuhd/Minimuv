@@ -20,26 +20,31 @@ Letterboxd'ın poster odaklı sinefil estetiği ile Duolingo'nun oyunlaştırıl
 * **🏅 27 farklı rozet** - İlk Perde 🎬, Kombo 🌪️, Ejder Seviyesi 🐉 gibi eğlenceli başarımlar ve konfetili kutlamalar. Her kaydettikten sonra otomatik değerlendirilir.
 * **👥 Profil sekmesi** - Profil yönetimi kendi sekmesinde: isim, emoji, renk ve **kırpmalı** profil fotoğrafı; istatistik şeridi (seri, bitirilen, izlenen bölüm, rozet) ve **ortak favoriler** ızgarası.
 * **📅 İzleme takvimi (Heatmap)** - GitHub tarzında, hangi gün ne kadar izlediğimizi gösteren katkı grafiği (ay etiketli).
-* **🎁 Yıl özeti (Wrapped)** - Tamamlanan içerikler, toplam ekran süresi, en uzun binge rekoru ve 9+ puan verdiğimiz ortak favorilerin yıl sonu özeti.
+* **🎁 Yıl özeti (Wrapped)** - Spotify tarzı yıl özeti: tamamlananlar, toplam ekran süresi, en uzun binge günü, **yılın en değerlileri (top 3)**, aylık aktivite grafiği, tür dağılımı, ortalama puan, en aktif gün ve yılın ilk/son izleneni.
 * **📊 Tutarlı istatistikler** - Takvim, yıl özeti, profil sayacı ve rozetler **tek doğruluk kaynağından** beslenir: bir şeyi Tamamlandı işaretlemek (film dahil) otomatik olarak izleme günlüğüne işlenir; seri, günlük + bitirme günlerinden hesaplanır.
 * **💌 Yıldönümü hatırlatmaları** - "Tam 1 yıl önce bu diziye başlamıştık..." bildirimleri.
-* **🔔 Anlık bildirimler** - Uygulama açıkken birimiz bir şey eklediğinde veya bitirdiğinde diğerine anında bildirim gider (kalıcı ön plan servisi ve onun zorunlu bildirimi kaldırıldı).
-* **🤫 Gizli menü** - Ayarlar > Hakkında yolunu izleyip "Minimuv v1.1" yazısına **7 kez** dokunarak partnere anlık özel mesaj gönderme özelliği.
+* **🔔 Anlık bildirimler (FCM)** - Uygulama **tamamen kapalıyken bile** partner bildirimleri anında düşer: başlık ekleme, durum değişiklikleri (izleme/tamamlama/bırakma…), puan verme, not ekleme (spoiler kilidine saygılı), bölüm kilometre taşları, gizli notlar. Firebase Cloud Messaging + Supabase Edge Function + veritabanı trigger'ları. Açıkken realtime, yedek olarak WorkManager. Kalıcı servis bildirimi yok.
+* **🤫 Gizli menü** - Ayarlar > Hakkında yolunu izleyip sürüm yazısına **7 kez** dokunarak partnere anlık özel mesaj gönderme özelliği.
 * **🎨 15 tema rengi** - Mavi, Mor, Yeşil, Pembe, Turuncu, Kırmızı, Gül, Camgöbeği, Turkuaz, Indigo, Lavanta, Limon, Mercan, Nane, Altın.
 * **⚡ Gerçek zamanlı senkronizasyon** - Yapılan her değişiklik iki telefonda da anında güncellenir.
 
 ## 🚀 Yayınlar (Release)
 
-GitHub Releases üzerinden yayınlanan APK'lar **TMDB API anahtarı olmadan** derlenir (anahtar repoya asla girmez). Bu nedenle yayın APK'sında TMDB araması çalışmaz.
+GitHub Releases üzerinden yayınlanan APK'lar **TMDB API anahtarı olmadan** derlenir (anahtar repoya asla girmez). Bu nedenle yayın APK'sında TMDB araması çalışmaz; aynı şekilde `google-services.json` da repoya girmediği için yayın APK'sında FCM bildirimleri pasiftir (uygulama açıkken realtime + kapalıyken WorkManager yedekleri çalışmaya devam eder).
 
-Kişisel kullanım için **kendi anahtarınızla** derleyin:
+Kişisel kullanım için **kendi anahtarlarınızla** derleyin:
 
 ```bash
-# local.properties dosyanıza anahtarı yazın (bkz. Kurulum), sonra:
+# local.properties dosyanıza TMDB anahtarını yazın (bkz. Kurulum)
+# app/google-services.json dosyasını Firebase'den indirip app/ klasörüne koyun, sonra:
 ./gradlew assembleRelease
 ```
 
 > İpucu: Anahtarsız bir sürüm elde etmek için `gradlew assembleRelease -PtmdbApiKey=""` kullanabilirsiniz.
+
+### Edge Function'ı yeniden dağıtma (FCM)
+
+`supabase/functions/notify` klasöründeki fonksiyon, Firebase **service account** anahtarını `FCM_SERVICE_ACCOUNT` ortam değişkeninden okur (repora anahtar girmez). Dağıtım için Supabase Dashboard → Project Settings → Edge Functions → Secrets bölümüne `FCM_SERVICE_ACCOUNT` adıyla service account JSON'unun tam içeriğini ekleyin, sonra fonksiyonu deploy edin. Veritabanı trigger'ları `supabase/init.sql` içindedir.
 
 ## 🛠️ Teknoloji
 
@@ -161,9 +166,15 @@ app/src/main/java/com/sinop/minimuv/
 
 ## 🔔 Bildirimler Nasıl Çalışıyor?
 
-Firebase Cloud Messaging (FCM) kullanılmaz. Uygulama açıkken `PartnerEventsRuntime`, Supabase realtime bağlantısını dinler ve partnerinizin yaptığı işlemleri (başlık ekleme, bitirme, duraklatma, gizli not vb.) anında bildirime çevirir. Kendi yaptığınız işlemler için size bildirim gitmez.
+Üç katmanlı mimari — **anlık ve uygulama kapalıyken bile çalışır**:
 
-> ⚠️ **Bilinmesi Gerekenler:** Kalıcı ön plan servisi ve onun zorunlu "Minimuv 🔔" bildirimi v1.1.0 ile kaldırıldı. Bu nedenle bildirimler yalnızca uygulama açıkken (veya kısa süre arka plandayken) gelir — uygulama tamamen kapatıldığında partner bildirimleri de durur.
+1. **FCM push (kapalıyken anlık):** Veritabanı trigger'ları (pg_net) `notify` Edge Function'ını tetikler; fonksiyon Firebase Cloud Messaging ile cihaz tokenlarına data-only mesaj gönderir. Uygulama tamamen kapalı olsa bile Google cihazı uyandırır, `MinimuvMessagingService` Supabase'deki gerçek durumu kontrol edip bildirimi gösterir.
+2. **Realtime (açıkken anlık):** Uygulama açıkken `PartnerEventsRuntime` Supabase realtime dinler; FCM yolu açıkken çifte bildirim yapmamak için sessizce geçer.
+3. **WorkManager (güvenlik ağı):** ~15 dk'da bir kontrol; FCM/realtime kaçırırsa (token sorunu, ağ) yakalar ve yıldönümü hatırlatmalarını yapar. Kalıcı servis bildirimi yoktur.
+
+Çift bildirim koruması: görülen son ping zamanı ve son başlık anlık görüntüsü DataStore'da saklanır; üç katman da aynı ortak durumu kullanır.
+
+**Kurulum notları:** `app/google-services.json` (Firebase'den indirilir — gizli değildir, repoda durabilir) derleme sırasında BuildConfig'e işlenir; yoksa FCM sessizce devre dışı kalır. Service account anahtarı yalnızca Edge Function'da durur (tercihen Supabase secrets: `FCM_SERVICE_ACCOUNT`).
 
 ## ⚠️ Güvenlik Modeli (Bilinçli Tercih)
 

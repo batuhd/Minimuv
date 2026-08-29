@@ -157,6 +157,12 @@ class TitleRepository {
             }
             .decodeList<EpisodeNote>()
 
+    /** Tüm bölüm notları (bildirim dedup'u için). */
+    suspend fun getAllEpisodeNotes(): List<EpisodeNote> =
+        SupabaseProvider.client.postgrest.from("episode_notes")
+            .select()
+            .decodeList<EpisodeNote>()
+
     suspend fun insertEpisodeNote(note: EpisodeNote) {
         SupabaseProvider.client.postgrest.from("episode_notes")
             .insert(note)

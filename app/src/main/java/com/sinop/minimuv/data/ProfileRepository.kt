@@ -39,7 +39,9 @@ class ProfileRepository {
         }
     }
 
-    /** Fotoğrafı avatars bucket'ına yükler ve public URL'ini döner. */
+    /** Fotoğrafı avatars bucket'ına yükler ve public URL'ini döner.
+     *  Sona eklenen ?v= damgası URL'yi her yüklemede değiştirir — böylece
+     *  Coil'in disk/memory önbelleği eski fotoğrafı göstermeye devam edemez. */
     suspend fun uploadAvatar(profileId: String, bytes: ByteArray): String {
         val bucket = SupabaseProvider.client.storage.from("avatars")
         val path = "$profileId.jpg"
@@ -47,7 +49,7 @@ class ProfileRepository {
             upsert = true
             contentType = io.ktor.http.ContentType.Image.JPEG
         }
-        return bucket.publicUrl(path)
+        return "${bucket.publicUrl(path)}?v=${System.currentTimeMillis()}"
     }
 
     /** Tüm izleme verisini sıfırlar (profiller kalır).

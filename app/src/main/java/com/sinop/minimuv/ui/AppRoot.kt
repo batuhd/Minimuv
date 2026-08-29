@@ -159,9 +159,14 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 101,
             )
         }
-        // Partner olayları uygulama süreci yaşadığı sürece dinlenir;
-        // kalıcı ön plan servisi ve bildirimi kaldırıldı.
+        // Uygulama açıkken realtime anlık bildirimler
         runCatching { PartnerEventsRuntime.start(context) }
+        // Uygulama kapalıyken bile bildirimler: WorkManager ~15 dk'da bir kontrol eder
+        com.sinop.minimuv.core.BackgroundNotifier.schedule(context)
+        // FCM: cihaz token'ını sunucuya kaydet — kapalıyken anlık bildirimler için
+        runCatching {
+            com.sinop.minimuv.data.TokenRepository(context.applicationContext).saveToken()
+        }
     }
 
     val onboardingDone by settings.onboardingDone.collectAsState(initial = false)
@@ -232,7 +237,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                             },
                             label = { Text(tab.label, fontSize = 11.sp) },
                             colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedIconColor = com.sinop.minimuv.ui.theme.onColorFor(MaterialTheme.colorScheme.primary),
                                 selectedTextColor = MaterialTheme.colorScheme.primary,
                                 indicatorColor = MaterialTheme.colorScheme.primary,
                                 unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -248,7 +253,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 FloatingActionButton(
                     onClick = { navController.navigate("add") },
                     containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
+                    contentColor = com.sinop.minimuv.ui.theme.onColorFor(MaterialTheme.colorScheme.primary),
                 ) {
                     Text("+", fontSize = 26.sp)
                 }

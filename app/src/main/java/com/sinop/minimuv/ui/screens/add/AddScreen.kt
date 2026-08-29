@@ -44,6 +44,7 @@ import com.sinop.minimuv.core.SearchApi
 import com.sinop.minimuv.core.SearchResult
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.TitleDraft
+import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.EmptyState
 import com.sinop.minimuv.ui.components.SoftChip
 import com.sinop.minimuv.ui.theme.MidnightCard
@@ -68,6 +69,17 @@ fun AddScreen(
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf(false) }
     var retryTick by remember { mutableStateOf(0) }
+
+    // Zaten koleksiyonda olan yapımlar (tür + harici id) — tekrar eklenmesin
+    val repo = remember { TitleRepository() }
+    var existingKeys by remember { mutableStateOf<Set<Pair<String, String>>>(emptySet()) }
+    LaunchedEffect(Unit) {
+        runCatching { repo.getTitles() }.onSuccess { list ->
+            existingKeys = list.mapNotNull { t ->
+                t.externalId?.let { t.type to it }
+            }.toSet()
+        }
+    }
 
     LaunchedEffect(type, query, retryTick) {
         if (query.isBlank()) {
@@ -206,16 +218,19 @@ fun AddScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp),
                 ) {
                     items(currentResults, key = { it.externalId + it.type.db }) { result ->
-                        SearchResultRow(result) {
-                            DraftHolder.draft = TitleDraft(
-                                type = result.type.db,
-                                externalId = result.externalId,
-                                title = result.title,
-                                posterUrl = result.posterUrl,
-                                overview = result.overview,
-                                totalEpisodes = result.totalEpisodes,
-                            )
-                            onPicked()
+                        val alreadyAdded = (result.type.db to result.externalId) in existingKeys
+                        SearchResultRow(result, alreadyAdded = alreadyAdded) {
+                            if (!alreadyAdded) {
+                                DraftHolder.draft = TitleDraft(
+                                    type = result.type.db,
+                                    externalId = result.externalId,
+                                    title = result.title,
+                                    posterUrl = result.posterUrl,
+                                    overview = result.overview,
+                                    totalEpisodes = result.totalEpisodes,
+                                )
+                                onPicked()
+                            }
                         }
                     }
                 }
@@ -225,13 +240,13 @@ fun AddScreen(
 }
 
 @Composable
-private fun SearchResultRow(result: SearchResult, onClick: () -> Unit) {
+private fun SearchResultRow(result: SearchResult, alreadyAdded: Boolean = false, onClick: () -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(14.dp))
             .background(MidnightCard)
-            .clickable(onClick = onClick)
+            .clickable(enabled = !alreadyAdded, onClick = onClick)
             .padding(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -269,6 +284,14 @@ private fun SearchResultRow(result: SearchResult, onClick: () -> Unit) {
                 color = typeColor(result.type.db),
             )
         }
-        Text("+", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+        if (alreadyAdded) {
+            Text(
+                "✓ Eklendi",
+                style = MaterialTheme.typography.labelMedium,
+                color = TextSecondary,
+            )
+        } else {
+            Text("+", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
+        }
     }
 }

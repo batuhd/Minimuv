@@ -229,6 +229,24 @@ class DetailViewModel : ViewModel() {
     fun insertWithScore(t: Title, score: TitleScore?, initialProgress: Pair<String, Int>?, onDone: () -> Unit) {
         viewModelScope.launch {
             saving.value = true
+            // Çift kayıt koruması: aynı harici id (ya da manuel girişte aynı isim)
+            // zaten ekliyse kullanıcıya anlaşılır hata göster.
+            val duplicate = runCatching {
+                val existing = repo.getTitles()
+                if (t.externalId != null) {
+                    existing.firstOrNull { it.type == t.type && it.externalId == t.externalId }
+                } else {
+                    existing.firstOrNull {
+                        it.type == t.type &&
+                            it.title.trim().equals(t.title.trim(), ignoreCase = true)
+                    }
+                }
+            }.getOrNull()
+            if (duplicate != null) {
+                error.value = "\"${duplicate.title}\" zaten eklenmiş — ikinci kez eklenemez."
+                saving.value = false
+                return@launch
+            }
             runCatching {
                 repo.insert(t)
                 if (initialProgress != null && initialProgress.second > 0) {

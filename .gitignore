@@ -1,4 +1,4 @@
-*.iml
+﻿*.iml
 .gradle
 /local.properties
 /.idea/caches
@@ -28,3 +28,7 @@ database.db-*
 hs_err_*.log
 
 
+
+
+# Firebase config (contains API key - keep out of repo)
+app/google-services.json

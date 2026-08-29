@@ -51,6 +51,7 @@ import coil3.compose.AsyncImage
 import com.canhub.cropper.CropImageContract
 import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
+import com.sinop.minimuv.core.RealtimeManager
 import com.sinop.minimuv.data.Achievements
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.data.Profile
@@ -61,7 +62,12 @@ import com.sinop.minimuv.ui.theme.Gold
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.TextSecondary
 import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.flow.debounce
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val EMOJI_CHOICES = listOf("🌊", "🦜", "🎬", "🍿", "🌸", "🐱", "🐼", "🦊", "🌙", "⭐", "🍒", "👾")
 private val COLOR_CHOICES = listOf("#3D8BFF", "#9B5DE5", "#2ED573", "#FF6FA5", "#F5A623", "#FF8FA3")
@@ -102,33 +108,45 @@ fun ProfileScreen(
             }
         }
     }
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(Unit) {
+        reload()
+        // Partnerin profil değişiklikleri (fotoğraf/emoji/isim) canlı yansısın
+        RealtimeManager.events
+            .filter { it == "profiles" || it == "titles" }
+            .debounce(500)
+            .collect { reload() }
+    }
+
+    // Seçilen/kırpılan görüntüyü IO'da küçültüp yükler — ana iş parçacığında
+    // tam boy okuma yapılmaz (OOM/ANR çökmesi önlenir).
+    fun handlePickedImage(uri: android.net.Uri) {
+        val target = editing
+        if (target == null) return
+        scope.launch {
+            val bytes = decodeScaledJpeg(context, uri)
+            if (bytes != null) {
+                runCatching {
+                    val url = repo.uploadAvatar(target.id, bytes)
+                    repo.updateProfile(target.id, avatarUrl = url)
+                }
+                reload()
+            }
+            editing = null
+        }
+    }
 
     // 1. adım: sistem galerisinden seç
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) pendingCropUri = uri
     }
-    // 2. adım: kare kırpma
+    // 2. adım: kare kırpma — başlatılamazsa kırpmasız devam edilir
     val cropImage = rememberLauncherForActivityResult(CropImageContract()) { result ->
-        val target = editing
-        editing = null
         pendingCropUri = null
         if (result.isSuccessful) {
-            val croppedUri = result.uriContent ?: return@rememberLauncherForActivityResult
-            val bytes = runCatching {
-                context.contentResolver.openInputStream(croppedUri)?.use { it.readBytes() }
-            }.getOrNull()
-            if (bytes != null && target != null) {
-                scope.launch {
-                    try {
-                        val scaled = decodeScaledJpeg(bytes)
-                        val url = repo.uploadAvatar(target.id, scaled)
-                        repo.updateProfile(target.id, avatarUrl = url)
-                        reload()
-                    } catch (_: Exception) {
-                    }
-                }
-            }
+            val croppedUri = result.uriContent
+            if (croppedUri != null) handlePickedImage(croppedUri) else editing = null
+        } else {
+            editing = null
         }
     }
 
@@ -274,23 +292,30 @@ fun ProfileScreen(
         Spacer(Modifier.padding(top = 24.dp))
     }
 
-    // Kırpma başlatıcı: seçim yapılınca kare kırpma ekranı açılır
+    // Kırpma başlatıcı: seçim yapılınca kare kırpma ekranı açılır;
+    // kırpma etkinliği başlatılamazsa (bozuk URI vb.) doğrudan orijinal görüntü işlenir.
     LaunchedEffect(pendingCropUri) {
         val uri = pendingCropUri ?: return@LaunchedEffect
-        cropImage.launch(
-            CropImageContractOptions(
-                uri = uri,
-                cropImageOptions = CropImageOptions(
-                    imageSourceIncludeGallery = false,
-                    imageSourceIncludeCamera = false,
-                    fixAspectRatio = true,
-                    aspectRatioX = 1,
-                    aspectRatioY = 1,
-                    outputCompressFormat = Bitmap.CompressFormat.JPEG,
-                    outputCompressQuality = 90,
+        val launched = runCatching {
+            cropImage.launch(
+                CropImageContractOptions(
+                    uri = uri,
+                    cropImageOptions = CropImageOptions(
+                        imageSourceIncludeGallery = false,
+                        imageSourceIncludeCamera = false,
+                        fixAspectRatio = true,
+                        aspectRatioX = 1,
+                        aspectRatioY = 1,
+                        outputCompressFormat = Bitmap.CompressFormat.JPEG,
+                        outputCompressQuality = 90,
+                    ),
                 ),
-            ),
-        )
+            )
+        }.isSuccess
+        if (!launched) {
+            pendingCropUri = null
+            handlePickedImage(uri)
+        }
     }
 
     // Profil düzenleme diyaloğu
@@ -488,17 +513,24 @@ private fun SettingsRow(label: String, color: Color = MaterialTheme.colorScheme.
     }
 }
 
-private fun decodeScaledJpeg(bytes: ByteArray, maxSize: Int = 512): ByteArray {
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    var sample = 1
-    while (bounds.outWidth / sample > maxSize || bounds.outHeight / sample > maxSize) sample *= 2
-    val bmp = BitmapFactory.decodeByteArray(
-        bytes, 0, bytes.size,
-        BitmapFactory.Options().apply { inSampleSize = sample },
-    )
-    val out = ByteArrayOutputStream()
-    bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
-    bmp.recycle()
-    return out.toByteArray()
-}
+private suspend fun decodeScaledJpeg(context: android.content.Context, uri: android.net.Uri, maxSize: Int = 512): ByteArray? =
+    withContext(Dispatchers.IO) {
+        // Önce sadece boyutları öğren — tam boy bitmap belleğe alınmaz (OOM koruması)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, bounds)
+        }
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+        var sample = 1
+        while (bounds.outWidth / sample > maxSize || bounds.outHeight / sample > maxSize) {
+            sample *= 2
+        }
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        val bmp = context.contentResolver.openInputStream(uri)?.use { input ->
+            BitmapFactory.decodeStream(input, null, opts)
+        } ?: return@withContext null
+        val out = ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
+        bmp.recycle()
+        out.toByteArray()
+    }

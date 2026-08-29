@@ -43,9 +43,9 @@ private fun shift(hex: String, factor: Float): String {
 
 private fun buildScheme(accent: ThemeAccent) = darkColorScheme(
     primary = accent.primary,
-    onPrimary = BrandCream,
+    onPrimary = onColorFor(accent.primary),
     primaryContainer = accent.dark,
-    onPrimaryContainer = BrandCream,
+    onPrimaryContainer = onColorFor(accent.dark),
     secondary = Gold,
     onSecondary = Color(0xFF2B2110),
     secondaryContainer = Color(0xFF3A2F14),
@@ -94,6 +94,14 @@ fun MinimuvTheme(accent: ThemeAccent = ThemeAccent.BLUE, content: @Composable ()
 }
 
 // ── Tutarlı renk kodlaması yardımcıları ──────────────────────────────────
+
+/** Verilen zemin rengi üzerinde okunabilir yazı rengi döndürür.
+ *  Açık renkler (limon, nane, altın…) üzerine beyaz yazı silik kalır;
+ *  parlaklık eşiğine göre koyu yazıya geçilir. */
+fun onColorFor(background: Color): Color {
+    val luminance = 0.299 * background.red + 0.587 * background.green + 0.114 * background.blue
+    return if (luminance > 0.6f) Color(0xFF10131A) else Color.White
+}
 
 fun typeColor(type: String): Color = when (ContentType.fromDb(type)) {
     ContentType.FILM -> FilmColor

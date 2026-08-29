@@ -37,6 +37,7 @@ import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.ui.theme.Baloo2
 import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.onColorFor
 import com.sinop.minimuv.ui.theme.statusColor
 import com.sinop.minimuv.ui.theme.typeColor
 import java.util.Locale
@@ -168,6 +169,28 @@ fun PosterCard(
                         .padding(6.dp),
                 )
             }
+            // Dizi/anime: sol üstte bölüm rozeti (filmlerde gereksiz)
+            if (item.type != "film" && item.episodeProgress > 0) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopStart)
+                        .padding(6.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color(0xCC0A0C0F))
+                        .padding(horizontal = 7.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        if (item.totalEpisodes != null) {
+                            "Bölüm ${item.episodeProgress}/${item.totalEpisodes}"
+                        } else {
+                            "Bölüm ${item.episodeProgress}"
+                        },
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Color(0xFFFFF3EC),
+                        fontFamily = Baloo2,
+                    )
+                }
+            }
             if (showStatus) {
                 StatusChip(
                     item.status,
@@ -207,7 +230,7 @@ fun PosterCard(
                 priorityLabel,
                 style = MaterialTheme.typography.labelSmall,
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -282,7 +305,7 @@ fun MinimuvButton(
     enabled: Boolean = true,
 ) {
     val bg = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
-    val fg = if (enabled) MaterialTheme.colorScheme.onPrimary else TextSecondary
+    val fg = if (enabled) onColorFor(MaterialTheme.colorScheme.primary) else TextSecondary
     Box(
         modifier
             .clip(RoundedCornerShape(50))
@@ -311,7 +334,7 @@ fun SoftChip(
         label = "chipBg",
     )
     val fg by animateColorAsState(
-        if (selected) Color.White else MaterialTheme.colorScheme.onSurfaceVariant,
+        if (selected) onColorFor(color) else MaterialTheme.colorScheme.onSurfaceVariant,
         label = "chipFg",
     )
     Row(

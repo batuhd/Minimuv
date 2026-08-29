@@ -110,6 +110,14 @@ data class PartnerPing(
 )
 
 @Serializable
+data class FcmToken(
+    val id: String? = null,
+    val token: String,
+    @SerialName("profile_id") val profileId: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+)
+
+@Serializable
 data class EpisodeProgress(
     val id: String? = null,
     @SerialName("title_id") val titleId: String,

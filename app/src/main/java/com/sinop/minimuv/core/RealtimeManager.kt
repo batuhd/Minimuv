@@ -21,9 +21,11 @@ object RealtimeManager {
         "title_scores",
         "episode_progress_per_profile",
         "episode_notes",
+        "title_notes",
         "achievements",
         "watch_log",
         "partner_pings",
+        "profiles",
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
