@@ -22,3 +22,9 @@ replay_pid*.log
 # opencode config (contains API keys)
 .opencode/
 
+# Yerel sqlite kalıntıları + JVM çökme kayıtları
+database.db
+database.db-*
+hs_err_*.log
+
+
