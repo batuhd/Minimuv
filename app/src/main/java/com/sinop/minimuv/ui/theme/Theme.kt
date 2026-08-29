@@ -16,7 +16,17 @@ enum class ThemeAccent(val label: String, val hex: String) {
     PURPLE("Mor", "#9B5DE5"),
     GREEN("Yeşil", "#2ED573"),
     PINK("Pembe", "#FF6FA5"),
-    AMBER("Turuncu", "#F5A623");
+    AMBER("Turuncu", "#F5A623"),
+    RED("Kırmızı", "#FF5A5A"),
+    ROSE("Gül", "#E85D9E"),
+    CYAN("Camgöbeği", "#22C8E6"),
+    TEAL("Turkuaz", "#1ABC9C"),
+    INDIGO("Indigo", "#6C7BFF"),
+    LAVENDER("Lavanta", "#B39DDB"),
+    LIME("Limon", "#A8D93B"),
+    CORAL("Mercan", "#FF7F66"),
+    MINT("Nane", "#5EEAD4"),
+    GOLDEN("Altın", "#E0B341");
 
     val primary: Color get() = Color(android.graphics.Color.parseColor(hex))
     val dark: Color get() = Color(android.graphics.Color.parseColor(shift(hex, -0.25f)))

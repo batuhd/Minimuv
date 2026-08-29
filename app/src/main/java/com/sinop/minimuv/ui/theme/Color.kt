@@ -23,7 +23,7 @@ val AnimeColor = Color(0xFFE45BA8)
 // ── Status renkleri (her ekranda SABİT anlam) ────────────────────────────
 val StatusWatching = Color(0xFF35D461)
 val StatusPlan = Color(0xFFF2C94C)
-val StatusCompleted = Color(0xFFB08CF5)
+val StatusCompleted = Color(0xFFA678F0)
 val StatusRewatching = Color(0xFF4DD9E8)
 val StatusPaused = Color(0xFF8D99AE)
 val StatusDropped = Color(0xFFEF476F)

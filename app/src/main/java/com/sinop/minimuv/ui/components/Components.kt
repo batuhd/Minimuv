@@ -4,6 +4,7 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -85,9 +86,10 @@ fun StatusChip(status: String, modifier: Modifier = Modifier) {
         },
         modifier = modifier
             .clip(RoundedCornerShape(50))
-            .background(color.copy(alpha = 0.16f))
+            .background(color.copy(alpha = 0.24f))
             .padding(horizontal = 10.dp, vertical = 4.dp),
         style = MaterialTheme.typography.labelMedium,
+        fontWeight = FontWeight.SemiBold,
         color = color,
     )
 }
@@ -118,6 +120,7 @@ fun ScoreBadge(score: Double?, modifier: Modifier = Modifier) {
 
 // ── Poster kartı: Letterboxd etkisi, minimal metin ───────────────────────
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PosterCard(
     item: Title,
@@ -125,6 +128,7 @@ fun PosterCard(
     priorityLabel: String? = null,
     creatorEmoji: String? = null,
     onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier) {
@@ -134,7 +138,10 @@ fun PosterCard(
                 .aspectRatio(2f / 3f)
                 .clip(RoundedCornerShape(12.dp))
                 .background(MidnightElevated)
-                .clickable(onClick = onClick)
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                )
         ) {
             if (item.posterUrl != null) {
                 AsyncImage(
@@ -190,6 +197,7 @@ fun PosterCard(
         Text(
             item.title,
             style = MaterialTheme.typography.titleSmall,
+            fontWeight = FontWeight.SemiBold,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onBackground,
@@ -198,7 +206,8 @@ fun PosterCard(
             Text(
                 priorityLabel,
                 style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.72f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

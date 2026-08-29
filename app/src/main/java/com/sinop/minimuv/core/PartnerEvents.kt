@@ -133,17 +133,35 @@ class PartnerEventWatcher(
             current.values.forEach { t ->
                 val old = previous[t.id]
                 if (old != null) {
+                    // Durum geçişleri (kimin değiştirdiği bilinemediğinden çifte kutlama olarak ikisine de düşer)
                     if (old.status != WatchStatus.COMPLETED.db && t.status == WatchStatus.COMPLETED.db) {
                         notify("🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!")
                     }
                     if (old.status == WatchStatus.COMPLETED.db && t.status == WatchStatus.REWATCHING.db) {
                         notify("🔁 ${t.title}", "Yeniden izlemeye başladınız!")
                     }
-                } else {
-                    if (t.status == WatchStatus.PLAN.db) {
-                        notify("✨ ${t.title}", "Sırada listesine yeni bir şey eklendi!")
-                    } else if (t.status == WatchStatus.WATCHING.db) {
-                        notify("▶️ ${t.title}", "Yeni bir serüven başladı!")
+                    if (old.status != WatchStatus.PAUSED.db && t.status == WatchStatus.PAUSED.db) {
+                        notify("⏸️ ${t.title}", "Duraklatıldı — sonra devam ederiz.")
+                    }
+                    if (old.status != WatchStatus.DROPPED.db && t.status == WatchStatus.DROPPED.db) {
+                        notify("🚪 ${t.title}", "Bırakıldı olarak işaretlendi.")
+                    }
+                } else if (t.createdByProfileId != profileId) {
+                    // Yeni eklenen başlık: hangi durumda eklenirse eklensin haber ver.
+                    // (Kendi eklediklerimiz için kendimize bildirim gitmez.)
+                    when (t.status) {
+                        WatchStatus.PLAN.db ->
+                            notify("✨ ${t.title}", "Sırada listesine yeni bir şey eklendi!")
+                        WatchStatus.WATCHING.db ->
+                            notify("▶️ ${t.title}", "Yeni bir serüven başladı!")
+                        WatchStatus.COMPLETED.db ->
+                            notify("🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!")
+                        WatchStatus.REWATCHING.db ->
+                            notify("🔁 ${t.title}", "Yeniden izlemeye başladınız!")
+                        WatchStatus.PAUSED.db ->
+                            notify("⏸️ ${t.title}", "Duraklatılanlar listesine eklendi.")
+                        WatchStatus.DROPPED.db ->
+                            notify("🚪 ${t.title}", "Bırakılanlara eklendi.")
                     }
                 }
             }

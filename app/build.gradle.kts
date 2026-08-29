@@ -7,11 +7,17 @@ plugins {
 }
 
 // TMDB anahtarı repoya girmez; local.properties'e eklenir (gitignore'lu).
+// GitHub yayını için anahtarsız derleme:  gradlew assembleRelease -PtmdbApiKey=""
 val localProps = Properties().apply {
     val f = rootProject.file("local.properties")
     if (f.exists()) f.inputStream().use { load(it) }
 }
-val tmdbApiKey = (localProps.getProperty("tmdb.api.key") ?: "").trim()
+val overrideKey = (project.findProperty("tmdbApiKey") as? String)
+val tmdbApiKey = if (overrideKey != null) {
+    overrideKey.trim()
+} else {
+    (localProps.getProperty("tmdb.api.key") ?: "").trim()
+}
 
 android {
     namespace = "com.sinop.minimuv"
@@ -21,12 +27,22 @@ android {
         }
     }
 
+    signingConfigs {
+        create("release") {
+            // Kişisel dağıtım için debug keystore'uyla imzalanır
+            storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.sinop.minimuv"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
@@ -35,6 +51,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("release")
             optimization {
                 enable = false
             }
@@ -80,6 +97,7 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.coil.network.okhttp)
     implementation(libs.reorderable)
+    implementation(libs.android.image.cropper)
 
     testImplementation(libs.junit)
     androidTestImplementation(platform(libs.androidx.compose.bom))

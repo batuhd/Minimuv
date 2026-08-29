@@ -19,3 +19,6 @@ replay_pid*.log
 *.hprof
 .idea/*
 
+# opencode config (contains API keys)
+.opencode/
+

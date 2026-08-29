@@ -66,17 +66,29 @@ fun AddScreen(
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<SearchResult>?>(null) }
     var searching by remember { mutableStateOf(false) }
+    var searchError by remember { mutableStateOf(false) }
+    var retryTick by remember { mutableStateOf(0) }
 
-    LaunchedEffect(type, query) {
+    LaunchedEffect(type, query, retryTick) {
         if (query.isBlank()) {
             results = null
+            searchError = false
             return@LaunchedEffect
         }
         searching = true
         results = null
+        searchError = false
         delay(450)
         runCatching { SearchApi.search(type, query) }
-            .onSuccess { results = it }
+            .onSuccess {
+                results = it
+                searchError = false
+            }
+            .onFailure {
+                // Ağ/rate-limit hatalarını "Bulamadık" ile karıştırmayalım
+                results = emptyList()
+                searchError = true
+            }
         searching = false
     }
 
@@ -158,6 +170,16 @@ fun AddScreen(
                     modifier = Modifier.fillMaxSize(),
                 )
             }
+            searchError && results.isNullOrEmpty() -> {
+                EmptyState(
+                    emoji = "📡",
+                    title = "Bağlantı sorunu",
+                    subtitle = "\"${query}\" için arama şu an yanıt vermedi. İnterneti kontrol edip tekrar dene.",
+                    modifier = Modifier.fillMaxSize(),
+                    actionLabel = "Tekrar dene",
+                    onAction = { retryTick++ },
+                )
+            }
             results.isNullOrEmpty() -> {
                 EmptyState(
                     emoji = "🕵️",
@@ -190,6 +212,7 @@ fun AddScreen(
                                 externalId = result.externalId,
                                 title = result.title,
                                 posterUrl = result.posterUrl,
+                                overview = result.overview,
                                 totalEpisodes = result.totalEpisodes,
                             )
                             onPicked()

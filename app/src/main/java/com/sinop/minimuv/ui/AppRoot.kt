@@ -41,14 +41,15 @@ import androidx.core.app.ActivityCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import androidx.navigation.navArgument
 import com.sinop.minimuv.R
 import com.sinop.minimuv.core.NotificationHelper
-import com.sinop.minimuv.core.RealtimeManager
-import com.sinop.minimuv.core.RealtimeService
+import com.sinop.minimuv.core.PartnerEventsRuntime
 import com.sinop.minimuv.core.SupabaseProvider
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.ui.components.MinimuvButton
@@ -77,10 +78,11 @@ sealed class BottomTab(
     data object List : BottomTab("list", "Liste", MinimuvIcons.ListIcon)
     data object Wheel : BottomTab("wheel", "Çark", MinimuvIcons.WheelIcon)
     data object Badges : BottomTab("badges", "Rozetler", MinimuvIcons.BadgeIcon)
+    data object Profile : BottomTab("profile", "Profil", MinimuvIcons.ProfileIcon)
     data object Settings : BottomTab("settings", "Ayarlar", MinimuvIcons.SettingsIcon)
 }
 
-private val TABS = listOf(BottomTab.List, BottomTab.Wheel, BottomTab.Badges, BottomTab.Settings)
+private val TABS = listOf(BottomTab.List, BottomTab.Wheel, BottomTab.Badges, BottomTab.Profile, BottomTab.Settings)
 
 @Composable
 fun MinimuvApp() {
@@ -157,10 +159,9 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 101,
             )
         }
-        // Bildirim altyapısını (realtime + partner olayları) ön plan servisi yönetir;
-        // böylece uygulama kapalıyken de bildirimler düşer.
-        runCatching { RealtimeManager.start() }
-        runCatching { RealtimeService.start(context) }
+        // Partner olayları uygulama süreci yaşadığı sürece dinlenir;
+        // kalıcı ön plan servisi ve bildirimi kaldırıldı.
+        runCatching { PartnerEventsRuntime.start(context) }
     }
 
     val onboardingDone by settings.onboardingDone.collectAsState(initial = false)
@@ -264,6 +265,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 ListScreen(
                     vm = vm,
                     onOpenTitle = { navController.navigate("detail/${it}") },
+                    onEditTitle = { navController.navigate("detail/${it}?edit=true") },
                     onOpenPlanOrder = { navController.navigate("plan_order") },
                 )
             }
@@ -276,8 +278,8 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             composable(BottomTab.Badges.route) {
                 AchievementsScreen()
             }
-            composable(BottomTab.Settings.route) {
-                SettingsScreen(
+            composable(BottomTab.Profile.route) {
+                com.sinop.minimuv.ui.screens.profile.ProfileScreen(
                     settings = settings,
                     onSwitchProfile = {
                         navController.navigate(BottomTab.List.route) {
@@ -289,6 +291,20 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     },
                     onOpenHeatmap = { navController.navigate("heatmap") },
                     onOpenWrapped = { navController.navigate("wrapped") },
+                    onOpenTitle = { navController.navigate("detail/${it}") },
+                )
+            }
+            composable(BottomTab.Settings.route) {
+                SettingsScreen(
+                    settings = settings,
+                    onSwitchProfile = {
+                        navController.navigate(BottomTab.List.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                        }
+                    },
                 )
             }
             composable("add") {
@@ -297,13 +313,23 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     onPicked = { navController.navigate("detail/draft") },
                 )
             }
-            composable("detail/{titleId}") { entry ->
+            composable(
+                "detail/{titleId}?edit={edit}",
+                arguments = listOf(
+                    navArgument("edit") {
+                        type = NavType.StringType
+                        defaultValue = "false"
+                    },
+                ),
+            ) { entry ->
                 val titleId = entry.arguments?.getString("titleId") ?: return@composable
+                val startInEdit = entry.arguments?.getString("edit") == "true"
                 val vm: DetailViewModel = viewModel()
                 DetailScreen(
                     titleId = titleId,
                     vm = vm,
                     profileId = profileId,
+                    startInEdit = startInEdit,
                     onBack = { navController.popBackStack() },
                     onSaved = {
                         navController.popBackStack(BottomTab.List.route, inclusive = false)

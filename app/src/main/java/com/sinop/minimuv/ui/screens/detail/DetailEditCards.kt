@@ -1,5 +1,6 @@
 package com.sinop.minimuv.ui.screens.detail
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,13 +17,16 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
@@ -30,14 +34,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.sinop.minimuv.data.Profile
+import com.sinop.minimuv.data.WatchMode
+import com.sinop.minimuv.data.WatchStatus
 import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.components.SoftChip
 import com.sinop.minimuv.ui.theme.MidnightCard
@@ -52,37 +61,81 @@ import java.util.Locale
 
 private val CardShape = RoundedCornerShape(20.dp)
 
+// ── Katlanabilir düzenleme bölümü ─────────────────────────────────────────
+// Başlığa dokununca açılır/kapanır; kapalıyken tek satırlık özet gösterir.
+
 @Composable
-private fun SectionCard(
+private fun EditSection(
+    emoji: String,
     title: String,
-    hint: String? = null,
+    summary: String,
+    summaryColor: Color = TextSecondary,
+    initiallyExpanded: Boolean = false,
     content: @Composable () -> Unit,
 ) {
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
     Column(
         Modifier
             .fillMaxWidth()
             .clip(CardShape)
-            .background(MidnightCard)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+            .background(MidnightCard),
     ) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        if (hint != null) {
-            Spacer(Modifier.height(2.dp))
-            Text(hint, style = MaterialTheme.typography.bodySmall, color = TextSecondary)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { expanded = !expanded }
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(emoji, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.titleMedium)
+                if (!expanded) {
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        summary,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = summaryColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
+            }
+            Icon(
+                Icons.Filled.KeyboardArrowDown,
+                contentDescription = if (expanded) "Bölümü kapat" else "Bölümü aç",
+                modifier = Modifier
+                    .size(22.dp)
+                    .rotate(if (expanded) 0f else -90f),
+                tint = TextSecondary,
+            )
         }
-        Spacer(Modifier.height(14.dp))
-        content()
+        AnimatedVisibility(visible = expanded) {
+            Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 16.dp)) {
+                content()
+            }
+        }
     }
 }
 
+// ── 1. Durum ─────────────────────────────────────────────────────────────
+
 @Composable
 internal fun StatusCard(selected: String, onSelect: (String) -> Unit) {
-    SectionCard(title = "Durumu") {
+    val current = WatchStatus.entries.firstOrNull { it.db == selected }
+    EditSection(
+        emoji = "🎯",
+        title = "Durum",
+        summary = current?.label ?: selected,
+        summaryColor = statusColor(selected),
+        initiallyExpanded = true,
+    ) {
         FlowRow(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            com.sinop.minimuv.data.WatchStatus.entries.forEach { s ->
+            WatchStatus.entries.forEach { s ->
                 SoftChip(
                     label = s.label,
                     selected = selected == s.db,
@@ -94,7 +147,192 @@ internal fun StatusCard(selected: String, onSelect: (String) -> Unit) {
     }
 }
 
-// ── Puan kartı ───────────────────────────────────────────────────────────
+// ── 2. Bölümler ──────────────────────────────────────────────────────────
+
+@Composable
+internal fun EpisodesCard(
+    visible: Boolean,
+    isSeries: Boolean,
+    sharedProgress: Int,
+    onSharedProgress: (Int) -> Unit,
+    totalEpisodesText: String,
+    onTotalEpisodes: (String) -> Unit,
+    watchMode: String,
+    onWatchMode: (String) -> Unit,
+    showPerProfile: Boolean,
+    myProfile: Profile?,
+    partnerProfile: Profile?,
+    myProgress: Int,
+    partnerProgress: Int,
+    onMyProgress: (Int) -> Unit,
+    typeColor: Color,
+) {
+    if (!visible) return
+
+    val total = totalEpisodesText.toIntOrNull()
+    val modeLabel = WatchMode.entries.firstOrNull { it.db == watchMode }?.label ?: watchMode
+    val summary = if (isSeries) {
+        val progressText = if (total != null) "$sharedProgress/$total bölüm" else "$sharedProgress bölüm"
+        "$progressText • $modeLabel"
+    } else {
+        modeLabel
+    }
+
+    EditSection(
+        emoji = if (isSeries) "📺" else "🎬",
+        title = if (isSeries) "Bölümler" else "İzleme",
+        summary = summary,
+        summaryColor = typeColor,
+        initiallyExpanded = isSeries,
+    ) {
+        if (isSeries) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Toplam bölüm", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                    OutlinedTextField(
+                        value = totalEpisodesText,
+                        onValueChange = { onTotalEpisodes(it.filter { c -> c.isDigit() }) },
+                        singleLine = true,
+                        modifier = Modifier.width(120.dp),
+                        placeholder = { Text("bilinmiyor?") },
+                        textStyle = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                StepperButton("−") { onSharedProgress((sharedProgress - 1).coerceAtLeast(0)) }
+                Text(
+                    "$sharedProgress",
+                    style = MaterialTheme.typography.displayMedium,
+                    color = typeColor,
+                    modifier = Modifier.padding(horizontal = 20.dp),
+                )
+                StepperButton("+") { onSharedProgress(sharedProgress + 1) }
+            }
+
+            Spacer(Modifier.height(14.dp))
+        }
+        Text("Nasıl izliyoruz?", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+        Spacer(Modifier.height(8.dp))
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            WatchMode.entries.forEach { mode ->
+                SoftChip(
+                    label = mode.label,
+                    selected = watchMode == mode.db,
+                    color = typeColor,
+                    onClick = { onWatchMode(mode.db) },
+                )
+            }
+        }
+
+        if (showPerProfile && myProfile != null) {
+            Spacer(Modifier.height(14.dp))
+            ProfileProgressBar(
+                emoji = myProfile.emoji ?: "😊",
+                name = myProfile.name,
+                progress = myProgress,
+                total = total,
+                editable = true,
+                color = typeColor,
+                onChange = onMyProgress,
+            )
+            if (partnerProfile != null) {
+                Spacer(Modifier.height(8.dp))
+                ProfileProgressBar(
+                    emoji = partnerProfile.emoji ?: "😊",
+                    name = partnerProfile.name,
+                    progress = partnerProgress,
+                    total = total,
+                    editable = false,
+                    color = TextSecondary,
+                    onChange = {},
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ProfileProgressBar(
+    emoji: String,
+    name: String,
+    progress: Int,
+    total: Int?,
+    editable: Boolean,
+    color: Color,
+    onChange: (Int) -> Unit,
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text("$emoji $name", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(92.dp))
+        Box(
+            Modifier
+                .weight(1f)
+                .height(10.dp)
+                .clip(CircleShape)
+                .background(OutlineSoft.copy(alpha = 0.6f)),
+        ) {
+            val fraction = if (total != null && total > 0) (progress.toFloat() / total).coerceIn(0f, 1f) else 0f
+            Box(
+                Modifier
+                    .fillMaxWidth(fraction)
+                    .height(10.dp)
+                    .clip(CircleShape)
+                    .background(color),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            if (total != null) "$progress/$total" else "$progress",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextSecondary,
+        )
+        if (editable) {
+            Spacer(Modifier.width(8.dp))
+            StepperButton("+") { onChange(progress + 1) }
+        }
+    }
+}
+
+// ── 3. Takvim ────────────────────────────────────────────────────────────
+
+@Composable
+internal fun DatesCard(
+    startDate: String?,
+    onFinishStart: () -> Unit,
+    finishDate: String?,
+    onFinishFinish: () -> Unit,
+    rewatches: Int,
+    onRewatches: (Int) -> Unit,
+) {
+    val summary = "Başlangıç: ${startDate?.let { formatDate(it) } ?: "—"}  •  Bitiş: ${finishDate?.let { formatDate(it) } ?: "—"}"
+    EditSection(
+        emoji = "📅",
+        title = "Takvimimiz",
+        summary = summary,
+        initiallyExpanded = true,
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Başlangıç", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            DateField(startDate, onFinishStart)
+        }
+        Spacer(Modifier.height(10.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Bitiş", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            DateField(finishDate, onFinishFinish)
+        }
+        Spacer(Modifier.height(12.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Yeniden izleme", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+            StepperButton("−") { onRewatches((rewatches - 1).coerceAtLeast(0)) }
+            Text(
+                "$rewatches",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+            StepperButton("+") { onRewatches(rewatches + 1) }
+        }
+    }
+}
+
+// ── 4. Puanlar ───────────────────────────────────────────────────────────
 
 @Composable
 internal fun ScoreCard(
@@ -114,9 +352,19 @@ internal fun ScoreCard(
     advEnjoyment: Double?, onAdvEnjoyment: (Double?) -> Unit,
     typeColor: Color,
 ) {
-    SectionCard(
+    val summary = when {
+        myScore != null && partnerScore != null ->
+            "Sen ${"%.1f".format(Locale.US, myScore)}  •  ${partnerName ?: "Partnerin"} ${"%.1f".format(Locale.US, partnerScore)}"
+        myScore != null -> "Sen ${"%.1f".format(Locale.US, myScore)}"
+        else -> "Henüz puanlanmadı"
+    }
+
+    EditSection(
+        emoji = "⭐",
         title = "Puanlarımız",
-        hint = "Detaylı puan verdikçe ana puanın ortalamamız otomatik güncellenir.",
+        summary = summary,
+        summaryColor = if (myScore != null) typeColor else TextSecondary,
+        initiallyExpanded = false,
     ) {
         Row(
             Modifier.fillMaxWidth(),
@@ -142,7 +390,7 @@ internal fun ScoreCard(
 
         if (!isAutoScore) {
             Spacer(Modifier.height(16.dp))
-            Text("Ana puanın", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+            Text("Hızlı puan", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Slider(
                     value = (manualScoreText.toFloatOrNull() ?: 0f).coerceIn(0f, 10f),
@@ -162,20 +410,46 @@ internal fun ScoreCard(
         } else {
             Spacer(Modifier.height(10.dp))
             Text(
-                "⚖️ Ana puanın detaylı ortalamandan hesaplanıyor",
+                "⚖️ Puanın detaylı ortalamandan hesaplanıyor",
                 style = MaterialTheme.typography.labelMedium,
                 color = typeColor,
             )
         }
 
-        Spacer(Modifier.height(16.dp))
-        Text("Detaylı puanların", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-        Spacer(Modifier.height(6.dp))
-        AdvancedSliderRow("📖 Hikaye", advStory, onAdvStory)
-        AdvancedSliderRow("👥 Karakterler", advCharacters, onAdvCharacters)
-        AdvancedSliderRow("🎨 Görsellik", advVisuals, onAdvVisuals)
-        AdvancedSliderRow("🔊 Ses", advAudio, onAdvAudio)
-        AdvancedSliderRow("😍 Keyif", advEnjoyment, onAdvEnjoyment)
+        // Detaylı puanlar yalnızca istenirse görünür — kart sade kalır
+        val hasAdvanced = advStory != null || advCharacters != null || advVisuals != null ||
+            advAudio != null || advEnjoyment != null
+        var showAdvanced by rememberSaveable { mutableStateOf(hasAdvanced) }
+
+        Spacer(Modifier.height(14.dp))
+        if (showAdvanced) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Detaylı puanlar", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                Spacer(Modifier.weight(1f))
+                Text(
+                    "gizle",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = typeColor,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { showAdvanced = false }
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            AdvancedSliderRow("📖 Hikaye", advStory, onAdvStory)
+            AdvancedSliderRow("👥 Karakterler", advCharacters, onAdvCharacters)
+            AdvancedSliderRow("🎨 Görsellik", advVisuals, onAdvVisuals)
+            AdvancedSliderRow("🔊 Ses", advAudio, onAdvAudio)
+            AdvancedSliderRow("😍 Keyif", advEnjoyment, onAdvEnjoyment)
+        } else {
+            SoftChip(
+                label = "Detaylı puan ver (Hikâye, Karakterler…)",
+                selected = false,
+                color = typeColor,
+                onClick = { showAdvanced = true },
+            )
+        }
     }
 }
 
@@ -246,219 +520,77 @@ private fun AdvancedSliderRow(label: String, value: Double?, onChange: (Double?)
     }
 }
 
-// ── Bölümler kartı ───────────────────────────────────────────────────────
+// ── 5. Notlar & Listeler ─────────────────────────────────────────────────
 
-@Composable
-internal fun EpisodesCard(
-    visible: Boolean,
-    isSeries: Boolean,
-    sharedProgress: Int,
-    onSharedProgress: (Int) -> Unit,
-    totalEpisodesText: String,
-    onTotalEpisodes: (String) -> Unit,
-    watchMode: String,
-    onWatchMode: (String) -> Unit,
-    showPerProfile: Boolean,
-    myProfile: Profile?,
-    partnerProfile: Profile?,
-    myProgress: Int,
-    partnerProgress: Int,
-    onMyProgress: (Int) -> Unit,
-    typeColor: Color,
-) {
-    if (!visible) return
-    SectionCard(title = if (isSeries) "Bölümler" else "İzleme") {
-        if (isSeries) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "${if (watchMode == "birlikte") "Bizim yerimiz" else "Genel"} ilerleme",
-                    style = MaterialTheme.typography.labelLarge,
-                    color = TextSecondary,
-                    modifier = Modifier.weight(1f),
-                )
-                OutlinedTextField(
-                    value = totalEpisodesText,
-                    onValueChange = { onTotalEpisodes(it.filter { c -> c.isDigit() }) },
-                    singleLine = true,
-                    modifier = Modifier.width(96.dp),
-                    placeholder = { Text("toplam?") },
-                    textStyle = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    " bölüm",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextSecondary,
-                )
-            }
-            Spacer(Modifier.height(8.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                StepperButton("−") { onSharedProgress((sharedProgress - 1).coerceAtLeast(0)) }
-                Text(
-                    "$sharedProgress",
-                    style = MaterialTheme.typography.displayMedium,
-                    color = typeColor,
-                    modifier = Modifier.padding(horizontal = 24.dp),
-                )
-                StepperButton("+") { onSharedProgress(sharedProgress + 1) }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-        Text("Nasıl izliyoruz?", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            com.sinop.minimuv.data.WatchMode.entries.forEach { mode ->
-                SoftChip(
-                    label = mode.label,
-                    selected = watchMode == mode.db,
-                    color = typeColor,
-                    onClick = { onWatchMode(mode.db) },
-                )
-            }
-        }
-
-        if (showPerProfile && myProfile != null) {
-            Spacer(Modifier.height(14.dp))
-            ProfileProgressBar(
-                emoji = myProfile.emoji ?: "😊",
-                name = myProfile.name,
-                progress = myProgress,
-                total = totalEpisodesText.toIntOrNull(),
-                editable = true,
-                color = typeColor,
-                onChange = onMyProgress,
-            )
-            if (partnerProfile != null) {
-                Spacer(Modifier.height(8.dp))
-                ProfileProgressBar(
-                    emoji = partnerProfile.emoji ?: "😊",
-                    name = partnerProfile.name,
-                    progress = partnerProgress,
-                    total = totalEpisodesText.toIntOrNull(),
-                    editable = false,
-                    color = TextSecondary,
-                    onChange = {},
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ProfileProgressBar(
-    emoji: String,
-    name: String,
-    progress: Int,
-    total: Int?,
-    editable: Boolean,
-    color: Color,
-    onChange: (Int) -> Unit,
-) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text("$emoji $name", style = MaterialTheme.typography.titleSmall, modifier = Modifier.width(92.dp))
-        Box(
-            Modifier
-                .weight(1f)
-                .height(10.dp)
-                .clip(CircleShape)
-                .background(OutlineSoft.copy(alpha = 0.6f)),
-        ) {
-            val fraction = if (total != null && total > 0) (progress.toFloat() / total).coerceIn(0f, 1f) else 0f
-            Box(
-                Modifier
-                    .fillMaxWidth(fraction)
-                    .height(10.dp)
-                    .clip(CircleShape)
-                    .background(color),
-            )
-        }
-        Spacer(Modifier.width(8.dp))
-        Text(
-            if (total != null) "$progress/$total" else "$progress",
-            style = MaterialTheme.typography.labelMedium,
-            color = TextSecondary,
-        )
-        if (editable) {
-            Spacer(Modifier.width(8.dp))
-            StepperButton("+") { onChange(progress + 1) }
-        }
-    }
-}
-
-// ── Tarihler kartı ───────────────────────────────────────────────────────
-
-@Composable
-internal fun DatesCard(
-    startDate: String?,
-    onFinishStart: () -> Unit,
-    finishDate: String?,
-    onFinishFinish: () -> Unit,
-    rewatches: Int,
-    onRewatches: (Int) -> Unit,
-) {
-    SectionCard(title = "Takvimimiz") {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Başlangıç", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            DateField(startDate, onFinishStart)
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Bitiş", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            DateField(finishDate, onFinishFinish)
-        }
-        Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Yeniden izleme", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            StepperButton("−") { onRewatches((rewatches - 1).coerceAtLeast(0)) }
-            Text(
-                "$rewatches",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(horizontal = 16.dp),
-            )
-            StepperButton("+") { onRewatches(rewatches + 1) }
-        }
-    }
-}
-
-// ── Notlar kartı ─────────────────────────────────────────────────────────
-
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun NotesCard(
-    notesText: String,
-    onNotes: (String) -> Unit,
+    titleId: String,
+    notes: List<com.sinop.minimuv.data.TitleNote>,
+    profiles: List<Profile>,
+    onAddNote: (String) -> Unit,
+    onUpdateNote: (String, String) -> Unit,
+    onDeleteNote: (String) -> Unit,
     customLists: List<String>,
     onRemoveList: (String) -> Unit,
     newListText: String,
     onNewListText: (String) -> Unit,
     onAddList: () -> Unit,
-    isPrivate: Boolean,
-    onPrivate: (Boolean) -> Unit,
     isFavorite: Boolean,
     onFavorite: (Boolean) -> Unit,
 ) {
-    SectionCard(title = "Notlarımız & Listelerimiz") {
-        OutlinedTextField(
-            value = notesText,
-            onValueChange = onNotes,
-            modifier = Modifier.fillMaxWidth(),
-            minLines = 3,
-            placeholder = { Text("Bu yapım hakkında ne düşünüyoruz? ✍️") },
+    var showAddDialog by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<com.sinop.minimuv.data.TitleNote?>(null) }
+
+    val summary = when {
+        notes.isNotEmpty() -> "${notes.size} not"
+        customLists.isNotEmpty() -> "Listeler: ${customLists.joinToString()}"
+        else -> "Henüz not yok"
+    }
+
+    EditSection(
+        emoji = "📝",
+        title = "Notlar & Listeler",
+        summary = summary,
+        initiallyExpanded = false,
+    ) {
+        // Tek tek notlar
+        notes.forEach { note ->
+            TitleNoteRow(
+                note = note,
+                author = profiles.firstOrNull { it.id == note.profileId },
+                onEdit = { editTarget = note },
+                onDelete = { note.id?.let(onDeleteNote) },
+            )
+            Spacer(Modifier.height(8.dp))
+        }
+
+        SoftChip(
+            label = "＋ Not ekle",
+            selected = false,
+            color = MaterialTheme.colorScheme.primary,
+            onClick = { showAddDialog = true },
         )
 
-        Spacer(Modifier.height(14.dp))
-        FlowRow(
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            customLists.forEach { list ->
-                SoftChip(
-                    label = list,
-                    selected = true,
-                    color = MaterialTheme.colorScheme.primary,
-                    onClick = { onRemoveList(list) },
-                )
+        if (customLists.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            Text("Listelerimiz", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+            Spacer(Modifier.height(6.dp))
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                customLists.forEach { list ->
+                    SoftChip(
+                        label = list,
+                        selected = true,
+                        color = MaterialTheme.colorScheme.primary,
+                        onClick = { onRemoveList(list) },
+                    )
+                }
             }
         }
+        Spacer(Modifier.height(10.dp))
         Row(verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(
                 value = newListText,
@@ -472,15 +604,106 @@ internal fun NotesCard(
         }
 
         Spacer(Modifier.height(12.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Sadece biz göreliler 🔒", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Switch(checked = isPrivate, onCheckedChange = onPrivate)
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Favorimiz", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-            Switch(checked = isFavorite, onCheckedChange = onFavorite)
-        }
+        SoftChip(
+            label = "❤️ Favorimiz",
+            selected = isFavorite,
+            color = MaterialTheme.colorScheme.error,
+            onClick = { onFavorite(!isFavorite) },
+        )
     }
+
+    if (showAddDialog) {
+        NoteTextDialog(
+            title = "Yeni not ✍️",
+            initial = "",
+            onDismiss = { showAddDialog = false },
+            onSave = {
+                onAddNote(it)
+                showAddDialog = false
+            },
+        )
+    }
+    editTarget?.let { target ->
+        NoteTextDialog(
+            title = "Notu düzenle",
+            initial = target.noteText,
+            onDismiss = { editTarget = null },
+            onSave = { newText ->
+                target.id?.let { id -> onUpdateNote(id, newText) }
+                editTarget = null
+            },
+        )
+    }
+}
+
+@Composable
+private fun TitleNoteRow(
+    note: com.sinop.minimuv.data.TitleNote,
+    author: Profile?,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(OutlineSoft.copy(alpha = 0.35f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(
+                "${author?.emoji ?: "👤"} ${author?.name ?: "?"}",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+            )
+            Spacer(Modifier.height(2.dp))
+            Text(note.noteText, style = MaterialTheme.typography.bodyMedium)
+        }
+        Text(
+            "✏️",
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable(onClick = onEdit)
+                .padding(6.dp),
+        )
+        Text(
+            "🗑️",
+            modifier = Modifier
+                .clip(CircleShape)
+                .clickable(onClick = onDelete)
+                .padding(6.dp),
+        )
+    }
+}
+
+@Composable
+private fun NoteTextDialog(
+    title: String,
+    initial: String,
+    onDismiss: () -> Unit,
+    onSave: (String) -> Unit,
+) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title) },
+        text = {
+            OutlinedTextField(
+                value = text,
+                onValueChange = { if (it.length <= 2000) text = it },
+                minLines = 3,
+                placeholder = { Text("Örn: 3. bölümdeki sahne muhteşemdi 😍") },
+            )
+        },
+        confirmButton = {
+            TextButton(
+                enabled = text.trim().isNotBlank(),
+                onClick = { onSave(text.trim()) },
+            ) { Text("Kaydet") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+    )
 }
 
 // ── Ortak küçük parçalar ─────────────────────────────────────────────────

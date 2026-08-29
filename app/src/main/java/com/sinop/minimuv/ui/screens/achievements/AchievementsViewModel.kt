@@ -50,7 +50,9 @@ class AchievementsViewModel : ViewModel() {
         try {
             val titles = repo.getTitles()
             val log = repo.getWatchLog()
-            val s = Achievements.computeStats(titles, log)
+            val scores = runCatching { repo.getAllTitleScores() }.getOrDefault(emptyList())
+            val notes = runCatching { repo.getAllTitleNotes() }.getOrDefault(emptyList())
+            val s = Achievements.computeStats(titles, log, scores, notes)
             stats.value = s
             val existingKeys = existing.map { it.achievementKey }.toSet()
             val fresh = Achievements.ALL

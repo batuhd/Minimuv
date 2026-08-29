@@ -55,6 +55,7 @@ data class Title(
     @SerialName("external_id") val externalId: String? = null,
     val title: String,
     @SerialName("poster_url") val posterUrl: String? = null,
+    val overview: String? = null,
     val status: String = "Plan to Watch",
     val score: Double? = null,
     @SerialName("episode_progress") val episodeProgress: Int = 0,
@@ -145,6 +146,17 @@ data class WatchLog(
     @SerialName("episodes_watched") val episodesWatched: Int = 1,
 )
 
+// ── Başlığa yazılan tekil notlar (eski titles.notes'in yerine) ───────────
+
+@Serializable
+data class TitleNote(
+    val id: String? = null,
+    @SerialName("title_id") val titleId: String,
+    @SerialName("profile_id") val profileId: String,
+    @SerialName("note_text") val noteText: String,
+    @SerialName("created_at") val createdAt: String? = null,
+)
+
 // ── Ekranlar arası taslak (henüz kaydedilmemiş yeni başlık) ──────────────
 
 data class TitleDraft(
@@ -152,5 +164,6 @@ data class TitleDraft(
     val externalId: String? = null,
     val title: String,
     val posterUrl: String? = null,
+    val overview: String? = null,
     val totalEpisodes: Int? = null,
 )

@@ -53,11 +53,19 @@ import java.time.LocalDate
 fun WrappedScreen(onBack: () -> Unit) {
     val repo = remember { TitleRepository() }
     var data by remember { mutableStateOf<Pair<List<Title>, List<WatchLog>>?>(null) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var retryTick by remember { mutableStateOf(0) }
     var year by remember { mutableStateOf(LocalDate.now().year) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(retryTick) {
+        loadError = null
         runCatching { repo.getTitles() to repo.getWatchLog() }
-            .onSuccess { data = it }
+            .onSuccess {
+                data = it
+                // Yeniden hesaplama için yılı da tazele (yeni yıl uyumu)
+                year = LocalDate.now().year.coerceAtMost(year)
+            }
+            .onFailure { loadError = it.message ?: "Bilinmeyen hata" }
     }
 
     Column(Modifier.fillMaxSize()) {
@@ -79,37 +87,67 @@ fun WrappedScreen(onBack: () -> Unit) {
             }) { Text("▶", color = TextSecondary) }
         }
 
-        val pair = data
-        if (pair == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Hesaplanıyor…", color = TextSecondary)
-            }
-            return@Column
-        }
-
-        val (titles, log) = pair
-        val yearPrefix = year.toString()
-        val completedThisYear = titles.filter {
-            it.status == WatchStatus.COMPLETED.db &&
-                (it.finishDate?.startsWith(yearPrefix) == true ||
-                    (it.finishDate == null && it.startDate?.startsWith(yearPrefix) == true))
-        }
-        val episodesThisYear = log.filter { it.date.startsWith(yearPrefix) }.sumOf { it.episodesWatched }
-
-        if (completedThisYear.isEmpty() && episodesThisYear == 0) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("🤷", style = MaterialTheme.typography.displayLarge)
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "$year için kayıt yok. Bu yıl birlikte izlemeye başlayın!",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                    )
+        when {
+            data == null && loadError == null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    androidx.compose.material3.CircularProgressIndicator()
                 }
             }
-            return@Column
+            loadError != null -> {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("📡", style = MaterialTheme.typography.headlineLarge)
+                        Spacer(Modifier.height(8.dp))
+                        Text("Özet hesaplanamadı", style = MaterialTheme.typography.titleMedium)
+                        Text(
+                            "Bağlantıyı kontrol edip tekrar dene.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = TextSecondary,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        com.sinop.minimuv.ui.components.MinimuvButton(
+                            label = "Tekrar dene",
+                            onClick = { retryTick++ },
+                        )
+                    }
+                }
+            }
+            else -> WrappedBody(data!!, year)
         }
+    }
+}
+
+@Composable
+private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
+    val (titles, log) = pair
+    val yearPrefix = year.toString()
+    // Bitiş tarihi yoksa başlangıç, o da yoksa oluşturulma/güncellenme yılına düş —
+    // eski kayıtların özette görünmesini sağlar.
+    fun yearKey(t: Title): String? =
+        t.finishDate?.take(4)
+            ?: t.startDate?.take(4)
+            ?: t.updatedAt?.take(4)
+            ?: t.createdAt?.take(4)
+
+    val completedThisYear = titles.filter {
+        it.status == WatchStatus.COMPLETED.db && yearKey(it) == yearPrefix
+    }
+    val episodesThisYear = log.filter { it.date.startsWith(yearPrefix) }.sumOf { it.episodesWatched }
+
+    if (completedThisYear.isEmpty() && episodesThisYear == 0) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("🤷", style = MaterialTheme.typography.displayLarge)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "$year için kayıt yok. Bu yıl birlikte izlemeye başlayın!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            }
+        }
+        return
+    }
 
         val byType = completedThisYear.groupBy { it.type }.mapValues { it.value.size }
         val topType = byType.maxByOrNull { it.value }?.key
@@ -267,7 +305,6 @@ fun WrappedScreen(onBack: () -> Unit) {
             )
             Spacer(Modifier.height(32.dp))
         }
-    }
 }
 
 @Composable

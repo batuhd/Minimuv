@@ -55,6 +55,7 @@ data class CoupleStats(
     val bingeMax: Int = 0,
     val highScoreCount: Int = 0,
     val allThreeScored: Int = 0,
+    val totalEpisodesLogged: Int = 0,
 )
 
 object Achievements {
@@ -89,7 +90,12 @@ object Achievements {
         AchievementDef("20_yuksek_puan", "🏅", "Kalite! Marka!", "20 başlığa 9+ puan verdiniz.", 20),
     )
 
-    fun computeStats(titles: List<Title>, watchLog: List<WatchLog>): CoupleStats {
+    fun computeStats(
+        titles: List<Title>,
+        watchLog: List<WatchLog>,
+        titleScores: List<TitleScore> = emptyList(),
+        titleNotes: List<TitleNote> = emptyList(),
+    ): CoupleStats {
         val completed = titles.filter { it.status == WatchStatus.COMPLETED.db }
         val together = completed.filter { it.watchMode == WatchMode.BIRLIKTE.db }
         val animeEpisodes = titles.filter { it.type == ContentType.ANIME.db }
@@ -97,9 +103,30 @@ object Achievements {
         val films = completed.count { it.type == ContentType.FILM.db }
         val dizis = completed.count { it.type == ContentType.DIZI.db }
         val animes = completed.count { it.type == ContentType.ANIME.db }
-        val scoredFilms = titles.count { it.type == ContentType.FILM.db && it.story != null || it.type == ContentType.FILM.db && it.enjoyment != null }
-        val scoredDizis = titles.count { (it.type == ContentType.DIZI.db) && (it.story != null || it.enjoyment != null) }
-        val scoredAnimes = titles.count { (it.type == ContentType.ANIME.db) && (it.story != null || it.enjoyment != null) }
+        // Detaylı puanlar kişi bazlı title_scores tablosunda yaşar; eski başlık
+        // kolonları (story/enjoyment...) artık yazılmıyor. Yine de geriye dönük
+        // uyumluluk için ikisine de bakılır.
+        val scoredTypeKeys = buildSet {
+            addAll(
+                titleScores
+                    .filter { s ->
+                        s.story != null || s.characters != null || s.visuals != null ||
+                            s.audio != null || s.enjoyment != null
+                    }
+                    .mapNotNull { s -> titles.firstOrNull { it.id == s.titleId }?.type },
+            )
+            titles.forEach { t ->
+                if (t.story != null || t.enjoyment != null) add(t.type)
+            }
+        }
+        // Aktif günler = günlük kayıtları ∪ tamamlanan başlıkların günleri.
+        // Böylece film bitirmek de seriyi besler; takvimle aynı hikâyeyi anlatır.
+        val logDays = watchLog.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }
+        val completedDays = completed.mapNotNull { t ->
+            (t.finishDate ?: t.createdAt?.take(10))
+                ?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        }
+        val activeDays = (logDays + completedDays).toSet()
         return CoupleStats(
             totalCompleted = completed.size,
             filmsCompleted = films,
@@ -107,31 +134,37 @@ object Achievements {
             animesCompleted = animes,
             animeEpisodes = animeEpisodes,
             scoredCount = titles.count { it.score != null },
-            notesCount = titles.count { !it.notes.isNullOrBlank() },
-            streakDays = computeStreak(watchLog),
+            // Eski tek-metin notlar + yeni tekil notlar birleşik sayılır
+            notesCount = (
+                titles.filter { !it.notes.isNullOrBlank() }.map { it.id } +
+                    titleNotes.map { it.titleId }
+                ).distinct().size,
+            streakDays = computeStreak(activeDays),
             togetherCompleted = together.size,
             allThreeTypes = minOf(films, dizis, animes),
             bingeMax = watchLog.groupBy { it.date }
                 .mapValues { (_, v) -> v.sumOf { it.episodesWatched } }
                 .values.maxOrNull() ?: 0,
             highScoreCount = titles.count { (it.score ?: 0.0) >= 9.0 },
-            allThreeScored = if (scoredFilms > 0 && scoredDizis > 0 && scoredAnimes > 0) 1 else 0,
+            allThreeScored = if (
+                ContentType.entries.all { it.db in scoredTypeKeys }
+            ) 1 else 0,
+            totalEpisodesLogged = watchLog.sumOf { it.episodesWatched },
         )
     }
 
-    private fun computeStreak(watchLog: List<WatchLog>): Int {
-        val days = watchLog.mapNotNull { runCatching { LocalDate.parse(it.date) }.getOrNull() }
-            .toSet().sortedDescending()
-        if (days.isEmpty()) return 0
+    /** Bugün veya dünden başlayarak ardışık aktif gün sayısı. */
+    private fun computeStreak(activeDays: Set<LocalDate>): Int {
+        if (activeDays.isEmpty()) return 0
         var cursor = LocalDate.now()
-        if (days.first() != cursor && days.first() != cursor.minusDays(1)) return 0
-        cursor = days.first()
+        if (cursor !in activeDays) {
+            cursor = cursor.minusDays(1)
+            if (cursor !in activeDays) return 0
+        }
         var streak = 0
-        for (day in days) {
-            if (day == cursor) {
-                streak++
-                cursor = cursor.minusDays(1)
-            } else break
+        while (cursor in activeDays) {
+            streak++
+            cursor = cursor.minusDays(1)
         }
         return streak
     }

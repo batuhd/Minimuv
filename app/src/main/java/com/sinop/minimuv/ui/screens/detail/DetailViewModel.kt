@@ -3,15 +3,21 @@ package com.sinop.minimuv.ui.screens.detail
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sinop.minimuv.core.RealtimeManager
+import com.sinop.minimuv.core.SearchApi
+import com.sinop.minimuv.core.TitleDetails
+import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.EpisodeNote
 import com.sinop.minimuv.data.EpisodeProgress
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleDraft
+import com.sinop.minimuv.data.TitleNote
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.data.TitleScore
 import com.sinop.minimuv.data.WatchLog
+import com.sinop.minimuv.data.WatchMode
+import com.sinop.minimuv.data.WatchStatus
 import com.sinop.minimuv.ui.screens.add.DraftHolder
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,6 +36,8 @@ class DetailViewModel : ViewModel() {
     val progress = MutableStateFlow<List<EpisodeProgress>>(emptyList())
     val notes = MutableStateFlow<List<EpisodeNote>>(emptyList())
     val scores = MutableStateFlow<List<TitleScore>>(emptyList())
+    val titleNotes = MutableStateFlow<List<TitleNote>>(emptyList())
+    val details = MutableStateFlow<TitleDetails?>(null)
     val error = MutableStateFlow<String?>(null)
     val saving = MutableStateFlow(false)
 
@@ -51,7 +59,7 @@ class DetailViewModel : ViewModel() {
             RealtimeManager.events
                 .filter {
                     it == "titles" || it == "episode_progress_per_profile" ||
-                        it == "episode_notes" || it == "title_scores"
+                        it == "episode_notes" || it == "title_scores" || it == "title_notes"
                 }
                 .debounce(300)
                 .collect {
@@ -67,11 +75,51 @@ class DetailViewModel : ViewModel() {
             progress.value = repo.getEpisodeProgress(id)
             notes.value = repo.getEpisodeNotes(id)
             scores.value = repo.getTitleScores(id)
+            titleNotes.value = runCatching { repo.getTitleNotes(id) }.getOrDefault(emptyList())
             // Eski kayıtlardan kalan bozuk ortalamaları kendiliğinden düzelt
             runCatching { repo.refreshCoupleScore(id) }
+            // MAL tarzı zengin detay (puan, tür, oyuncular) — arka planda, hata olursa sessiz
+            val t = title.value
+            if (t?.externalId != null && details.value == null) {
+                viewModelScope.launch {
+                    details.value = runCatching {
+                        SearchApi.details(ContentType.fromDb(t.type), t.externalId)
+                    }.getOrNull()
+                }
+            }
             error.value = null
         } catch (e: Exception) {
             error.value = e.message
+        }
+    }
+
+    // ── Tekil başlık notları ─────────────────────────────────────────────
+
+    fun addTitleNote(titleId: String, profileId: String, text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty() || titleId == "draft") return
+        viewModelScope.launch {
+            runCatching { repo.insertTitleNote(TitleNote(titleId = titleId, profileId = profileId, noteText = trimmed)) }
+                .onSuccess { titleNotes.value = repo.getTitleNotes(titleId) }
+                .onFailure { error.value = it.message }
+        }
+    }
+
+    fun updateTitleNote(id: String, titleId: String, text: String) {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return
+        viewModelScope.launch {
+            runCatching { repo.updateTitleNote(id, trimmed) }
+                .onSuccess { titleNotes.value = repo.getTitleNotes(titleId) }
+                .onFailure { error.value = it.message }
+        }
+    }
+
+    fun deleteTitleNote(id: String, titleId: String) {
+        viewModelScope.launch {
+            runCatching { repo.deleteTitleNote(id) }
+                .onSuccess { titleNotes.value = repo.getTitleNotes(titleId) }
+                .onFailure { error.value = it.message }
         }
     }
 
@@ -106,9 +154,21 @@ class DetailViewModel : ViewModel() {
     }
 
     /** Başlık alanlarını ve kişisel puanı TEK coroutine'de kaydeder — geri dönüş
-     *  yapılsa bile iş yarıda kesilmez (ViewModel scope'u bitene kadar tamamlanır). */
-    fun updateWithScore(id: String, changes: Map<String, Any?>, score: TitleScore?, onDone: () -> Unit) {
-        android.util.Log.d("MinimuvDetail", "updateWithScore id=$id changes=$changes score=${score?.score}")
+     *  yapılsa bile iş yarıda kesilmez (ViewModel scope'u bitene kadar tamamlanır).
+     *  watchLogDelta > 0 ise başarılı kaydın ardından izleme günlüğüne tek seferde yazılır.
+     *  completionLog (bölüm, tarih) verilirse: başlık yeni Tamamlandı olduysa ve
+     *  daha önce hiç günlük kaydı yoksa (filmler, adım adım izlenmemiş diziler)
+     *  tamamlama olayı da günlüğe işlenir — takvim/yıl özeti/seri hesapları tutarlı kalır. */
+    fun updateWithScore(
+        id: String,
+        changes: Map<String, Any?>,
+        score: TitleScore?,
+        watchLogDelta: Int = 0,
+        profileIdForLog: String? = null,
+        completionLog: Pair<Int, String>? = null,
+        onDone: () -> Unit,
+    ) {
+        android.util.Log.d("MinimuvDetail", "updateWithScore id=$id changes=$changes score=${score?.score} logDelta=$watchLogDelta")
         viewModelScope.launch {
             saving.value = true
             runCatching {
@@ -117,8 +177,41 @@ class DetailViewModel : ViewModel() {
                     repo.upsertTitleScore(score.copy(titleId = id))
                     repo.refreshCoupleScore(id)
                 }
+                if (watchLogDelta > 0) {
+                    val logProfile = profileIdForLog ?: score?.profileId
+                    if (logProfile != null) {
+                        repo.insertWatchLog(
+                            WatchLog(
+                                titleId = id,
+                                profileId = logProfile,
+                                date = java.time.LocalDate.now().toString(),
+                                episodesWatched = watchLogDelta,
+                            )
+                        )
+                    }
+                }
+                if (completionLog != null && completionLog.first > 0) {
+                    // Başlık tamamlandı ama hiç günlük kaydı yoksa tamamlama olayını yaz
+                    // (yukarıdaki delta da dahil — az önce yazıldıysa bu adım atlanır)
+                    val existing = runCatching { repo.getWatchLogForTitle(id) }.getOrDefault(emptyList())
+                    if (existing.isEmpty()) {
+                        val logProfile = profileIdForLog ?: score?.profileId
+                        if (logProfile != null) {
+                            repo.insertWatchLog(
+                                WatchLog(
+                                    titleId = id,
+                                    profileId = logProfile,
+                                    date = completionLog.second,
+                                    episodesWatched = completionLog.first,
+                                )
+                            )
+                        }
+                    }
+                }
             }.onSuccess {
                 android.util.Log.d("MinimuvDetail", "updateWithScore OK")
+                // Rozetleri kayıttan hemen sonra değerlendir (sekme açık olmasa da)
+                launch { com.sinop.minimuv.data.AchievementChecker.checkAndUnlock(repo) }
                 onDone()
             }.onFailure {
                 android.util.Log.e("MinimuvDetail", "updateWithScore FAIL", it)
@@ -128,19 +221,37 @@ class DetailViewModel : ViewModel() {
         }
     }
 
-    fun insertWithScore(t: Title, score: TitleScore?, progress: Pair<String, Int>?, onDone: () -> Unit) {
+    /** Yeni başlık kaydı. initialProgress (profileId to bölüm) verilirse:
+     *  ayrı modda episode_progress_per_profile satırı da yazılır; her iki modda
+     *  da izleme günlüğüne başlangıç girişi düşer (0'dan büyükse).
+     *  Tamamlanmış olarak eklenen ama ilerlemesi 0 olan başlıklar için
+     *  (film=1, dizi/anime=toplam bölüm) tamamlama kaydı yazılır. */
+    fun insertWithScore(t: Title, score: TitleScore?, initialProgress: Pair<String, Int>?, onDone: () -> Unit) {
         viewModelScope.launch {
             saving.value = true
             runCatching {
                 repo.insert(t)
-                if (progress != null && progress.second > 0) {
-                    repo.setEpisodeProgress(t.id, progress.first, progress.second)
+                if (initialProgress != null && initialProgress.second > 0) {
+                    if (t.watchMode == WatchMode.AYRI.db) {
+                        repo.setEpisodeProgress(t.id, initialProgress.first, initialProgress.second)
+                    }
                     repo.insertWatchLog(
                         WatchLog(
                             titleId = t.id,
-                            profileId = progress.first,
+                            profileId = initialProgress.first,
                             date = java.time.LocalDate.now().toString(),
-                            episodesWatched = progress.second,
+                            episodesWatched = initialProgress.second,
+                        )
+                    )
+                } else if (initialProgress != null && t.status == WatchStatus.COMPLETED.db) {
+                    // İlerlemesiz tamamlama: izlenen bölüm = toplam (film için 1)
+                    val episodes = t.totalEpisodes ?: 1
+                    repo.insertWatchLog(
+                        WatchLog(
+                            titleId = t.id,
+                            profileId = initialProgress.first,
+                            date = t.finishDate ?: java.time.LocalDate.now().toString(),
+                            episodesWatched = episodes,
                         )
                     )
                 }
@@ -148,7 +259,11 @@ class DetailViewModel : ViewModel() {
                     repo.upsertTitleScore(score.copy(titleId = t.id))
                     repo.refreshCoupleScore(t.id)
                 }
-            }.onSuccess { onDone() }
+            }.onSuccess {
+                // Rozetleri kayıttan hemen sonra değerlendir
+                launch { com.sinop.minimuv.data.AchievementChecker.checkAndUnlock(repo) }
+                onDone()
+            }
                 .onFailure {
                     android.util.Log.e("MinimuvDetail", "insertWithScore FAIL", it)
                     error.value = it.message
@@ -169,7 +284,7 @@ class DetailViewModel : ViewModel() {
             if (delta > 0) {
                 runCatching {
                     repo.insertWatchLog(
-                        com.sinop.minimuv.data.WatchLog(
+                        WatchLog(
                             titleId = titleId,
                             profileId = profileId,
                             date = java.time.LocalDate.now().toString(),
@@ -177,22 +292,6 @@ class DetailViewModel : ViewModel() {
                         )
                     )
                 }
-            }
-        }
-    }
-
-    fun logSharedProgress(titleId: String, profileId: String, delta: Int) {
-        if (delta <= 0) return
-        viewModelScope.launch {
-            runCatching {
-                repo.insertWatchLog(
-                    com.sinop.minimuv.data.WatchLog(
-                        titleId = titleId,
-                        profileId = profileId,
-                        date = java.time.LocalDate.now().toString(),
-                        episodesWatched = delta,
-                    )
-                )
             }
         }
     }

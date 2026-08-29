@@ -27,6 +27,7 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
@@ -51,6 +52,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -95,6 +97,7 @@ fun ListScreen(
     vm: ListViewModel,
     onOpenTitle: (String) -> Unit,
     onOpenPlanOrder: () -> Unit,
+    onEditTitle: (String) -> Unit = {},
 ) {
     val titles by vm.titles.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
@@ -235,6 +238,7 @@ fun ListScreen(
                             titles = filtered,
                             profiles = profiles,
                             onOpenTitle = onOpenTitle,
+                            onEditTitle = onEditTitle,
                             onOpenPlanOrder = onOpenPlanOrder,
                         )
                     } else if (filters.status == WatchStatus.PLAN && filters.sort == SortOption.PRIORITY) {
@@ -244,7 +248,7 @@ fun ListScreen(
                             onOpenTitle = onOpenTitle,
                         )
                     } else {
-                        TitleGrid(filtered, profiles, onOpenTitle)
+                        TitleGrid(filtered, profiles, onOpenTitle, onEditTitle)
                     }
                 }
             }
@@ -285,11 +289,16 @@ private fun GroupedLibrary(
     titles: List<Title>,
     profiles: List<com.sinop.minimuv.data.Profile>,
     onOpenTitle: (String) -> Unit,
+    onEditTitle: (String) -> Unit,
     onOpenPlanOrder: () -> Unit,
 ) {
     val sections = WatchStatus.entries.mapNotNull { s ->
         val items = titles.filter { it.status == s.db }
         if (items.isEmpty()) null else s to items
+    }
+    // Katlı bölümler (anahtar = durum db değeri)
+    var collapsedKeys by androidx.compose.runtime.saveable.rememberSaveable {
+        mutableStateOf(emptySet<String>())
     }
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -301,6 +310,20 @@ private fun GroupedLibrary(
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         sections.forEach { (status, rawItems) ->
+            val collapsed = status.db in collapsedKeys
+            if (collapsed) {
+                item(key = "header_${status.db}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(3) }) {
+                    SectionHeader(
+                        status = status,
+                        count = rawItems.size,
+                        collapsed = true,
+                        onToggle = { collapsedKeys = collapsedKeys - status.db },
+                        showPlanOrder = false,
+                        onOpenPlanOrder = onOpenPlanOrder,
+                    )
+                }
+                return@forEach
+            }
             // Sırada bölümü seçtiğimiz izleme sırasına göre dizilir
             val items = if (status == WatchStatus.PLAN) {
                 rawItems.sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
@@ -308,41 +331,14 @@ private fun GroupedLibrary(
                 rawItems
             }
             item(key = "header_${status.db}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(3) }) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(top = 14.dp, bottom = 2.dp),
-                ) {
-                    Box(
-                        Modifier
-                            .size(9.dp)
-                            .clip(androidx.compose.foundation.shape.CircleShape)
-                            .background(com.sinop.minimuv.ui.theme.statusColor(status.db)),
-                    )
-                    Spacer(Modifier.width(7.dp))
-                    Text(
-                        status.label,
-                        style = MaterialTheme.typography.titleMedium,
-                        color = com.sinop.minimuv.ui.theme.statusColor(status.db),
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "${items.size}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextSecondary,
-                    )
-                    if (status == WatchStatus.PLAN && items.size > 1) {
-                        Spacer(Modifier.weight(1f))
-                        Text(
-                            "↕ Sırayı düzenle",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(50))
-                                .clickable(onClick = onOpenPlanOrder)
-                                .padding(horizontal = 8.dp, vertical = 4.dp),
-                        )
-                    }
-                }
+                SectionHeader(
+                    status = status,
+                    count = items.size,
+                    collapsed = false,
+                    onToggle = { collapsedKeys = collapsedKeys + status.db },
+                    showPlanOrder = status == WatchStatus.PLAN && items.size > 1,
+                    onOpenPlanOrder = onOpenPlanOrder,
+                )
             }
             items(items, key = { it.id }) { title ->
                 PosterCard(
@@ -352,8 +348,68 @@ private fun GroupedLibrary(
                     } else null,
                     creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
                     onClick = { onOpenTitle(title.id) },
+                    onLongClick = { onEditTitle(title.id) },
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun SectionHeader(
+    status: WatchStatus,
+    count: Int,
+    collapsed: Boolean,
+    onToggle: () -> Unit,
+    showPlanOrder: Boolean,
+    onOpenPlanOrder: () -> Unit,
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .padding(top = 14.dp, bottom = 2.dp)
+            .clip(RoundedCornerShape(10.dp))
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 4.dp, vertical = 2.dp),
+    ) {
+        Box(
+            Modifier
+                .size(9.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(com.sinop.minimuv.ui.theme.statusColor(status.db)),
+        )
+        Spacer(Modifier.width(7.dp))
+        Text(
+            status.label,
+            style = MaterialTheme.typography.titleMedium,
+            color = com.sinop.minimuv.ui.theme.statusColor(status.db),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "$count",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextSecondary,
+        )
+        Spacer(Modifier.width(6.dp))
+        Icon(
+            Icons.Filled.KeyboardArrowDown,
+            contentDescription = if (collapsed) "Bölümü aç" else "Bölümü küçült",
+            modifier = Modifier
+                .size(18.dp)
+                .rotate(if (collapsed) -90f else 0f),
+            tint = TextSecondary,
+        )
+        if (showPlanOrder) {
+            Spacer(Modifier.weight(1f))
+            Text(
+                "↕ Sırayı düzenle",
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.primary,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .clickable(onClick = onOpenPlanOrder)
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
     }
 }
@@ -363,6 +419,7 @@ private fun TitleGrid(
     titles: List<Title>,
     profiles: List<com.sinop.minimuv.data.Profile>,
     onOpenTitle: (String) -> Unit,
+    onEditTitle: (String) -> Unit = {},
 ) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(3),
@@ -378,6 +435,7 @@ private fun TitleGrid(
                 title,
                 creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
                 onClick = { onOpenTitle(title.id) },
+                onLongClick = { onEditTitle(title.id) },
             )
         }
     }

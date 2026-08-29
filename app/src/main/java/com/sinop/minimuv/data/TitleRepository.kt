@@ -66,6 +66,12 @@ class TitleRepository {
             .select { filter { eq("title_id", titleId) } }
             .decodeList<TitleScore>()
 
+    /** Tüm kişi-bazlı puanlar (rozet istatistikleri için). */
+    suspend fun getAllTitleScores(): List<TitleScore> =
+        SupabaseProvider.client.postgrest.from("title_scores")
+            .select()
+            .decodeList<TitleScore>()
+
     suspend fun upsertTitleScore(score: TitleScore) {
         val existing = SupabaseProvider.client.postgrest.from("title_scores")
             .select {
@@ -162,16 +168,70 @@ class TitleRepository {
         }
     }
 
+    // ── Başlık notları (tek tek) ─────────────────────────────────────────
+
+    suspend fun getTitleNotes(titleId: String): List<TitleNote> =
+        SupabaseProvider.client.postgrest.from("title_notes")
+            .select {
+                filter { eq("title_id", titleId) }
+                order("created_at", Order.ASCENDING)
+            }
+            .decodeList<TitleNote>()
+
+    suspend fun insertTitleNote(note: TitleNote) {
+        SupabaseProvider.client.postgrest.from("title_notes").insert(note)
+    }
+
+    suspend fun updateTitleNote(id: String, text: String) {
+        SupabaseProvider.client.postgrest.from("title_notes").update(
+            { set("note_text", text) }
+        ) {
+            filter { eq("id", id) }
+        }
+    }
+
+    suspend fun deleteTitleNote(id: String) {
+        SupabaseProvider.client.postgrest.from("title_notes").delete {
+            filter { eq("id", id) }
+        }
+    }
+
+    suspend fun getAllTitleNotes(): List<TitleNote> =
+        SupabaseProvider.client.postgrest.from("title_notes")
+            .select()
+            .decodeList<TitleNote>()
+
     // ── İzleme günlüğü ───────────────────────────────────────────────────
 
-    suspend fun getWatchLog(): List<WatchLog> =
-        SupabaseProvider.client.postgrest.from("watch_log")
-            .select()
-            .decodeList<WatchLog>()
+    /** İzleme günlüğünü sayfalar halinde çeker — PostgREST varsayılan 1000 satır
+     *  limiti nedeniyle eski kayıtların sessizce kaybolmasını engeller. */
+    suspend fun getWatchLog(): List<WatchLog> {
+        val all = mutableListOf<WatchLog>()
+        val pageSize = 1000L
+        var offset = 0L
+        while (true) {
+            val page = SupabaseProvider.client.postgrest.from("watch_log")
+                .select {
+                    order("date", Order.ASCENDING)
+                    range(offset, offset + pageSize - 1)
+                }
+                .decodeList<WatchLog>()
+            all += page
+            if (page.size < pageSize) break
+            offset += pageSize
+            if (offset > 20_000) break // güvenlik sınırı
+        }
+        return all
+    }
 
     suspend fun insertWatchLog(entry: WatchLog) {
         SupabaseProvider.client.postgrest.from("watch_log").insert(entry)
     }
+
+    suspend fun getWatchLogForTitle(titleId: String): List<WatchLog> =
+        SupabaseProvider.client.postgrest.from("watch_log")
+            .select { filter { eq("title_id", titleId) } }
+            .decodeList<WatchLog>()
 
     // ── Partnere gizli mesaj ─────────────────────────────────────────────
 
