@@ -246,6 +246,16 @@ fun DetailScreen(
                             finishDate = java.time.LocalDate.now().toString()
                         }
                     },
+                    onStartRewatch = {
+                        // Yeniden izleme: durum İzliyoruz'a döner, sayaç artar, ilerleme sıfırlanır
+                        status = WatchStatus.WATCHING.db
+                        rewatches = rewatches + 1
+                        optSharedProgress = 0
+                        sharedTouched = true
+                        if (startDate == null) {
+                            startDate = java.time.LocalDate.now().toString()
+                        }
+                    },
                 )
 
                 EpisodesCard(
@@ -660,6 +670,10 @@ internal fun DetailViewContent(
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusChip(status)
+            if (rewatches > 0) {
+                Spacer(Modifier.width(8.dp))
+                com.sinop.minimuv.ui.components.RewatchBadge(rewatches)
+            }
             if (isFavorite) {
                 Spacer(Modifier.width(8.dp))
                 Text("❤️", style = MaterialTheme.typography.titleMedium)

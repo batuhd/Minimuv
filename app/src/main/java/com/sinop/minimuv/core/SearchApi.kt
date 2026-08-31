@@ -24,11 +24,69 @@ data class SearchResult(
     val externalId: String,
     val type: ContentType,
     val title: String,
+    val altTitle: String? = null,
     val year: String?,
     val posterUrl: String?,
     val overview: String?,
     val totalEpisodes: Int?,
 )
+
+/** Arama başlık dili: TR → Türkçe (anime için romaji), EN → İngilizce. */
+enum class TitleLanguage(val tmdb: String, val label: String) {
+    TR("tr-TR", "TR"),
+    EN("en-US", "EN");
+
+    companion object {
+        fun fromDb(value: String?): TitleLanguage =
+            entries.firstOrNull { it.name == value } ?: TR
+    }
+}
+
+/** Yazım hatalarına dayanıklı arama için ortak metin normalizasyonu. */
+object TextNormalizer {
+    private val foldMap = mapOf(
+        'ç' to 'c', 'ş' to 's', 'ğ' to 'g', 'ı' to 'i', 'ö' to 'o', 'ü' to 'u',
+        'â' to 'a', 'î' to 'i', 'û' to 'u', 'é' to 'e', 'è' to 'e', 'ê' to 'e',
+        'á' to 'a', 'à' to 'a', 'ä' to 'a', 'å' to 'a', 'í' to 'i', 'ì' to 'i',
+        'ï' to 'i', 'ó' to 'o', 'ò' to 'o', 'ô' to 'o', 'ú' to 'u', 'ù' to 'u',
+        'ñ' to 'n',
+    )
+
+    /** Küçük harf + Türkçe/aksan katlama + noktalama temizliği + boşluk sıkıştırma. */
+    fun fold(input: String): String {
+        val folded = input.lowercase().map { foldMap[it] ?: it }.joinToString("")
+        return folded
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    /** İki normalize edilmiş metin arası benzerlik 0..1. */
+    fun similarity(a: String, b: String): Double {
+        if (a.isBlank() || b.isBlank()) return 0.0
+        if (b.contains(a) || a.contains(b)) return 1.0
+        val dist = levenshtein(a, b)
+        return (1.0 - dist.toDouble() / maxOf(a.length, b.length)).coerceIn(0.0, 1.0)
+    }
+
+    private fun levenshtein(a: String, b: String): Int {
+        if (a.isEmpty()) return b.length
+        if (b.isEmpty()) return a.length
+        var prev = IntArray(b.length + 1) { it }
+        var curr = IntArray(b.length + 1)
+        for (i in 1..a.length) {
+            curr[0] = i
+            for (j in 1..b.length) {
+                val cost = if (a[i - 1] == b[j - 1]) 0 else 1
+                curr[j] = minOf(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + cost)
+            }
+            val tmp = prev
+            prev = curr
+            curr = tmp
+        }
+        return prev[b.length]
+    }
+}
 
 // ── Detay sayfası zengin bilgisi (puan, tür, stüdyo, oyuncular…) ─────────
 
@@ -73,7 +131,8 @@ object SearchApi {
             size > CACHE_MAX
     }
 
-    private fun cacheKey(type: ContentType, query: String) = "${type.db}|${query.trim().lowercase()}"
+    private fun cacheKey(type: ContentType, query: String, lang: TitleLanguage) =
+        "${type.db}|${lang.name}|${query.trim().lowercase()}"
 
     // ── Detay önbelleği ──────────────────────────────────────────────────
     private const val DETAILS_CACHE_MAX = 60
@@ -98,16 +157,75 @@ object SearchApi {
         return fetched
     }
 
-    suspend fun search(type: ContentType, query: String): List<SearchResult> {
+    suspend fun search(type: ContentType, query: String, lang: TitleLanguage = TitleLanguage.TR): List<SearchResult> {
         if (query.isBlank()) return emptyList()
-        val key = cacheKey(type, query)
+        val key = cacheKey(type, query, lang)
         synchronized(cache) { cache[key] }?.let { return it }
-        val results = when (type) {
-            ContentType.ANIME -> searchWithRetry { searchAniList(query) }
-            else -> searchWithRetry { searchTmdb(type, query) }
+
+        // Yazım toleransı: önce ham sorgu, yetersizse normalize edilmiş sorgu,
+        // yine yetersizse anlamlı kelimelerle tek tek arama. Sonuçlar birleştirilir.
+        val raw = query.trim()
+        val normalized = TextNormalizer.fold(raw)
+        val altLang = if (lang == TitleLanguage.TR) TitleLanguage.EN else TitleLanguage.TR
+        // Yazım toleransı: önce seçilen dilde ham/normalize sorgu, sonra diğer dilde
+        // (İngilizce eşleşme daha geniştir), yetersizse önek varyantları ve kelime araması.
+        val strategies = buildList {
+            add(raw to lang)
+            if (normalized.isNotBlank() && normalized != raw.lowercase()) add(normalized to lang)
+            if (altLang != lang) {
+                add(raw to altLang)
+                if (normalized.isNotBlank() && normalized != raw.lowercase()) add(normalized to altLang)
+            }
+            if (normalized.isNotBlank()) {
+                val words = normalized.split(' ')
+                    .filter { it.length >= 3 }
+                    .distinct()
+                val topWords = words.sortedByDescending { it.length }.take(3)
+                topWords.forEach { if (it != normalized) add(it to lang) }
+                // Tek kelimelik sorgularda hafif yazım hataları için önek varyantları
+                // (örn. "inceprion" → "inceprio" → "incepri", TMDB önek eşleşmesi yapar)
+                if (words.size == 1 && words[0].length >= 6) {
+                    add(words[0].take(words[0].length - 1) to lang)
+                    add(words[0].take(words[0].length - 2) to lang)
+                }
+            }
         }
-        synchronized(cache) { cache[key] = results }
+
+        val merged = mutableListOf<SearchResult>()
+        val seen = mutableSetOf<String>()
+        for ((index, strategy) in strategies.withIndex()) {
+            val (q, qLang) = strategy
+            val page = runCatching {
+                searchWithRetry {
+                    when (type) {
+                        ContentType.ANIME -> searchAniList(q, qLang)
+                        else -> searchTmdb(type, q, qLang)
+                    }
+                }
+            }.getOrDefault(emptyList())
+            for (result in page) {
+                if (seen.add(result.externalId)) merged += result
+            }
+            if (merged.size >= 6) break
+            if (index >= 1 && merged.size >= 3) break
+        }
+
+        val ranked = rankResults(merged, normalized)
+        synchronized(cache) { cache[key] = ranked }
+        return ranked
+    }
+
+    /** Sonuçları sorguya benzerlikle en alakalıdan sıralar (başlık + alternatif başlık). */
+    private fun rankResults(results: List<SearchResult>, queryFolded: String): List<SearchResult> {
+        if (queryFolded.isBlank() || results.size < 2) return results
         return results
+            .map { r ->
+                val titleScore = TextNormalizer.similarity(queryFolded, TextNormalizer.fold(r.title))
+                val altScore = r.altTitle?.let { TextNormalizer.similarity(queryFolded, TextNormalizer.fold(it)) } ?: -1.0
+                r to maxOf(titleScore, altScore)
+            }
+            .sortedByDescending { it.second }
+            .map { it.first }
     }
 
     /** Geçici hatalarda üstel beklemeyle yeniden dener (toplam 3 deneme).
@@ -141,7 +259,7 @@ object SearchApi {
         return text?.takeIf { it.isNotBlank() }
     }
 
-    suspend fun searchAniList(query: String): List<SearchResult> {
+    suspend fun searchAniList(query: String, lang: TitleLanguage): List<SearchResult> {
         if (query.isBlank()) return emptyList()
         val graphQl = """
             query (${'$'}search: String) {
@@ -172,10 +290,19 @@ object SearchApi {
             throw IllegalStateException("AniList: $firstError")
         }
         return response.data?.page?.media.orEmpty().mapNotNull { media ->
+            val title = when (lang) {
+                TitleLanguage.EN -> media.title.english ?: media.title.romaji
+                TitleLanguage.TR -> media.title.romaji ?: media.title.english
+            } ?: "?"
+            val alt = when (lang) {
+                TitleLanguage.EN -> media.title.romaji
+                TitleLanguage.TR -> media.title.english
+            }?.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) }
             SearchResult(
                 externalId = media.id.toString(),
                 type = ContentType.ANIME,
-                title = media.title.english ?: media.title.romaji ?: "?",
+                title = title,
+                altTitle = alt,
                 year = media.seasonYear?.toString(),
                 posterUrl = media.coverImage?.extraLarge,
                 overview = cleanOverview(media.description),
@@ -184,21 +311,24 @@ object SearchApi {
         }
     }
 
-    suspend fun searchTmdb(type: ContentType, query: String): List<SearchResult> {
+    suspend fun searchTmdb(type: ContentType, query: String, lang: TitleLanguage): List<SearchResult> {
         if (query.isBlank()) return emptyList()
         val endpoint = if (type == ContentType.FILM) "search/movie" else "search/tv"
         val response = client.get("https://api.themoviedb.org/3/$endpoint") {
             parameter("api_key", TMDB_API_KEY)
             parameter("query", query)
-            parameter("language", "tr-TR")
+            parameter("language", lang.tmdb)
             parameter("include_adult", "false")
         }.body<TmdbSearchResponse>()
         return response.results.orEmpty().mapNotNull { item ->
             if (item.posterPath == null) return@mapNotNull null
+            val title = item.title ?: item.name ?: "?"
+            val original = item.originalTitle ?: item.originalName
             SearchResult(
                 externalId = item.id.toString(),
                 type = type,
-                title = item.title ?: item.name ?: "?",
+                title = title,
+                altTitle = original?.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) },
                 year = (item.releaseDate ?: item.firstAirDate)?.take(4),
                 posterUrl = "https://image.tmdb.org/t/p/w500${item.posterPath}",
                 overview = cleanOverview(item.overview),
@@ -372,6 +502,8 @@ private data class TmdbItem(
     val id: Int,
     val title: String? = null,
     val name: String? = null,
+    @SerialName("original_title") val originalTitle: String? = null,
+    @SerialName("original_name") val originalName: String? = null,
     @SerialName("poster_path") val posterPath: String? = null,
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,

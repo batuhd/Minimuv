@@ -119,6 +119,50 @@ fun SettingsScreen(
         Spacer(Modifier.padding(top = 14.dp))
         SectionCard("Bildirimler") {
             BatteryOptimizationRow()
+            var testSent by remember { mutableStateOf(false) }
+            var checkRun by remember { mutableStateOf(false) }
+            val context = LocalContext.current
+            SettingsRow("🔔 Test bildirimi gönder") {
+                runCatching {
+                    com.sinop.minimuv.core.NotificationHelper.ensureChannels(context)
+                    com.sinop.minimuv.core.NotificationHelper.show(
+                        context,
+                        "Test bildirimi 🔔",
+                        "Minimuv bildirimleri çalışıyor!",
+                        (System.currentTimeMillis() % Int.MAX_VALUE).toInt(),
+                    )
+                }
+                testSent = true
+            }
+            if (testSent) {
+                Text(
+                    "Gönderildi — bildirim çubuğunu kontrol et ✅",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
+            SettingsRow("🔄 Kontrolleri şimdi çalıştır") {
+                runCatching {
+                    val request = androidx.work.OneTimeWorkRequestBuilder<com.sinop.minimuv.core.NotificationWorker>()
+                        .setConstraints(
+                            androidx.work.Constraints.Builder()
+                                .setRequiredNetworkType(androidx.work.NetworkType.CONNECTED)
+                                .build(),
+                        )
+                        .build()
+                    androidx.work.WorkManager.getInstance(context).enqueue(request)
+                }
+                checkRun = true
+            }
+            if (checkRun) {
+                Text(
+                    "Kontrol sıraya alındı — yeni olay varsa bu cihazda bildirim düşer.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                    modifier = Modifier.padding(vertical = 4.dp),
+                )
+            }
             Text(
                 "Uygulama kapalıyken bile ~15 dakikada bir kontrol edip bildirim düşürürüz. Kalıcı bildirim göstermeyiz.",
                 style = MaterialTheme.typography.bodySmall,

@@ -118,25 +118,39 @@ fun ProfileScreen(
     }
 
     // Seçilen/kırpılan görüntüyü IO'da küçültüp yükler — ana iş parçacığında
-    // tam boy okuma yapılmaz (OOM/ANR çökmesi önlenir).
+    // tam boy okuma yapılmaz (OOM/ANR çökmesi önlenir). Her adım loglanır;
+    // beklenmedik hata uygulamayı düşürmez, sessizce geri döner.
     fun handlePickedImage(uri: android.net.Uri) {
         val target = editing
         if (target == null) return
         scope.launch {
-            val bytes = decodeScaledJpeg(context, uri)
-            if (bytes != null) {
+            try {
+                val bytes = decodeScaledJpeg(context, uri)
+                if (bytes == null) {
+                    android.util.Log.e("MinimuvPhoto", "decode başarısız: $uri")
+                    return@launch
+                }
+                android.util.Log.d("MinimuvPhoto", "decode ok: ${bytes.size} bayt")
                 runCatching {
                     val url = repo.uploadAvatar(target.id, bytes)
+                    android.util.Log.d("MinimuvPhoto", "upload ok: $url")
                     repo.updateProfile(target.id, avatarUrl = url)
+                    android.util.Log.d("MinimuvPhoto", "profil güncellendi")
+                }.onFailure { e ->
+                    android.util.Log.e("MinimuvPhoto", "upload/update hatası", e)
                 }
                 reload()
+            } catch (t: Throwable) {
+                android.util.Log.e("MinimuvPhoto", "beklenmedik hata", t)
+            } finally {
+                editing = null
             }
-            editing = null
         }
     }
 
     // 1. adım: sistem galerisinden seç
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
+        android.util.Log.d("MinimuvPhoto", "galeri seçimi: $uri")
         if (uri != null) pendingCropUri = uri
     }
     // 2. adım: kare kırpma — başlatılamazsa kırpmasız devam edilir
@@ -144,8 +158,10 @@ fun ProfileScreen(
         pendingCropUri = null
         if (result.isSuccessful) {
             val croppedUri = result.uriContent
+            android.util.Log.d("MinimuvPhoto", "kırpma ok: $croppedUri")
             if (croppedUri != null) handlePickedImage(croppedUri) else editing = null
         } else {
+            android.util.Log.e("MinimuvPhoto", "kırpma iptal/hata: ${result.error}")
             editing = null
         }
     }
@@ -311,7 +327,9 @@ fun ProfileScreen(
                     ),
                 ),
             )
-        }.isSuccess
+        }
+            .onFailure { e -> android.util.Log.e("MinimuvPhoto", "kırpma başlatılamadı", e) }
+            .isSuccess
         if (!launched) {
             pendingCropUri = null
             handlePickedImage(uri)
@@ -515,22 +533,28 @@ private fun SettingsRow(label: String, color: Color = MaterialTheme.colorScheme.
 
 private suspend fun decodeScaledJpeg(context: android.content.Context, uri: android.net.Uri, maxSize: Int = 512): ByteArray? =
     withContext(Dispatchers.IO) {
-        // Önce sadece boyutları öğren — tam boy bitmap belleğe alınmaz (OOM koruması)
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, bounds)
+        try {
+            // Önce sadece boyutları öğren — tam boy bitmap belleğe alınmaz (OOM koruması)
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            context.contentResolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, bounds)
+            }
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
+            var sample = 1
+            while (bounds.outWidth / sample > maxSize || bounds.outHeight / sample > maxSize) {
+                sample *= 2
+            }
+            val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+            val bmp = context.contentResolver.openInputStream(uri)?.use { input ->
+                BitmapFactory.decodeStream(input, null, opts)
+            } ?: return@withContext null
+            val out = ByteArrayOutputStream()
+            bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
+            bmp.recycle()
+            out.toByteArray()
+        } catch (t: Throwable) {
+            // OOM dahil her hata: fotoğraf akışı uygulamayı düşürmesin
+            android.util.Log.e("MinimuvPhoto", "decode exception", t)
+            null
         }
-        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@withContext null
-        var sample = 1
-        while (bounds.outWidth / sample > maxSize || bounds.outHeight / sample > maxSize) {
-            sample *= 2
-        }
-        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
-        val bmp = context.contentResolver.openInputStream(uri)?.use { input ->
-            BitmapFactory.decodeStream(input, null, opts)
-        } ?: return@withContext null
-        val out = ByteArrayOutputStream()
-        bmp.compress(Bitmap.CompressFormat.JPEG, 85, out)
-        bmp.recycle()
-        out.toByteArray()
     }

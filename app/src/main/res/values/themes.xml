@@ -4,4 +4,10 @@
     <style name="Theme.Minimuv" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">#0E1116</item>
     </style>
+
+    <!-- Kırpma etkinliği (canhub cropper) AppCompat soyundan tema zorunlu kılar.
+         Onay/çevir butonları aksiyon çubuğunda olduğu için NoActionBar OLAMAZ. -->
+    <style name="Theme.Minimuv.Crop" parent="Theme.AppCompat">
+        <item name="android:windowBackground">#0E1116</item>
+    </style>
 </resources>

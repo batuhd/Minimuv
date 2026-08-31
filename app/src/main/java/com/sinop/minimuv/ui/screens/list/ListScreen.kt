@@ -1,9 +1,11 @@
 package com.sinop.minimuv.ui.screens.list
 
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,17 +21,22 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.ViewAgenda
+import androidx.compose.material.icons.filled.ViewHeadline
+import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,30 +55,39 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.sinop.minimuv.core.TextNormalizer
 import com.sinop.minimuv.data.ContentType
+import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.WatchStatus
 import com.sinop.minimuv.ui.components.EmptyState
 import com.sinop.minimuv.ui.components.PosterCard
-import com.sinop.minimuv.ui.components.ScoreBadge
 import com.sinop.minimuv.ui.components.SectionTitle
 import com.sinop.minimuv.ui.components.SoftChip
+import com.sinop.minimuv.ui.components.StatusChip
+import com.sinop.minimuv.ui.theme.Baloo2
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.OutlineSoft
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.statusColor
 import com.sinop.minimuv.ui.theme.typeColor
 import com.sinop.minimuv.ui.theme.typeEmoji
+import java.util.Locale
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyColumnState
@@ -82,6 +98,29 @@ enum class SortOption(val label: String) {
     TITLE("İsim"),
     PRIORITY("Öncelik"),
 }
+
+/** Kütüphane görünümü — soldan sağa: en yoğundan en görsel ağırlıklıya. */
+enum class ViewMode(val label: String) {
+    COMPACT("Kompakt liste"),
+    ROWS("Poster satırları"),
+    GRID_3("3'lü ızgara"),
+    GRID_2("2'li büyük ızgara");
+
+    companion object {
+        fun fromDb(value: String?): ViewMode = entries.firstOrNull { it.name == value } ?: GRID_3
+    }
+}
+
+private fun ViewMode.icon(): ImageVector = when (this) {
+    ViewMode.COMPACT -> Icons.Filled.ViewHeadline
+    ViewMode.ROWS -> Icons.Filled.ViewAgenda
+    ViewMode.GRID_3 -> Icons.Filled.GridView
+    ViewMode.GRID_2 -> Icons.Filled.ViewModule
+}
+
+/** Eski "Rewatching" kayıtları artık "İzliyoruz" altında gösterilir. */
+private fun statusGroup(db: String): String =
+    if (db == WatchStatus.REWATCHING.db) WatchStatus.WATCHING.db else db
 
 data class ListFilters(
     val type: ContentType? = null,
@@ -95,6 +134,8 @@ data class ListFilters(
 @Composable
 fun ListScreen(
     vm: ListViewModel,
+    viewMode: ViewMode,
+    onViewModeChange: (ViewMode) -> Unit,
     onOpenTitle: (String) -> Unit,
     onOpenPlanOrder: () -> Unit,
     onEditTitle: (String) -> Unit = {},
@@ -105,6 +146,7 @@ fun ListScreen(
     var query by remember { mutableStateOf("") }
     var filters by remember { mutableStateOf(ListFilters()) }
     var drawerOpen by remember { mutableStateOf(false) }
+    var collapsedSections by rememberSaveable { mutableStateOf(emptySet<String>()) }
     val drawerState = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
 
@@ -174,11 +216,48 @@ fun ListScreen(
                 }
             }
 
+            // Görünüm değiştirici: kompakt → satırlar → 3'lü ızgara → 2'li büyük
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                ViewMode.entries.forEach { mode ->
+                    val selected = viewMode == mode
+                    Box(
+                        Modifier
+                            .size(34.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .background(
+                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
+                                else MidnightCard
+                            )
+                            .clickable { onViewModeChange(mode) },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            mode.icon(),
+                            contentDescription = mode.label,
+                            tint = if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
+                            modifier = Modifier.size(18.dp),
+                        )
+                    }
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(
+                    viewMode.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                )
+            }
+
             // Tür sekmeleri
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 SoftChip(
@@ -237,6 +316,12 @@ fun ListScreen(
                         GroupedLibrary(
                             titles = filtered,
                             profiles = profiles,
+                            viewMode = viewMode,
+                            collapsedSections = collapsedSections,
+                            onToggleSection = { key ->
+                                collapsedSections = if (key in collapsedSections) collapsedSections - key
+                                else collapsedSections + key
+                            },
                             onOpenTitle = onOpenTitle,
                             onEditTitle = onEditTitle,
                             onOpenPlanOrder = onOpenPlanOrder,
@@ -248,7 +333,7 @@ fun ListScreen(
                             onOpenTitle = onOpenTitle,
                         )
                     } else {
-                        TitleGrid(filtered, profiles, onOpenTitle, onEditTitle)
+                        FlatLibrary(filtered, profiles, viewMode, onOpenTitle, onEditTitle)
                     }
                 }
             }
@@ -260,11 +345,11 @@ private fun filterAndSort(
     titles: List<Title>,
     query: String,
     filters: ListFilters,
-    profiles: List<com.sinop.minimuv.data.Profile>,
+    profiles: List<Profile>,
 ): List<Title> {
     val result = titles.filter { t ->
-        val q = query.trim().lowercase()
-        val matchesQuery = q.isBlank() || t.title.lowercase().contains(q)
+        val q = TextNormalizer.fold(query)
+        val matchesQuery = q.isBlank() || TextNormalizer.fold(t.title).contains(q)
         val matchesType = filters.type == null || t.type == filters.type!!.db
         val matchesStatus = filters.status == null || t.status == filters.status!!.db
         val matchesCustomList = filters.customList == null || t.customLists.contains(filters.customList)
@@ -287,71 +372,271 @@ private fun filterAndSort(
 @Composable
 private fun GroupedLibrary(
     titles: List<Title>,
-    profiles: List<com.sinop.minimuv.data.Profile>,
+    profiles: List<Profile>,
+    viewMode: ViewMode,
+    collapsedSections: Set<String>,
+    onToggleSection: (String) -> Unit,
     onOpenTitle: (String) -> Unit,
     onEditTitle: (String) -> Unit,
     onOpenPlanOrder: () -> Unit,
 ) {
     val sections = WatchStatus.entries.mapNotNull { s ->
-        val items = titles.filter { it.status == s.db }
+        val items = titles.filter { statusGroup(it.status) == s.db }
         if (items.isEmpty()) null else s to items
     }
-    // Katlı bölümler (anahtar = durum db değeri)
-    var collapsedKeys by androidx.compose.runtime.saveable.rememberSaveable {
-        mutableStateOf(emptySet<String>())
-    }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        sections.forEach { (status, rawItems) ->
-            val collapsed = status.db in collapsedKeys
-            if (collapsed) {
-                item(key = "header_${status.db}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(3) }) {
-                    SectionHeader(
-                        status = status,
-                        count = rawItems.size,
-                        collapsed = true,
-                        onToggle = { collapsedKeys = collapsedKeys - status.db },
-                        showPlanOrder = false,
-                        onOpenPlanOrder = onOpenPlanOrder,
-                    )
+    when (viewMode) {
+        ViewMode.GRID_3, ViewMode.GRID_2 -> {
+            val columns = if (viewMode == ViewMode.GRID_3) 3 else 2
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                sections.forEach { (status, rawItems) ->
+                    val collapsed = status.db in collapsedSections
+                    if (collapsed) {
+                        item(key = "header_${status.db}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(columns) }) {
+                            SectionHeader(
+                                status = status,
+                                count = rawItems.size,
+                                collapsed = true,
+                                onToggle = { onToggleSection(status.db) },
+                                showPlanOrder = false,
+                                onOpenPlanOrder = onOpenPlanOrder,
+                            )
+                        }
+                        return@forEach
+                    }
+                    // Sırada bölümü seçtiğimiz izleme sırasına göre dizilir
+                    val sectionItems = if (status == WatchStatus.PLAN) {
+                        rawItems.sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
+                    } else {
+                        rawItems
+                    }
+                    item(key = "header_${status.db}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(columns) }) {
+                        SectionHeader(
+                            status = status,
+                            count = sectionItems.size,
+                            collapsed = false,
+                            onToggle = { onToggleSection(status.db) },
+                            showPlanOrder = status == WatchStatus.PLAN && sectionItems.size > 1,
+                            onOpenPlanOrder = onOpenPlanOrder,
+                        )
+                    }
+                    items(items = sectionItems, key = { it.id }) { title ->
+                        PosterCard(
+                            title,
+                            priorityLabel = if (status == WatchStatus.PLAN && title.priorityOrder != null) {
+                                "${title.priorityOrder}. sırada"
+                            } else null,
+                            creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
+                            onClick = { onOpenTitle(title.id) },
+                            onLongClick = { onEditTitle(title.id) },
+                        )
+                    }
                 }
-                return@forEach
-            }
-            // Sırada bölümü seçtiğimiz izleme sırasına göre dizilir
-            val items = if (status == WatchStatus.PLAN) {
-                rawItems.sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
-            } else {
-                rawItems
-            }
-            item(key = "header_${status.db}", span = { androidx.compose.foundation.lazy.grid.GridItemSpan(3) }) {
-                SectionHeader(
-                    status = status,
-                    count = items.size,
-                    collapsed = false,
-                    onToggle = { collapsedKeys = collapsedKeys + status.db },
-                    showPlanOrder = status == WatchStatus.PLAN && items.size > 1,
-                    onOpenPlanOrder = onOpenPlanOrder,
-                )
-            }
-            items(items, key = { it.id }) { title ->
-                PosterCard(
-                    title,
-                    priorityLabel = if (status == WatchStatus.PLAN && title.priorityOrder != null) {
-                        "${title.priorityOrder}. sırada"
-                    } else null,
-                    creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
-                    onClick = { onOpenTitle(title.id) },
-                    onLongClick = { onEditTitle(title.id) },
-                )
             }
         }
+        else -> {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                sections.forEach { (status, rawItems) ->
+                    val collapsed = status.db in collapsedSections
+                    val sectionItems = if (status == WatchStatus.PLAN) {
+                        rawItems.sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
+                    } else {
+                        rawItems
+                    }
+                    item(key = "header_${status.db}") {
+                        SectionHeader(
+                            status = status,
+                            count = sectionItems.size,
+                            collapsed = collapsed,
+                            onToggle = { onToggleSection(status.db) },
+                            showPlanOrder = status == WatchStatus.PLAN && sectionItems.size > 1,
+                            onOpenPlanOrder = onOpenPlanOrder,
+                        )
+                    }
+                    if (!collapsed) {
+                        items(items = sectionItems, key = { it.id }) { title ->
+                            TitleRow(
+                                title = title,
+                                viewMode = viewMode,
+                                priorityLabel = if (status == WatchStatus.PLAN && title.priorityOrder != null) {
+                                    "${title.priorityOrder}. sırada"
+                                } else null,
+                                onClick = { onOpenTitle(title.id) },
+                                onLongClick = { onEditTitle(title.id) },
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FlatLibrary(
+    titles: List<Title>,
+    profiles: List<Profile>,
+    viewMode: ViewMode,
+    onOpenTitle: (String) -> Unit,
+    onEditTitle: (String) -> Unit = {},
+) {
+    when (viewMode) {
+        ViewMode.GRID_3, ViewMode.GRID_2 -> {
+            val columns = if (viewMode == ViewMode.GRID_3) 3 else 2
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(columns),
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                items(titles, key = { it.id }) { title ->
+                    PosterCard(
+                        title,
+                        creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
+                        onClick = { onOpenTitle(title.id) },
+                        onLongClick = { onEditTitle(title.id) },
+                    )
+                }
+            }
+        }
+        else -> {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp,
+                ),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                items(items = titles, key = { it.id }) { title ->
+                    TitleRow(
+                        title = title,
+                        viewMode = viewMode,
+                        priorityLabel = null,
+                        onClick = { onOpenTitle(title.id) },
+                        onLongClick = { onEditTitle(title.id) },
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun TitleRow(
+    title: Title,
+    viewMode: ViewMode,
+    priorityLabel: String?,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(MidnightCard)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
+            .padding(horizontal = 10.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (viewMode == ViewMode.ROWS) {
+            Box(
+                Modifier
+                    .width(42.dp)
+                    .aspectRatio(2f / 3f)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(MidnightElevated),
+            ) {
+                if (title.posterUrl != null) {
+                    AsyncImage(
+                        model = title.posterUrl,
+                        contentDescription = null,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+        } else {
+            Box(
+                Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(statusColor(title.status)),
+            )
+            Spacer(Modifier.width(10.dp))
+        }
+        Column(Modifier.weight(1f)) {
+            Text(
+                title.title,
+                style = MaterialTheme.typography.titleSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (viewMode == ViewMode.ROWS) {
+                Spacer(Modifier.height(2.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    StatusChip(title.status)
+                    if (title.totalRewatches > 0) {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "🔁 ${title.totalRewatches}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary,
+                        )
+                    }
+                    priorityLabel?.let {
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            it,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = typeColor(title.type),
+                        )
+                    }
+                }
+            }
+        }
+        title.score?.let { score ->
+            Text(
+                String.format(Locale.US, "★ %.1f", score),
+                style = MaterialTheme.typography.labelMedium,
+                color = Color(0xFFFFD166),
+                fontFamily = Baloo2,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+        }
+        Text(
+            if (title.type != "film") {
+                title.totalEpisodes?.let { "${title.episodeProgress}/$it" } ?: "${title.episodeProgress}"
+            } else "",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextSecondary,
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(52.dp),
+        )
+        Text(
+            ContentType.fromDb(title.type).label,
+            style = MaterialTheme.typography.labelMedium,
+            color = typeColor(title.type),
+            textAlign = TextAlign.End,
+            modifier = Modifier.width(48.dp),
+        )
     }
 }
 
@@ -375,14 +660,14 @@ private fun SectionHeader(
         Box(
             Modifier
                 .size(9.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(com.sinop.minimuv.ui.theme.statusColor(status.db)),
+                .clip(CircleShape)
+                .background(statusColor(status.db)),
         )
         Spacer(Modifier.width(7.dp))
         Text(
             status.label,
             style = MaterialTheme.typography.titleMedium,
-            color = com.sinop.minimuv.ui.theme.statusColor(status.db),
+            color = statusColor(status.db),
         )
         Spacer(Modifier.width(6.dp))
         Text(
@@ -409,33 +694,6 @@ private fun SectionHeader(
                     .clip(RoundedCornerShape(50))
                     .clickable(onClick = onOpenPlanOrder)
                     .padding(horizontal = 8.dp, vertical = 4.dp),
-            )
-        }
-    }
-}
-
-@Composable
-private fun TitleGrid(
-    titles: List<Title>,
-    profiles: List<com.sinop.minimuv.data.Profile>,
-    onOpenTitle: (String) -> Unit,
-    onEditTitle: (String) -> Unit = {},
-) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(3),
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = 16.dp, end = 16.dp, top = 4.dp, bottom = 96.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        items(titles, key = { it.id }) { title ->
-            PosterCard(
-                title,
-                creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
-                onClick = { onOpenTitle(title.id) },
-                onLongClick = { onEditTitle(title.id) },
             )
         }
     }
@@ -508,7 +766,7 @@ private fun PlanPriorityList(
                                 model = title.posterUrl,
                                 contentDescription = null,
                                 modifier = Modifier.fillMaxSize(),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                                contentScale = ContentScale.Crop,
                             )
                         }
                     }
@@ -583,7 +841,7 @@ private fun FilterPanel(
                     SoftChip(
                         label = status.label,
                         selected = filters.status == status,
-                        color = com.sinop.minimuv.ui.theme.statusColor(status.db),
+                        color = statusColor(status.db),
                         onClick = {
                             onChange(filters.copy(status = if (filters.status == status) null else status))
                         },

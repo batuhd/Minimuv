@@ -122,7 +122,11 @@ private fun EditSection(
 // ── 1. Durum ─────────────────────────────────────────────────────────────
 
 @Composable
-internal fun StatusCard(selected: String, onSelect: (String) -> Unit) {
+internal fun StatusCard(
+    selected: String,
+    onSelect: (String) -> Unit,
+    onStartRewatch: (() -> Unit)? = null,
+) {
     val current = WatchStatus.entries.firstOrNull { it.db == selected }
     EditSection(
         emoji = "🎯",
@@ -135,7 +139,8 @@ internal fun StatusCard(selected: String, onSelect: (String) -> Unit) {
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            WatchStatus.entries.forEach { s ->
+            // "Yeniden" ayrı durum değil artık — yeniden izleme sayacı ile izlenir.
+            WatchStatus.entries.filter { it != WatchStatus.REWATCHING }.forEach { s ->
                 SoftChip(
                     label = s.label,
                     selected = selected == s.db,
@@ -143,6 +148,19 @@ internal fun StatusCard(selected: String, onSelect: (String) -> Unit) {
                     onClick = { onSelect(s.db) },
                 )
             }
+        }
+        // Tamamlanmış/ara verilmiş yapımlar tekrar başlanabilir: sayaç artar, ilerleme sıfırlanır.
+        val rewatchable = selected == WatchStatus.COMPLETED.db ||
+            selected == WatchStatus.PAUSED.db ||
+            selected == WatchStatus.DROPPED.db
+        if (onStartRewatch != null && rewatchable) {
+            Spacer(Modifier.height(10.dp))
+            SoftChip(
+                label = "🔁 İzliyoruz'a al (yeniden)",
+                selected = false,
+                color = statusColor(WatchStatus.REWATCHING.db),
+                onClick = onStartRewatch,
+            )
         }
     }
 }

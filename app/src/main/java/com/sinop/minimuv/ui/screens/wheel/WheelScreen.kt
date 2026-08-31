@@ -14,10 +14,14 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -33,15 +37,27 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.clipPath
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil3.ImageLoader
+import coil3.decode.BitmapImage
+import coil3.request.ImageRequest
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.WatchStatus
@@ -53,12 +69,22 @@ import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.TextSecondary
 import com.sinop.minimuv.ui.theme.typeColor
 import com.sinop.minimuv.ui.theme.typeEmoji
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.PI
 import kotlin.math.cos
+import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
+
+// Dilim renkleri — canvas ve lejant aynı listeyi kullanır
+private val sliceColors = listOf(
+    Color(0xFF2A313C), MidnightElevated, Color(0xFF232B36), MidnightCard,
+)
 
 @Composable
 fun WheelScreen(onOpenTitle: (String) -> Unit) {
@@ -83,6 +109,9 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
     LaunchedEffect(pool.size) {
         winner = null
     }
+
+    // Dilimlerde gösterilecek afişler (poster yoksa numara gösterilir)
+    val posters = rememberPosterBitmaps(pool)
 
     fun spinWheel() {
         if (spinning || pool.isEmpty()) return
@@ -183,6 +212,7 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                 WheelCanvas(
                     titles = pool,
                     angle = rotation.value,
+                    posters = posters,
                     modifier = Modifier.size(320.dp),
                 )
                 // Merkezde çevir butonu
@@ -225,7 +255,54 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                 }
             }
 
-            Spacer(Modifier.height(24.dp))
+            Spacer(Modifier.height(14.dp))
+
+            // Çok içerikte dilimlerde yalnızca numara vardır — renk lejantı eşleştirir
+            if (pool.size > 8) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 120.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    Text(
+                        "Çarktaki numaralar:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                        modifier = Modifier.padding(bottom = 4.dp),
+                    )
+                    androidx.compose.foundation.layout.FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        pool.forEachIndexed { index, item ->
+                            Row(
+                                Modifier
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MidnightCard)
+                                    .padding(horizontal = 8.dp, vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Box(
+                                    Modifier
+                                        .size(10.dp)
+                                        .clip(CircleShape)
+                                        .background(sliceColors[index % sliceColors.size]),
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "${index + 1}. ${item.title.take(22)}${if (item.title.length > 22) "…" else ""}",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+
+            Spacer(Modifier.height(4.dp))
 
             if (winner != null) {
                 Box(
@@ -270,45 +347,137 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
     }
 }
 
+/** Çark dilimlerinde gösterilecek afişleri küçük boyutta yükler. */
 @Composable
-private fun WheelCanvas(titles: List<Title>, angle: Float, modifier: Modifier = Modifier) {
+private fun rememberPosterBitmaps(titles: List<Title>): Map<String, ImageBitmap> {
+    val context = LocalContext.current
+    val loader = remember(context) { ImageLoader.Builder(context).build() }
+    var bitmaps by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
+    LaunchedEffect(titles) {
+        val urls = titles.mapNotNull { it.posterUrl }.distinct()
+        if (urls.isEmpty()) {
+            bitmaps = emptyMap()
+            return@LaunchedEffect
+        }
+        val loaded = coroutineScope {
+            urls.map { url ->
+                async(Dispatchers.IO) {
+                    url to runCatching {
+                        loader.execute(
+                            ImageRequest.Builder(context)
+                                .data(url)
+                                .size(360)
+                                .crossfade(false)
+                                .build(),
+                        ).image
+                    }.getOrNull()
+                }
+            }.awaitAll()
+        }
+        bitmaps = loaded.mapNotNull { (url, image) ->
+            val bmp = (image as? BitmapImage)?.bitmap ?: return@mapNotNull null
+            url to bmp.asImageBitmap()
+        }.toMap()
+    }
+    return bitmaps
+}
+
+@Composable
+private fun WheelCanvas(
+    titles: List<Title>,
+    angle: Float,
+    posters: Map<String, ImageBitmap>,
+    modifier: Modifier = Modifier,
+) {
     val sliceAngle = 360f / titles.size
-    val colors = listOf(
-        Color(0xFF2A313C), MidnightElevated, Color(0xFF232B36), MidnightCard,
-    )
     val primary = MaterialTheme.colorScheme.primary
     Canvas(modifier) {
         val radius = size.minDimension / 2f
         val center = Offset(size.width / 2f, size.height / 2f)
+        val arcRect = Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius)
+        val innerR = radius * 0.30f
+        val outerR = radius * 0.98f
+        val textPaint = android.graphics.Paint().apply {
+            color = android.graphics.Color.parseColor("#F2EFE9")
+            textSize = 12.dp.toPx()
+            textAlign = android.graphics.Paint.Align.CENTER
+            isFakeBoldText = true
+        }
         titles.forEachIndexed { index, title ->
             // drawArc DERECE bekler; dönüşü doğrudan derece olarak ekle
             val startAngle = index * sliceAngle + angle
             val sweep = sliceAngle - 1.5f
             drawArc(
-                color = colors[index % colors.size],
+                color = sliceColors[index % sliceColors.size],
                 startAngle = startAngle,
                 sweepAngle = sweep,
                 useCenter = true,
-                topLeft = Offset(center.x - radius, center.y - radius),
-                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                topLeft = arcRect.topLeft,
+                size = arcRect.size,
             )
-            val midAngle = Math.toRadians((startAngle + sliceAngle / 2).toDouble())
-            val textRadius = radius * 0.62f
-            val x = center.x + cos(midAngle).toFloat() * textRadius
-            val y = center.y + sin(midAngle).toFloat() * textRadius
-            drawContext.canvas.save()
-            drawContext.canvas.nativeCanvas.rotate(startAngle + sliceAngle / 2 + 90f, x, y)
-            val textPaint = android.graphics.Paint().apply {
-                color = android.graphics.Color.parseColor("#F2EFE9")
-                textSize = 13.dp.toPx()
-                textAlign = android.graphics.Paint.Align.CENTER
-                isFakeBoldText = true
+            // Döndürülmüş uzayda dilim hep yukarı bakar; afişin üst kenarı dışa dönük kalır.
+            // Böylece kazanan dilim tepedeyken afiş dik durur.
+            val mid = startAngle + sliceAngle / 2f
+            rotate(degrees = mid - 270f, pivot = center) {
+                val halfRad = Math.toRadians((sweep / 2.0).toDouble())
+                val wedge = Path().apply {
+                    moveTo(center.x, center.y)
+                    lineTo(
+                        center.x - outerR * sin(halfRad).toFloat(),
+                        center.y - outerR * cos(halfRad).toFloat(),
+                    )
+                    arcTo(
+                        rect = arcRect,
+                        startAngleDegrees = -sweep / 2f,
+                        sweepAngleDegrees = sweep,
+                        forceMoveTo = false,
+                    )
+                    close()
+                }
+                val poster = title.posterUrl?.let { posters[it] }
+                if (poster != null) {
+                    clipPath(wedge) {
+                        val dstH = outerR - innerR
+                        val dstW = 2f * outerR * sin(halfRad).toFloat()
+                        val dstAspect = dstW / dstH
+                        val srcW = poster.width.toFloat()
+                        val srcH = poster.height.toFloat()
+                        val srcAspect = srcW / srcH
+                        var sx = 0f
+                        var sy = 0f
+                        var sW = srcW
+                        var sH = srcH
+                        if (srcAspect > dstAspect) {
+                            sW = srcH * dstAspect
+                            sx = (srcW - sW) / 2f
+                        } else {
+                            sH = srcW / dstAspect
+                            sy = (srcH - sH) / 2f
+                        }
+                        val bandMid = (innerR + outerR) / 2f
+                        drawImage(
+                            image = poster,
+                            srcOffset = IntOffset(sx.roundToInt(), sy.roundToInt()),
+                            srcSize = IntSize(sW.roundToInt(), sH.roundToInt()),
+                            dstOffset = IntOffset(
+                                (center.x - dstW / 2f).roundToInt(),
+                                (center.y - bandMid - dstH / 2f).roundToInt(),
+                            ),
+                            dstSize = IntSize(dstW.roundToInt(), dstH.roundToInt()),
+                        )
+                    }
+                } else {
+                    // Afiş yoksa numara — lejantla eşleşir
+                    drawContext.canvas.save()
+                    drawContext.canvas.nativeCanvas.drawText(
+                        "${index + 1}",
+                        center.x,
+                        center.y - radius * 0.63f,
+                        textPaint,
+                    )
+                    drawContext.canvas.restore()
+                }
             }
-            drawContext.canvas.nativeCanvas.drawText(
-                title.title.take(16) + if (title.title.length > 16) "…" else "",
-                x, y, textPaint,
-            )
-            drawContext.canvas.restore()
         }
         drawCircle(Color(0xFF0E1116), radius = radius * 0.22f, center = center)
         drawCircle(

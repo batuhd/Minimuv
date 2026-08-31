@@ -25,6 +25,8 @@ class SettingsStore(private val context: Context) {
         val KEY_SCORE_SNAPSHOT = stringPreferencesKey("score_snapshot")
         val KEY_LAST_TITLE_NOTE_AT = stringPreferencesKey("last_title_note_at")
         val KEY_LAST_EPISODE_NOTE_AT = stringPreferencesKey("last_episode_note_at")
+        val KEY_LIST_VIEW = stringPreferencesKey("list_view")
+        val KEY_SEARCH_LANG = stringPreferencesKey("search_lang")
     }
 
     val supabaseUrl: Flow<String?> = context.dataStore.data.map { it[KEY_SUPABASE_URL] }
@@ -32,6 +34,8 @@ class SettingsStore(private val context: Context) {
     val profileId: Flow<String?> = context.dataStore.data.map { it[KEY_PROFILE_ID] }
     val onboardingDone: Flow<Boolean> = context.dataStore.data.map { it[KEY_ONBOARDING_DONE] == "true" }
     val themeAccent: Flow<String?> = context.dataStore.data.map { it[KEY_THEME_ACCENT] }
+    val listView: Flow<String?> = context.dataStore.data.map { it[KEY_LIST_VIEW] }
+    val searchLang: Flow<String?> = context.dataStore.data.map { it[KEY_SEARCH_LANG] }
 
     /** null = henüz yüklenmedi; yüklendiyse içindeki değerler güvenilirdir. */
     val rawPrefs: Flow<androidx.datastore.preferences.core.Preferences> = context.dataStore.data
@@ -66,6 +70,14 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setThemeAccent(value: String) {
         context.dataStore.edit { it[KEY_THEME_ACCENT] = value }
+    }
+
+    suspend fun saveListView(value: String) {
+        context.dataStore.edit { it[KEY_LIST_VIEW] = value }
+    }
+
+    suspend fun saveSearchLang(value: String) {
+        context.dataStore.edit { it[KEY_SEARCH_LANG] = value }
     }
 
     suspend fun clearConnection() {

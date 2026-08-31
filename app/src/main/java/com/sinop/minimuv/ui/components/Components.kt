@@ -77,10 +77,9 @@ fun StatusChip(status: String, modifier: Modifier = Modifier) {
     val color = statusColor(status)
     Text(
         text = when (status) {
-            "Watching" -> "İzliyoruz"
+            "Watching", "Rewatching" -> "İzliyoruz"
             "Plan to Watch" -> "Sırada"
             "Completed" -> "Tamamlandı"
-            "Rewatching" -> "Yeniden"
             "Paused" -> "Duraklattık"
             "Dropped" -> "Bıraktık"
             else -> status
@@ -92,6 +91,22 @@ fun StatusChip(status: String, modifier: Modifier = Modifier) {
         style = MaterialTheme.typography.labelMedium,
         fontWeight = FontWeight.SemiBold,
         color = color,
+    )
+}
+
+// ── Yeniden izleme rozeti: poster köşesindeki 🔁 sayacı ───────────────────
+
+@Composable
+fun RewatchBadge(count: Int, modifier: Modifier = Modifier) {
+    Text(
+        "🔁 $count",
+        modifier = modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color(0xCC0A0C0F))
+            .padding(horizontal = 7.dp, vertical = 3.dp),
+        style = MaterialTheme.typography.labelMedium,
+        color = Color(0xFFFFF3EC),
+        fontFamily = Baloo2,
     )
 }
 
@@ -192,12 +207,18 @@ fun PosterCard(
                 }
             }
             if (showStatus) {
-                StatusChip(
-                    item.status,
+                Row(
                     Modifier
                         .align(Alignment.BottomStart)
                         .padding(6.dp),
-                )
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    StatusChip(item.status)
+                    if (item.totalRewatches > 0) {
+                        RewatchBadge(item.totalRewatches)
+                    }
+                }
             }
             if (creatorEmoji != null) {
                 Box(

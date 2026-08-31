@@ -148,6 +148,8 @@ fun MainApp(settings: SettingsStore, profileId: String) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
     val context = LocalContext.current
+    val appScope = rememberCoroutineScope()
+    val savedListView by settings.listView.collectAsState(initial = null)
 
     LaunchedEffect(profileId) {
         NotificationHelper.ensureChannels(context)
@@ -269,6 +271,10 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 val vm: ListViewModel = viewModel()
                 ListScreen(
                     vm = vm,
+                    viewMode = com.sinop.minimuv.ui.screens.list.ViewMode.fromDb(savedListView),
+                    onViewModeChange = { mode ->
+                        appScope.launch { runCatching { settings.saveListView(mode.name) } }
+                    },
                     onOpenTitle = { navController.navigate("detail/${it}") },
                     onEditTitle = { navController.navigate("detail/${it}?edit=true") },
                     onOpenPlanOrder = { navController.navigate("plan_order") },
@@ -314,6 +320,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             }
             composable("add") {
                 AddScreen(
+                    settings = settings,
                     onBack = { navController.popBackStack() },
                     onPicked = { navController.navigate("detail/draft") },
                 )

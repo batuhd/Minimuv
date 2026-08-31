@@ -31,6 +31,12 @@
             </intent-filter>
         </service>
 
+        <!-- Kırpma ekranı AppCompat teması ister — uygulama teması değil -->
+        <activity
+            android:name="com.canhub.cropper.CropImageActivity"
+            android:exported="true"
+            android:theme="@style/Theme.Minimuv.Crop" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"
