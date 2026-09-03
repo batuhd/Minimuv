@@ -133,10 +133,18 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
     val completedThisYear = titles.filter {
         it.status == WatchStatus.COMPLETED.db && yearKey(it) == yearPrefix
     }
+    // "İlk/Son izlediğimiz" kartları BAŞLANGIÇ tarihine göre seçilir —
+    // "son bitirdiğimiz" yerine "son başladığımız" daha anlamlıdır.
+    fun startedKey(t: Title): String? =
+        t.startDate?.take(4)
+            ?: t.finishDate?.take(4)
+            ?: t.updatedAt?.take(4)
+            ?: t.createdAt?.take(4)
+    val startedThisYear = titles.filter { startedKey(it) == yearPrefix }
     val yearLog = log.filter { it.date.startsWith(yearPrefix) }
     val episodesThisYear = yearLog.sumOf { it.episodesWatched }
 
-    if (completedThisYear.isEmpty() && episodesThisYear == 0) {
+    if (completedThisYear.isEmpty() && episodesThisYear == 0 && startedThisYear.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("🤷", style = MaterialTheme.typography.displayLarge)
@@ -192,9 +200,9 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
         .mapValues { it.value.sum() }
         .maxByOrNull { it.value }
 
-    // ── Yılın ilk ve son izleneni ─────────────────────────────────
-    val firstTitle = completedThisYear.minByOrNull { it.finishDate ?: it.startDate ?: "9999" }
-    val lastTitle = completedThisYear.maxByOrNull { it.finishDate ?: it.startDate ?: "" }
+    // ── Yılın ilk ve son izleneni (başlangıç tarihine göre) ──────────
+    val firstTitle = startedThisYear.minByOrNull { it.startDate ?: it.finishDate ?: "9999" }
+    val lastTitle = startedThisYear.maxByOrNull { it.startDate ?: it.finishDate ?: "" }
 
     val favorites = completedThisYear.filter { (it.score ?: 0.0) >= 9.0 }.take(5)
 
@@ -541,7 +549,7 @@ private fun MilestoneCard(emoji: String, label: String, title: Title, modifier: 
             overflow = TextOverflow.Ellipsis,
         )
         Text(
-            (title.finishDate ?: title.startDate)?.let { formatDateTr(it) } ?: "—",
+            (title.startDate ?: title.finishDate)?.let { formatDateTr(it) } ?: "—",
             style = MaterialTheme.typography.labelSmall,
             color = typeColor(title.type),
         )

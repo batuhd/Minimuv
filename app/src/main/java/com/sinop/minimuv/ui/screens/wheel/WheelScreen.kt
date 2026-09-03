@@ -56,8 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.ImageLoader
-import coil3.decode.BitmapImage
 import coil3.request.ImageRequest
+import coil3.toBitmap
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.WatchStatus
@@ -257,8 +257,8 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
 
             Spacer(Modifier.height(14.dp))
 
-            // Çok içerikte dilimlerde yalnızca numara vardır — renk lejantı eşleştirir
-            if (pool.size > 8) {
+            // Dilimlerde afişler döner; lejant hangi yapımın hangi dilimde olduğunu gösterir
+            if (pool.size > 6) {
                 Column(
                     Modifier
                         .fillMaxWidth()
@@ -266,7 +266,7 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                         .verticalScroll(rememberScrollState()),
                 ) {
                     Text(
-                        "Çarktaki numaralar:",
+                        "Dilimler:",
                         style = MaterialTheme.typography.labelSmall,
                         color = TextSecondary,
                         modifier = Modifier.padding(bottom = 4.dp),
@@ -367,7 +367,6 @@ private fun rememberPosterBitmaps(titles: List<Title>): Map<String, ImageBitmap>
                             ImageRequest.Builder(context)
                                 .data(url)
                                 .size(360)
-                                .crossfade(false)
                                 .build(),
                         ).image
                     }.getOrNull()
@@ -375,7 +374,7 @@ private fun rememberPosterBitmaps(titles: List<Title>): Map<String, ImageBitmap>
             }.awaitAll()
         }
         bitmaps = loaded.mapNotNull { (url, image) ->
-            val bmp = (image as? BitmapImage)?.bitmap ?: return@mapNotNull null
+            val bmp = runCatching { image?.toBitmap() }.getOrNull() ?: return@mapNotNull null
             url to bmp.asImageBitmap()
         }.toMap()
     }

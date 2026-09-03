@@ -184,7 +184,7 @@ fun PosterCard(
                         .padding(6.dp),
                 )
             }
-            // Dizi/anime: sol üstte bölüm rozeti (filmlerde gereksiz)
+            // Dizi/anime: sol üstte kompakt bölüm rozeti (filmlerde gereksiz) — "9/25" gibi
             if (item.type != "film" && item.episodeProgress > 0) {
                 Box(
                     Modifier
@@ -196,9 +196,9 @@ fun PosterCard(
                 ) {
                     Text(
                         if (item.totalEpisodes != null) {
-                            "Bölüm ${item.episodeProgress}/${item.totalEpisodes}"
+                            "${item.episodeProgress}/${item.totalEpisodes}"
                         } else {
-                            "Bölüm ${item.episodeProgress}"
+                            "${item.episodeProgress}"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = Color(0xFFFFF3EC),
