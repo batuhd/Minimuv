@@ -13,7 +13,7 @@ Letterboxd'ın poster odaklı sinefil estetiği ile Duolingo'nun oyunlaştırıl
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=android&logoColor=white" />
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Realtime-3ECF8E?logo=supabase&logoColor=white" />
   <img alt="SDK" src="https://img.shields.io/badge/minSdk-26%20·%20targetSdk-36-3DDC84" />
-  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.2.1-F5A623" />
+  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-2.5.7-F5A623" />
 </p>
 
 </div>
@@ -63,10 +63,10 @@ Letterboxd'ın poster odaklı sinefil estetiği ile Duolingo'nun oyunlaştırıl
 </details>
 
 * **AniList tarzı okuma modu** - API'den gelen puan ve oy sayısı, yıl/süre/sezon, türler, stüdyo/yapımcı, hikâye özeti ve oyuncu/karakter kadrosu (anime için karakterler).
-* **Katlanabilir kartlarla düzenleme** - Durum, Bölümler, Takvim, Puanlar, Notlar & Listeler; kapalıyken tek satırlık özet gösterir. Karta uzun basınca doğrudan düzenleme açılır.
-* **Akıllı tarihler** - izlemeye başlarken başlangıç, tamamlarken bitiş tarihi otomatik damgalanır; bölüm ilerlemesi toplama ulaşınca başlık kendiliğinden Tamamlandı olur ve **konfeti** düşer.
+* **Katlanabilir kartlarla düzenleme** - Durum, Bölümler, Takvim, Puanlar, Notlar; kapalıyken tek satırlık özet gösterir. Karta uzun basınca doğrudan düzenleme açılır.
+* **Akıllı tarihler** - kuyruğa eklenen başlığın başlangıcı boş kalır; izlemeye başlarken başlangıç, tamamlarken bitiş tarihi otomatik damgalanır (izlenmeden tamamlanan yapımda ikisi de o gün). Bölüm ilerlemesi toplama ulaşınca başlık kendiliğinden Tamamlandı olur ve **konfeti** düşer.
 * **Yeniden izleme** - biten/araya verilen yapımlar "🔁 İzliyoruz'a al" ile yeniden başlar, sayaç artar.
-* **Özel listeler & favori** - kendi listelerini oluştur, ❤️ Favorimiz ile işaretle; favoriler Profil sayfasındaki ızgarada toplanır.
+* **Notlar** - emoji seçicili tatlı not kartları; ❤️ Favorimiz ile işaretle; favoriler Profil sayfasındaki ızgarada toplanır.
 
 ### 💯 Çift puanlama
 
@@ -247,18 +247,28 @@ Bilgiler DataStore'da saklanır; Profil sekmesinden istediğiniz an diğer profi
 
 ---
 
-## 📦 Yayınlar (Release)
+## 📦 Yayınlar (Release) — v2.5.7
 
-GitHub Releases üzerinden yayınlanan APK'lar **TMDB API anahtarı olmadan** derlenir (anahtar repoya asla girmez). Bu nedenle yayın APK'sında TMDB araması çalışmaz; `google-services.json` da repoya girmediği için FCM bildirimleri pasiftir (uygulama açıkken realtime + kapalıyken WorkManager yedekleri çalışmaya devam eder). Yayın APK'ları kişisel dağıtım için debug keystore ile imzalanır.
+İki ayrı sürüm üretilir; ikisi de kişisel dağıtım için **debug keystore** ile imzalanır (`app/build.gradle.kts` → `signingConfigs.release`).
 
-Kişisel kullanım için **kendi anahtarlarınızla** derleyin:
+### 1️⃣ Kişisel sürüm (API anahtarlı) — Van & Sinop'un telefonlarına
+TMDB araması, kişi/stüdyo sayfaları ve İngilizce açıklama fallback'i tam çalışır.
 
 ```bash
-# local.properties'e TMDB anahtarını yazın, google-services.json'u app/ klasörüne koyun, sonra:
+# local.properties'e TMDB anahtarınız yazılı olduğundan emin olun (tmdb.api.key=...)
 ./gradlew assembleRelease
+# Çıktı: app/build/outputs/apk/release/app-release.apk
 ```
 
-> İpucu: Anahtarsız bir sürüm elde etmek için `gradlew assembleRelease -PtmdbApiKey=""` kullanabilirsiniz.
+### 2️⃣ GitHub sürümü (API'siz) — herkese açık yayın
+TMDB anahtarı **derlenmez** (boş BuildConfig), bu yüzden arama kapalıdır; realtime + WorkManager yedekleri çalışır.
+
+```bash
+./gradlew assembleRelease -PtmdbApiKey=""
+# Çıktı: app/build/outputs/apk/release/app-release.apk
+```
+
+> `google-services.json` repoda yoktur; GitHub sürümünde FCM pasiftir. Kişisel sürüm için dosyayı `app/` klasörüne koyup yeniden derleyin.
 
 ---
 
@@ -271,8 +281,8 @@ Tüm veritabanı şeması **tek bir dosyada** toplanmıştır: [`supabase/init.s
 | Tablo | Amaç | Önemli Alanlar |
 | --- | --- | --- |
 | `profiles` | Sabit iki profil | `name`, `emoji`, `avatar_color`, `avatar_url` |
-| `titles` | İzlenen içerikler | `type` (film/dizi/anime), `status`, `score` *(çift ortalama)*, `overview`, `episode_progress`, `total_episodes`, `start_date`, `finish_date`, `total_rewatches`, `custom_lists`, `watch_mode` (birlikte/ayrı), `priority_order`, `is_private`, `is_favorite` |
-| `title_notes` | Başlıklara yazılan tekil notlar | `title_id`, `profile_id`, `note_text` |
+| `titles` | İzlenen içerikler | `type` (film/dizi/anime), `status`, `score` *(çift ortalama)*, `overview` + `overview_en`, `title_en`, `episode_progress`, `total_episodes`, `start_date`, `finish_date`, `total_rewatches`, `watch_mode` (birlikte/ayrı), `priority_order`, `is_private`, `is_favorite` |
+| `title_notes` | Başlıklara yazılan tekil notlar | `title_id`, `profile_id`, `note_text`, `emoji` |
 | `title_scores` | **Kişi bazlı puanlar** | `title_id` + `profile_id` (benzersiz), `score`, `story`, `characters`, `visuals`, `audio`, `enjoyment` |
 | `episode_progress_per_profile` | Ayrı modda kişisel bölüm ilerlemesi | `title_id` + `profile_id` (benzersiz), `current_episode` |
 | `episode_notes` | Bölüm bazlı notlar (spoiler korumalı) | `episode_number`, `note_text`, `emoji_reaction` |
@@ -280,6 +290,7 @@ Tüm veritabanı şeması **tek bir dosyada** toplanmıştır: [`supabase/init.s
 | `watch_log` | Takvim/istatistik günlüğü | `date`, `episodes_watched` |
 | `partner_pings` | Gizli menü mesajları | `from_profile`, `message` |
 | `fcm_tokens` | Cihaz push token'ları | `token` (benzersiz), `profile_id` |
+| `favorites` | Kişi/karakter/stüdyo favorileri | `profile_id`, `fav_type` (person/character/studio), `source`, `external_id`, `name`, `image_url` |
 
 Ayrıca: aynı yapım (aynı tür + harici ID) veritabanı seviyesinde **iki kez eklenemez** (partial unique index); `titles` güncellemelerinde `updated_at` otomatik işlenir.
 
