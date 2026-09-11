@@ -74,6 +74,7 @@ fun DetailScreen(
     startInEdit: Boolean = false,
     displayLang: String? = null,
     onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
+    onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
     onBack: () -> Unit,
     onSaved: () -> Unit,
     onDeleted: () -> Unit,
@@ -462,6 +463,7 @@ fun DetailScreen(
                     details = details,
                     displayLang = displayLang,
                     onOpenPerson = onOpenPerson,
+                    onOpenStudio = onOpenStudio,
                     coupleScore = loaded?.score,
                     myScore = serverMyScore?.score,
                     partnerScore = partnerScoreRow?.score,
@@ -644,6 +646,7 @@ internal fun DetailViewContent(
     details: com.sinop.minimuv.core.TitleDetails?,
     displayLang: String? = null,
     onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
+    onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
     coupleScore: Double?,
     myScore: Double?,
     partnerScore: Double?,
@@ -757,7 +760,36 @@ internal fun DetailViewContent(
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (!details?.studios.isNullOrEmpty()) {
-                InfoLine(if (type == "anime") "Stüdyo" else "Yapımcı", details!!.studios.joinToString(", "))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        if (type == "anime") "🏢 Stüdyo" else "🏢 Yapımcı",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = TextSecondary,
+                    )
+                }
+                Spacer(Modifier.height(4.dp))
+                androidx.compose.foundation.layout.FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    details!!.studios.forEach { studio ->
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(typeColor(type).copy(alpha = 0.12f))
+                                .clickable(enabled = studio.id != null) {
+                                    onOpenStudio(com.sinop.minimuv.data.ContentType.fromDb(type), studio.id!!.toString())
+                                }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                studio.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = typeColor(type),
+                            )
+                        }
+                    }
+                }
             }
             InfoLine("📅 Başlangıç", startDate?.let { formatDate(it) } ?: "—")
             InfoLine("🏁 Bitiş", finishDate?.let { formatDate(it) } ?: "—")
@@ -792,6 +824,60 @@ internal fun DetailViewContent(
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.95f),
             )
+        }
+
+        // ── Yönetmenler ──────────────────────────────────────────────────
+        if (!details?.directors.isNullOrEmpty()) {
+            Spacer(Modifier.height(4.dp))
+            Text("Yönetmen", style = MaterialTheme.typography.titleMedium, color = typeColor(type))
+            androidx.compose.foundation.lazy.LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                items(details!!.directors.size) { index ->
+                    val director = details.directors[index]
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(76.dp)
+                            .clickable(enabled = director.id != null) {
+                                onOpenPerson(com.sinop.minimuv.core.PersonSource.TMDB, director.id!!.toString())
+                            },
+                    ) {
+                        Box(
+                            Modifier
+                                .size(60.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(MidnightCard),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (director.imageUrl != null) {
+                                AsyncImage(
+                                    model = director.imageUrl,
+                                    contentDescription = director.name,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                Text("🎬", style = MaterialTheme.typography.titleLarge)
+                            }
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            director.name,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Text(
+                            "Yönetmen",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = TextSecondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
         }
 
         // ── Oyuncular / Karakterler ──────────────────────────────────────

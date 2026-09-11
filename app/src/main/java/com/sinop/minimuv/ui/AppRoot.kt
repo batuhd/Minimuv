@@ -55,6 +55,7 @@ import com.sinop.minimuv.core.PartnerEventsRuntime
 import com.sinop.minimuv.core.SupabaseProvider
 import com.sinop.minimuv.core.PersonSource
 import com.sinop.minimuv.data.SettingsStore
+import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.screens.achievements.AchievementsScreen
 import com.sinop.minimuv.ui.screens.add.AddScreen
@@ -64,6 +65,7 @@ import com.sinop.minimuv.ui.screens.list.ListScreen
 import com.sinop.minimuv.ui.screens.list.ListViewModel
 import com.sinop.minimuv.ui.screens.person.PersonScreen
 import com.sinop.minimuv.ui.screens.settings.SettingsScreen
+import com.sinop.minimuv.ui.screens.studio.StudioScreen
 import com.sinop.minimuv.ui.screens.setup.ProfileSelectScreen
 import com.sinop.minimuv.ui.screens.setup.SupabaseSetupScreen
 import com.sinop.minimuv.ui.screens.stats.HeatmapScreen
@@ -352,6 +354,9 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     onOpenPerson = { source, id ->
                         navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
                     },
+                    onOpenStudio = { type, id ->
+                        navController.navigate("studio/${type.db}/$id")
+                    },
                     onBack = { navController.popBackStack() },
                     onSaved = {
                         navController.popBackStack(BottomTab.List.route, inclusive = false)
@@ -370,6 +375,17 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 val externalId = entry.arguments?.getString("externalId") ?: return@composable
                 PersonScreen(
                     source = if (sourceName == "anime") PersonSource.ANIME else PersonSource.TMDB,
+                    externalId = externalId,
+                    displayLang = savedDisplayLang,
+                    onBack = { navController.popBackStack() },
+                    onAddTitle = { navController.navigate("detail/draft") },
+                )
+            }
+            composable("studio/{type}/{externalId}") { entry ->
+                val typeName = entry.arguments?.getString("type") ?: return@composable
+                val externalId = entry.arguments?.getString("externalId") ?: return@composable
+                StudioScreen(
+                    type = ContentType.fromDb(typeName),
                     externalId = externalId,
                     displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },

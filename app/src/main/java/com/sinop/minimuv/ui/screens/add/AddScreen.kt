@@ -649,7 +649,7 @@ private fun SearchPreviewSheet(
             if (!details?.studios.isNullOrEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "🎬 ${details!!.studios.joinToString("  •  ")}",
+                    "🎬 ${details!!.studios.joinToString("  •  ") { it.name }}",
                     style = MaterialTheme.typography.labelMedium,
                     color = TextSecondary,
                 )
