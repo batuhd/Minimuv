@@ -135,7 +135,7 @@ data class ListFilters(
 fun ListScreen(
     vm: ListViewModel,
     viewMode: ViewMode,
-    onViewModeChange: (ViewMode) -> Unit,
+    displayLang: String?,
     onOpenTitle: (String) -> Unit,
     onOpenPlanOrder: () -> Unit,
     onEditTitle: (String) -> Unit = {},
@@ -216,43 +216,6 @@ fun ListScreen(
                 }
             }
 
-            // Görünüm değiştirici: kompakt → satırlar → 3'lü ızgara → 2'li büyük
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                ViewMode.entries.forEach { mode ->
-                    val selected = viewMode == mode
-                    Box(
-                        Modifier
-                            .size(34.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)
-                                else MidnightCard
-                            )
-                            .clickable { onViewModeChange(mode) },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            mode.icon(),
-                            contentDescription = mode.label,
-                            tint = if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
-                            modifier = Modifier.size(18.dp),
-                        )
-                    }
-                }
-                Spacer(Modifier.width(6.dp))
-                Text(
-                    viewMode.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
-                )
-            }
-
             // Tür sekmeleri
             Row(
                 modifier = Modifier
@@ -317,6 +280,7 @@ fun ListScreen(
                             titles = filtered,
                             profiles = profiles,
                             viewMode = viewMode,
+                            lang = displayLang,
                             collapsedSections = collapsedSections,
                             onToggleSection = { key ->
                                 collapsedSections = if (key in collapsedSections) collapsedSections - key
@@ -330,10 +294,11 @@ fun ListScreen(
                         PlanPriorityList(
                             items = filtered,
                             vm = vm,
+                            lang = displayLang,
                             onOpenTitle = onOpenTitle,
                         )
                     } else {
-                        FlatLibrary(filtered, profiles, viewMode, onOpenTitle, onEditTitle)
+                        FlatLibrary(filtered, profiles, viewMode, displayLang, onOpenTitle, onEditTitle)
                     }
                 }
             }
@@ -374,6 +339,7 @@ private fun GroupedLibrary(
     titles: List<Title>,
     profiles: List<Profile>,
     viewMode: ViewMode,
+    lang: String?,
     collapsedSections: Set<String>,
     onToggleSection: (String) -> Unit,
     onOpenTitle: (String) -> Unit,
@@ -434,6 +400,7 @@ private fun GroupedLibrary(
                                 "${title.priorityOrder}. sırada"
                             } else null,
                             creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
+                            lang = lang,
                             onClick = { onOpenTitle(title.id) },
                             onLongClick = { onEditTitle(title.id) },
                         )
@@ -471,6 +438,7 @@ private fun GroupedLibrary(
                             TitleRow(
                                 title = title,
                                 viewMode = viewMode,
+                                lang = lang,
                                 priorityLabel = if (status == WatchStatus.PLAN && title.priorityOrder != null) {
                                     "${title.priorityOrder}. sırada"
                                 } else null,
@@ -490,6 +458,7 @@ private fun FlatLibrary(
     titles: List<Title>,
     profiles: List<Profile>,
     viewMode: ViewMode,
+    lang: String?,
     onOpenTitle: (String) -> Unit,
     onEditTitle: (String) -> Unit = {},
 ) {
@@ -509,6 +478,7 @@ private fun FlatLibrary(
                     PosterCard(
                         title,
                         creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
+                        lang = lang,
                         onClick = { onOpenTitle(title.id) },
                         onLongClick = { onEditTitle(title.id) },
                     )
@@ -527,6 +497,7 @@ private fun FlatLibrary(
                     TitleRow(
                         title = title,
                         viewMode = viewMode,
+                        lang = lang,
                         priorityLabel = null,
                         onClick = { onOpenTitle(title.id) },
                         onLongClick = { onEditTitle(title.id) },
@@ -542,6 +513,7 @@ private fun FlatLibrary(
 private fun TitleRow(
     title: Title,
     viewMode: ViewMode,
+    lang: String?,
     priorityLabel: String?,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
@@ -584,7 +556,7 @@ private fun TitleRow(
         }
         Column(Modifier.weight(1f)) {
             Text(
-                title.title,
+                title.displayTitle(lang),
                 style = MaterialTheme.typography.titleSmall,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -703,6 +675,7 @@ private fun SectionHeader(
 private fun PlanPriorityList(
     items: List<Title>,
     vm: ListViewModel,
+    lang: String?,
     onOpenTitle: (String) -> Unit,
 ) {
     val lazyListState = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -773,7 +746,7 @@ private fun PlanPriorityList(
                     Spacer(Modifier.width(12.dp))
                     Column(Modifier.weight(1f)) {
                         Text(
-                            title.title,
+                            title.displayTitle(lang),
                             style = MaterialTheme.typography.titleSmall,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,

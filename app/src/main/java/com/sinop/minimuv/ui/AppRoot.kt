@@ -150,6 +150,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
     val context = LocalContext.current
     val appScope = rememberCoroutineScope()
     val savedListView by settings.listView.collectAsState(initial = null)
+    val savedDisplayLang by settings.displayLang.collectAsState(initial = null)
 
     LaunchedEffect(profileId) {
         NotificationHelper.ensureChannels(context)
@@ -272,9 +273,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 ListScreen(
                     vm = vm,
                     viewMode = com.sinop.minimuv.ui.screens.list.ViewMode.fromDb(savedListView),
-                    onViewModeChange = { mode ->
-                        appScope.launch { runCatching { settings.saveListView(mode.name) } }
-                    },
+                    displayLang = savedDisplayLang,
                     onOpenTitle = { navController.navigate("detail/${it}") },
                     onEditTitle = { navController.navigate("detail/${it}?edit=true") },
                     onOpenPlanOrder = { navController.navigate("plan_order") },
@@ -342,6 +341,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     vm = vm,
                     profileId = profileId,
                     startInEdit = startInEdit,
+                    displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },
                     onSaved = {
                         navController.popBackStack(BottomTab.List.route, inclusive = false)

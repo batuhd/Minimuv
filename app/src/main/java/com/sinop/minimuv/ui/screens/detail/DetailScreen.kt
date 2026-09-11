@@ -72,6 +72,7 @@ fun DetailScreen(
     vm: DetailViewModel,
     profileId: String,
     startInEdit: Boolean = false,
+    displayLang: String? = null,
     onBack: () -> Unit,
     onSaved: () -> Unit,
     onDeleted: () -> Unit,
@@ -174,7 +175,7 @@ fun DetailScreen(
     var celebrate by remember { mutableStateOf(0) }
 
     val type = loaded?.type ?: draft?.type ?: ContentType.FILM.db
-    val titleText = loaded?.title ?: draft?.title ?: ""
+    val titleText = loaded?.displayTitle(displayLang) ?: draft?.title ?: ""
     val posterUrl = loaded?.posterUrl ?: draft?.posterUrl
     val typeColor = typeColor(type)
     val isSeries = type != ContentType.FILM.db
@@ -465,6 +466,7 @@ fun DetailScreen(
                     status = status,
                     overview = loaded?.overview ?: draft?.overview,
                     details = details,
+                    displayLang = displayLang,
                     coupleScore = loaded?.score,
                     myScore = serverMyScore?.score,
                     partnerScore = partnerScoreRow?.score,
@@ -645,6 +647,7 @@ internal fun DetailViewContent(
     status: String,
     overview: String?,
     details: com.sinop.minimuv.core.TitleDetails?,
+    displayLang: String? = null,
     coupleScore: Double?,
     myScore: Double?,
     partnerScore: Double?,
@@ -780,7 +783,12 @@ internal fun DetailViewContent(
         }
 
         // ── Hikâye ───────────────────────────────────────────────────────
-        val story = details?.overview?.takeIf { it.isNotBlank() } ?: overview?.takeIf { it.isNotBlank() }
+        val story = when {
+            displayLang == "EN" -> (details?.overviewEn?.takeIf { it.isNotBlank() }
+                ?: details?.overview?.takeIf { it.isNotBlank() })
+            else -> (details?.overview?.takeIf { it.isNotBlank() }
+                ?: details?.overviewEn?.takeIf { it.isNotBlank() })
+        } ?: overview?.takeIf { it.isNotBlank() }
         if (story != null) {
             Text("Hikâye", style = MaterialTheme.typography.titleMedium, color = typeColor(type))
             Text(

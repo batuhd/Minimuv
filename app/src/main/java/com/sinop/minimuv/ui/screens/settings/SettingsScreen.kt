@@ -49,9 +49,12 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sinop.minimuv.BuildConfig
+import com.sinop.minimuv.core.TitleLanguage
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
+import com.sinop.minimuv.ui.components.SoftChip
+import com.sinop.minimuv.ui.screens.list.ViewMode
 import com.sinop.minimuv.ui.theme.Gold
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.TextSecondary
@@ -85,7 +88,7 @@ fun SettingsScreen(
         Text("Ayarlar", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.padding(top = 16.dp))
 
-        SectionCard("Görünüm") {
+        SectionCard("🎨 Görünüm", defaultOpen = true) {
             Text(
                 "Tema rengi",
                 style = MaterialTheme.typography.titleSmall,
@@ -114,10 +117,83 @@ fun SettingsScreen(
                     }
                 }
             }
+
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Kütüphane görünümü",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+            val viewModeName by settings.listView.collectAsState(initial = null)
+            val viewMode = ViewMode.fromDb(viewModeName)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                ViewMode.entries.forEach { mode ->
+                    SoftChip(
+                        label = mode.label,
+                        selected = viewMode == mode,
+                        color = MaterialTheme.colorScheme.primary,
+                        onClick = {
+                            scope.launch { runCatching { settings.saveListView(mode.name) } }
+                        },
+                    )
+                }
+            }
         }
 
-        Spacer(Modifier.padding(top = 14.dp))
-        SectionCard("Bildirimler") {
+        Spacer(Modifier.padding(top = 12.dp))
+        SectionCard("🌐 Dil") {
+            Text(
+                "Liste ve detay dili",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+            val displayLangName by settings.displayLang.collectAsState(initial = null)
+            val displayLang = if (displayLangName == "EN") "EN" else "TR"
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                listOf("TR" to "Türkçe", "EN" to "İngilizce").forEach { (code, label) ->
+                    SoftChip(
+                        label = label,
+                        selected = displayLang == code,
+                        color = MaterialTheme.colorScheme.secondary,
+                        onClick = {
+                            scope.launch { runCatching { settings.saveDisplayLang(code) } }
+                        },
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Arama dili",
+                style = MaterialTheme.typography.titleSmall,
+                modifier = Modifier.padding(vertical = 6.dp),
+            )
+            val searchLangName by settings.searchLang.collectAsState(initial = null)
+            val searchLang = TitleLanguage.fromDb(searchLangName)
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                TitleLanguage.entries.forEach { option ->
+                    SoftChip(
+                        label = option.label,
+                        selected = searchLang == option,
+                        color = MaterialTheme.colorScheme.secondary,
+                        onClick = {
+                            scope.launch { runCatching { settings.saveSearchLang(option.name) } }
+                        },
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.padding(top = 12.dp))
+        SectionCard("🔔 Bildirimler") {
             BatteryOptimizationRow()
             Text(
                 "Uygulama kapalıyken bile ~15 dakikada bir kontrol edip bildirim düşürürüz. Kalıcı bildirim göstermeyiz.",
@@ -127,8 +203,8 @@ fun SettingsScreen(
             )
         }
 
-        Spacer(Modifier.padding(top = 14.dp))
-        SectionCard("Hakkında") {
+        Spacer(Modifier.padding(top = 12.dp))
+        SectionCard("ℹ️ Hakkında") {
             Column(
                 Modifier
                     .padding(vertical = 6.dp)
@@ -155,9 +231,9 @@ fun SettingsScreen(
                 )
             }
         }
-        Spacer(Modifier.padding(top = 14.dp))
+        Spacer(Modifier.padding(top = 12.dp))
 
-        SectionCard("Tehlikeli Bölge ⚠️") {
+        SectionCard("⚠️ Tehlikeli Bölge") {
             SettingsRow(
                 "🗑️ Tüm izleme verilerini sıfırla",
                 color = MaterialTheme.colorScheme.error,
@@ -276,17 +352,41 @@ private fun BatteryOptimizationRow() {
 }
 
 @Composable
-private fun SectionCard(title: String, content: @Composable () -> Unit) {
+private fun SectionCard(title: String, defaultOpen: Boolean = false, content: @Composable () -> Unit) {
+    var open by remember { mutableStateOf(defaultOpen) }
     Column {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = TextSecondary, modifier = Modifier.padding(bottom = 8.dp))
-        Column(
+        Row(
             Modifier
                 .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(14.dp))
                 .background(MidnightCard)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .clickable { open = !open }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            content()
+            Text(
+                title,
+                style = MaterialTheme.typography.labelLarge,
+                color = TextSecondary,
+                modifier = Modifier.weight(1f),
+            )
+            Text(
+                if (open) "▾" else "▸",
+                style = MaterialTheme.typography.titleSmall,
+                color = TextSecondary,
+            )
+        }
+        if (open) {
+            Spacer(Modifier.height(8.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(MidnightCard.copy(alpha = 0.45f))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                content()
+            }
         }
     }
 }

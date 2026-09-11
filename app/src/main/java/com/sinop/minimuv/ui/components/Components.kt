@@ -143,6 +143,7 @@ fun PosterCard(
     showStatus: Boolean = true,
     priorityLabel: String? = null,
     creatorEmoji: String? = null,
+    lang: String? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -162,14 +163,14 @@ fun PosterCard(
             if (item.posterUrl != null) {
                 AsyncImage(
                     model = item.posterUrl,
-                    contentDescription = item.title,
+                    contentDescription = item.displayTitle(lang),
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
                 )
             } else {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Text(
-                        text = item.title.take(1).uppercase(),
+                        text = item.displayTitle(lang).take(1).uppercase(),
                         style = MaterialTheme.typography.headlineLarge,
                         color = Color.White.copy(alpha = 0.35f),
                         fontFamily = Baloo2,
@@ -239,7 +240,7 @@ fun PosterCard(
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            item.title,
+            item.displayTitle(lang),
             style = MaterialTheme.typography.titleSmall,
             fontWeight = FontWeight.SemiBold,
             maxLines = 1,
