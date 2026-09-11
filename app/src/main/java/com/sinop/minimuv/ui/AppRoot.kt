@@ -53,6 +53,7 @@ import com.sinop.minimuv.R
 import com.sinop.minimuv.core.NotificationHelper
 import com.sinop.minimuv.core.PartnerEventsRuntime
 import com.sinop.minimuv.core.SupabaseProvider
+import com.sinop.minimuv.core.PersonSource
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.screens.achievements.AchievementsScreen
@@ -61,6 +62,7 @@ import com.sinop.minimuv.ui.screens.detail.DetailScreen
 import com.sinop.minimuv.ui.screens.detail.DetailViewModel
 import com.sinop.minimuv.ui.screens.list.ListScreen
 import com.sinop.minimuv.ui.screens.list.ListViewModel
+import com.sinop.minimuv.ui.screens.person.PersonScreen
 import com.sinop.minimuv.ui.screens.settings.SettingsScreen
 import com.sinop.minimuv.ui.screens.setup.ProfileSelectScreen
 import com.sinop.minimuv.ui.screens.setup.SupabaseSetupScreen
@@ -347,6 +349,9 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     profileId = profileId,
                     startInEdit = startInEdit,
                     displayLang = savedDisplayLang,
+                    onOpenPerson = { source, id ->
+                        navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
+                    },
                     onBack = { navController.popBackStack() },
                     onSaved = {
                         navController.popBackStack(BottomTab.List.route, inclusive = false)
@@ -359,6 +364,17 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             }
             composable("wrapped") {
                 WrappedScreen(onBack = { navController.popBackStack() })
+            }
+            composable("person/{source}/{externalId}") { entry ->
+                val sourceName = entry.arguments?.getString("source") ?: return@composable
+                val externalId = entry.arguments?.getString("externalId") ?: return@composable
+                PersonScreen(
+                    source = if (sourceName == "anime") PersonSource.ANIME else PersonSource.TMDB,
+                    externalId = externalId,
+                    displayLang = savedDisplayLang,
+                    onBack = { navController.popBackStack() },
+                    onAddTitle = { navController.navigate("detail/draft") },
+                )
             }
         }
     }

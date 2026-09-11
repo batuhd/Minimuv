@@ -93,6 +93,7 @@ object TextNormalizer {
 // ── Detay sayfası zengin bilgisi (puan, tür, stüdyo, oyuncular…) ─────────
 
 data class CastMember(
+    val id: Int? = null,
     val name: String,
     val role: String?,
     val imageUrl: String?,
@@ -112,6 +113,28 @@ data class TitleDetails(
     val statusText: String? = null,
     val studios: List<String> = emptyList(),
     val cast: List<CastMember> = emptyList(),
+)
+
+/** Kişi sayfasının kaynağı: TMDB oyuncu/yönetmen ya da AniList karakter. */
+enum class PersonSource { TMDB, ANIME }
+
+/** Kişi filmografisindeki tek bir yapım. */
+data class PersonWork(
+    val externalId: String,
+    val type: String,
+    val title: String,
+    val titleEn: String? = null,
+    val year: String? = null,
+    val posterUrl: String? = null,
+    val role: String? = null,
+)
+
+/** Kişi sayfası: biyografi + yapımları. */
+data class PersonDetails(
+    val name: String,
+    val imageUrl: String? = null,
+    val bio: String? = null,
+    val works: List<PersonWork> = emptyList(),
 )
 
 object SearchApi {
@@ -390,6 +413,7 @@ object SearchApi {
                 .take(8)
                 .map { c ->
                     CastMember(
+                        id = c.id,
                         name = c.name ?: "?",
                         role = c.character,
                         imageUrl = "https://image.tmdb.org/t/p/w185${c.profilePath}",
@@ -423,7 +447,7 @@ object SearchApi {
                 duration
                 studios(isMain: true) { nodes { name } }
                 characters(sort: [ROLE, RELEVANCE], perPage: 8) {
-                  edges { role node { name { full } image { large } } }
+                  edges { role node { id name { full } image { large } } }
                 }
               }
             }
@@ -475,11 +499,117 @@ object SearchApi {
             cast = media.characters?.edges.orEmpty().mapNotNull { edge ->
                 val node = edge.node ?: return@mapNotNull null
                 CastMember(
+                    id = node.id,
                     name = node.name?.full ?: "?",
                     role = edge.role,
                     imageUrl = node.image?.large,
                 )
             },
+        )
+    }
+
+    // ── Kişi sayfaları (oyuncu / yönetmen / karakter) ─────────────────────
+
+    /** Kişi biyografisi + filmografisi. Hata olursa null döner. */
+    suspend fun personDetails(source: PersonSource, externalId: String): PersonDetails? =
+        searchWithRetry {
+            when (source) {
+                PersonSource.TMDB -> tmdbPersonDetails(externalId)
+                PersonSource.ANIME -> anilistPersonDetails(externalId)
+            }
+        }
+
+    private suspend fun tmdbPersonDetails(personId: String): PersonDetails {
+        val response = client.get("https://api.themoviedb.org/3/person/$personId") {
+            parameter("api_key", TMDB_API_KEY)
+            parameter("language", "tr-TR")
+            parameter("append_to_response", "combined_credits")
+        }.body<TmdbPersonDetailsResponse>()
+        val works = buildList {
+            response.combinedCredits?.cast.orEmpty().forEach { c ->
+                add(
+                    PersonWork(
+                        externalId = c.id.toString(),
+                        type = if (c.mediaType == "movie") ContentType.FILM.db else ContentType.DIZI.db,
+                        title = c.title ?: c.name ?: "?",
+                        titleEn = c.originalTitle ?: c.originalName,
+                        year = (c.releaseDate ?: c.firstAirDate)?.take(4),
+                        posterUrl = c.posterPath?.let { "https://image.tmdb.org/t/p/w185$it" },
+                        role = c.character,
+                    ),
+                )
+            }
+            response.combinedCredits?.crew.orEmpty().forEach { c ->
+                add(
+                    PersonWork(
+                        externalId = c.id.toString(),
+                        type = if (c.mediaType == "movie") ContentType.FILM.db else ContentType.DIZI.db,
+                        title = c.title ?: c.name ?: "?",
+                        titleEn = c.originalTitle ?: c.originalName,
+                        year = (c.releaseDate ?: c.firstAirDate)?.take(4),
+                        posterUrl = c.posterPath?.let { "https://image.tmdb.org/t/p/w185$it" },
+                        role = c.job,
+                    ),
+                )
+            }
+        }.distinctBy { it.externalId + "|" + it.type }
+        return PersonDetails(
+            name = response.name ?: "?",
+            imageUrl = response.profilePath?.let { "https://image.tmdb.org/t/p/w500$it" },
+            bio = cleanOverview(response.biography),
+            works = works,
+        )
+    }
+
+    private suspend fun anilistPersonDetails(characterId: String): PersonDetails {
+        val graphQl = """
+            query (${'$'}id: Int) {
+              Character(id: ${'$'}id) {
+                name { full }
+                image { large }
+                description(asHtml: false)
+                media(perPage: 50) {
+                  edges {
+                    characterRole
+                    node {
+                      id
+                      type
+                      title { romaji english }
+                      coverImage { extraLarge }
+                      seasonYear
+                    }
+                  }
+                }
+              }
+            }
+        """.trimIndent()
+        val response = client.post("https://graphql.anilist.co") {
+            contentType(KtorContentType.Application.Json)
+            header("Accept", "application/json")
+            header("Origin", "https://anilist.co")
+            header("Referer", "https://anilist.co/")
+            header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+            setBody(AniListRequest(graphQl, mapOf("id" to characterId)))
+        }.body<AniListPersonResponse>()
+        val character = response.data?.character ?: throw IllegalStateException("AniList karakteri boş")
+        val works = character.media?.edges.orEmpty().mapNotNull { edge ->
+            val node = edge.node ?: return@mapNotNull null
+            val title = node.title?.romaji ?: node.title?.english ?: "?"
+            PersonWork(
+                externalId = node.id.toString(),
+                type = if (node.type == "MOVIE") ContentType.FILM.db else ContentType.ANIME.db,
+                title = title,
+                titleEn = node.title?.english ?: node.title?.romaji,
+                year = node.seasonYear?.toString(),
+                posterUrl = node.coverImage?.extraLarge,
+                role = edge.characterRole,
+            )
+        }.distinctBy { it.externalId }
+        return PersonDetails(
+            name = character.name?.full ?: "?",
+            imageUrl = character.image?.large,
+            bio = cleanOverview(character.description),
+            works = works,
         )
     }
 }
@@ -564,6 +694,7 @@ private data class TmdbCredits(val cast: List<TmdbCastItem>? = null)
 
 @Serializable
 private data class TmdbCastItem(
+    val id: Int? = null,
     val name: String? = null,
     val character: String? = null,
     @SerialName("profile_path") val profilePath: String? = null,
@@ -605,6 +736,7 @@ private data class AniListCharacterEdge(val role: String? = null, val node: AniL
 
 @Serializable
 private data class AniListCharacterNode(
+    val id: Int? = null,
     val name: AniListCharacterName? = null,
     val image: AniListCharacterImage? = null,
 )
@@ -614,3 +746,64 @@ private data class AniListCharacterName(val full: String? = null)
 
 @Serializable
 private data class AniListCharacterImage(val large: String? = null)
+
+@Serializable
+private data class TmdbPersonDetailsResponse(
+    val name: String? = null,
+    @SerialName("profile_path") val profilePath: String? = null,
+    val biography: String? = null,
+    @SerialName("combined_credits") val combinedCredits: TmdbPersonCredits? = null,
+)
+
+@Serializable
+private data class TmdbPersonCredits(
+    val cast: List<TmdbPersonCreditItem>? = null,
+    val crew: List<TmdbPersonCreditItem>? = null,
+)
+
+@Serializable
+private data class TmdbPersonCreditItem(
+    val id: Int? = null,
+    @SerialName("media_type") val mediaType: String? = null,
+    val title: String? = null,
+    val name: String? = null,
+    @SerialName("original_title") val originalTitle: String? = null,
+    @SerialName("original_name") val originalName: String? = null,
+    @SerialName("poster_path") val posterPath: String? = null,
+    @SerialName("release_date") val releaseDate: String? = null,
+    @SerialName("first_air_date") val firstAirDate: String? = null,
+    val character: String? = null,
+    val job: String? = null,
+)
+
+@Serializable
+private data class AniListPersonResponse(val data: AniListPersonData? = null)
+
+@Serializable
+private data class AniListPersonData(@SerialName("Character") val character: AniListPersonCharacter? = null)
+
+@Serializable
+private data class AniListPersonCharacter(
+    val name: AniListCharacterName? = null,
+    val image: AniListCharacterImage? = null,
+    val description: String? = null,
+    val media: AniListPersonMedia? = null,
+)
+
+@Serializable
+private data class AniListPersonMedia(val edges: List<AniListPersonMediaEdge>? = null)
+
+@Serializable
+private data class AniListPersonMediaEdge(
+    @SerialName("characterRole") val characterRole: String? = null,
+    val node: AniListPersonMediaNode? = null,
+)
+
+@Serializable
+private data class AniListPersonMediaNode(
+    val id: Int? = null,
+    val type: String? = null,
+    val title: AniListTitle? = null,
+    val coverImage: AniListCover? = null,
+    @SerialName("seasonYear") val seasonYear: Int? = null,
+)

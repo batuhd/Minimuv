@@ -73,6 +73,7 @@ fun DetailScreen(
     profileId: String,
     startInEdit: Boolean = false,
     displayLang: String? = null,
+    onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
     onBack: () -> Unit,
     onSaved: () -> Unit,
     onDeleted: () -> Unit,
@@ -460,6 +461,7 @@ fun DetailScreen(
                     overview = loaded?.overview ?: draft?.overview,
                     details = details,
                     displayLang = displayLang,
+                    onOpenPerson = onOpenPerson,
                     coupleScore = loaded?.score,
                     myScore = serverMyScore?.score,
                     partnerScore = partnerScoreRow?.score,
@@ -641,6 +643,7 @@ internal fun DetailViewContent(
     overview: String?,
     details: com.sinop.minimuv.core.TitleDetails?,
     displayLang: String? = null,
+    onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
     coupleScore: Double?,
     myScore: Double?,
     partnerScore: Double?,
@@ -803,9 +806,17 @@ internal fun DetailViewContent(
             ) {
                 items(details!!.cast.size) { index ->
                     val member = details.cast[index]
+                    val personSource = if (type == "anime") com.sinop.minimuv.core.PersonSource.ANIME
+                        else com.sinop.minimuv.core.PersonSource.TMDB
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier.width(76.dp),
+                        modifier = Modifier
+                            .width(76.dp)
+                            .then(
+                                if (member.id != null) {
+                                    Modifier.clickable { onOpenPerson(personSource, member.id.toString()) }
+                                } else Modifier
+                            ),
                     ) {
                         Box(
                             Modifier
