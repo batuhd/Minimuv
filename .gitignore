@@ -33,5 +33,8 @@ hs_err_*.log
 # Firebase config (contains API key - keep out of repo)
 app/google-services.json
 
+# Firebase Admin SDK service account (private key içerir - asla repoya girmez)
+*firebase-adminsdk*
+
 # Windows/Studio'dan kopyalanan yerel özellik dosyaları (API anahtarı içerebilir)
 *.properties.txt
