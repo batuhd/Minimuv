@@ -30,13 +30,9 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material.icons.filled.ViewAgenda
-import androidx.compose.material.icons.filled.ViewHeadline
-import androidx.compose.material.icons.filled.ViewModule
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -62,7 +58,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -109,13 +104,6 @@ enum class ViewMode(val label: String) {
     companion object {
         fun fromDb(value: String?): ViewMode = entries.firstOrNull { it.name == value } ?: GRID_3
     }
-}
-
-private fun ViewMode.icon(): ImageVector = when (this) {
-    ViewMode.COMPACT -> Icons.Filled.ViewHeadline
-    ViewMode.ROWS -> Icons.Filled.ViewAgenda
-    ViewMode.GRID_3 -> Icons.Filled.GridView
-    ViewMode.GRID_2 -> Icons.Filled.ViewModule
 }
 
 /** Eski "Rewatching" kayıtları artık "İzliyoruz" altında gösterilir. */

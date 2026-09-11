@@ -154,7 +154,6 @@ fun MainApp(settings: SettingsStore, profileId: String) {
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentDestination = backStackEntry?.destination
     val context = LocalContext.current
-    val appScope = rememberCoroutineScope()
     val savedListView by settings.listView.collectAsState(initial = null)
     val savedDisplayLang by settings.displayLang.collectAsState(initial = null)
 

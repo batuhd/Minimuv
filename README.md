@@ -148,20 +148,30 @@ Veritabanı olayı ───┼─ Uygulama KAPALI → pg_net trigger → notify
 
 <div style="clear: both;"></div>
 
-### 🎨 Görünüm
+### 🎨 Görünüm & 🌐 Dil
 
 <img src="docs/screenshots/settings.jpg" width="240" alt="Ayarlar" style="float: right; margin-left: 1rem; margin-bottom: 1rem;" />
 
 * **15 tema rengi** - Mavi, Mor, Yeşil, Pembe, Turuncu, Kırmızı, Gül, Camgöbeği, Turkuaz, Indigo, Lavanta, Limon, Mercan, Nane, Altın.
 * Letterboxd esintili **Midnight** koyu paleti; film/dizi/anime ve durum renkleri her ekranda sabit anlam taşır.
 * Yuvarlak hatlı **Baloo 2** başlık fontu + okunaklı **Nunito** gövde fontu; edge-to-edge tasarım.
+* Ayarlar kategorilere ayrılmış (açılır menüler) — Görünüm, Dil, Bildirimler, Hakkında, Tehlikeli Bölge.
+* **Görüntüleme dili (TR/EN):** liste ve detaydaki başlıklar ile açıklamalar seçilen dilde gösterilir; TMDB/AniList'ten İngilizce veri saklanır, Türkçe özeti olmayan yapımlarda otomatik İngilizce yedek kullanılır.
+* **Kütüphane görünümü** (kompakt / poster satırları / 2'li-3'lü ızgara) artık ayarlardan seçilir.
 * Bildirim ayarları: pil optimizasyonu durumu. Tüm verileri tek dokunuşla (atomik TRUNCATE ile) sıfırlama.
 
 <div style="clear: both;"></div>
 
+### 🎬 Keşif: kişi, karakter, yönetmen ve stüdyo sayfaları
+
+* Detay sayfasındaki **oyuncular/karakterler** ve **yönetmen** üzerine dokununca o kişinin biyografisi + tüm filmografisi açılır; listedeki yapımlardan tek dokunuşla koleksiyona eklenebilir.
+* **Yapımcı/stüdyo** çiplerine dokununca stüdyo sayfası açılır (filmografi).
+* Kişiler, karakterler ve stüdyolar **favorilere** alınabilir (❤️) — Profil sekmesindeki "Kişiler & Stüdyolar" bölümünde listelenir.
+* Arama sonuçları yapım yılına göre filtrelenebilir (2020+, 2010'lar, 2000'ler, 2000 öncesi).
+
 ### ⚡ Gerçek zamanlı senkronizasyon
 
-* 9 tablonun tamamı Supabase Realtime'a abone; yapılan her değişiklik iki telefonda da anında (debounce'lu) güncellenir.
+* Tüm tablolar Supabase Realtime'a abone; yapılan her değişiklik iki telefonda da anında (debounce'lu) güncellenir.
 
 ---
 
