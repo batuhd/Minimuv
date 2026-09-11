@@ -155,7 +155,7 @@ Veritabanı olayı ───┼─ Uygulama KAPALI → pg_net trigger → notify
 * **15 tema rengi** - Mavi, Mor, Yeşil, Pembe, Turuncu, Kırmızı, Gül, Camgöbeği, Turkuaz, Indigo, Lavanta, Limon, Mercan, Nane, Altın.
 * Letterboxd esintili **Midnight** koyu paleti; film/dizi/anime ve durum renkleri her ekranda sabit anlam taşır.
 * Yuvarlak hatlı **Baloo 2** başlık fontu + okunaklı **Nunito** gövde fontu; edge-to-edge tasarım.
-* Bildirim araçları: test bildirimi gönder, kontrolleri şimdi çalıştır, pil optimizasyonu durumu. Tüm verileri tek dokunuşla (atomik TRUNCATE ile) sıfırlama.
+* Bildirim ayarları: pil optimizasyonu durumu. Tüm verileri tek dokunuşla (atomik TRUNCATE ile) sıfırlama.
 
 <div style="clear: both;"></div>
 
