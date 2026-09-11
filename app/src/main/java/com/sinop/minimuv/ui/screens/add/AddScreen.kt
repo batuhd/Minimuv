@@ -80,6 +80,23 @@ object DraftHolder {
     var draft: TitleDraft? = null
 }
 
+/** Arama sonuçlarını yapım yılına göre filtreleyen seçenekler. */
+enum class YearFilter(val label: String) {
+    ALL("Tümü"),
+    SINCE_2020("2020+"),
+    DECADE_2010("2010'lar"),
+    DECADE_2000("2000'ler"),
+    BEFORE_2000("2000 öncesi");
+
+    fun matches(year: Int?): Boolean = when (this) {
+        ALL -> true
+        SINCE_2020 -> year != null && year >= 2020
+        DECADE_2010 -> year != null && year in 2010..2019
+        DECADE_2000 -> year != null && year in 2000..2009
+        BEFORE_2000 -> year != null && year < 2000
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun AddScreen(
@@ -95,6 +112,7 @@ fun AddScreen(
     var retryTick by remember { mutableStateOf(0) }
     var preview by remember { mutableStateOf<SearchResult?>(null) }
     var lang by rememberSaveable { mutableStateOf<TitleLanguage?>(null) }
+    var yearFilter by remember { mutableStateOf(YearFilter.ALL) }
     val activeLang = lang ?: TitleLanguage.TR
     val scope = rememberCoroutineScope()
 
@@ -274,6 +292,7 @@ fun AddScreen(
             }
             else -> {
                 val currentResults = results.orEmpty()
+                val filteredResults = currentResults.filter { yearFilter.matches(it.year?.toIntOrNull()) }
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -287,8 +306,31 @@ fun AddScreen(
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary,
                         )
+                        if (currentResults.isNotEmpty()) {
+                            Spacer(Modifier.height(6.dp))
+                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                items(YearFilter.entries) { option ->
+                                    SoftChip(
+                                        label = option.label,
+                                        selected = yearFilter == option,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        onClick = { yearFilter = option },
+                                    )
+                                }
+                            }
+                        }
                     }
-                    items(currentResults, key = { it.externalId + it.type.db }) { result ->
+                    if (currentResults.isNotEmpty() && filteredResults.isEmpty()) {
+                        item {
+                            Text(
+                                "Bu yıl aralığında sonuç yok — filtreni gevşet.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = TextSecondary,
+                                modifier = Modifier.padding(vertical = 24.dp),
+                            )
+                        }
+                    }
+                    items(filteredResults, key = { it.externalId + it.type.db }) { result ->
                         val alreadyAdded = (result.type.db to result.externalId) in existingKeys
                         SearchResultRow(
                             result = result,
