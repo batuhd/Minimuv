@@ -185,6 +185,19 @@ create table if not exists public.fcm_tokens (
   updated_at timestamptz not null default now()
 );
 
+-- ── Kişi / karakter / stüdyo favorileri ───────────────────────
+create table if not exists public.favorites (
+  id uuid primary key default gen_random_uuid(),
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  fav_type text not null check (fav_type in ('person', 'character', 'studio')),
+  source text not null check (source in ('tmdb', 'anime')),
+  external_id text not null,
+  name text not null,
+  image_url text,
+  created_at timestamptz not null default now(),
+  unique (profile_id, fav_type, source, external_id)
+);
+
 -- Eski tek-metinli notları tekil notlara taşı (titles.notes'e dokunulmaz;
 -- yalnızca title_notes'ta olmayanlar eklenir — tekrar çalıştırma güvenli)
 insert into public.title_notes (title_id, profile_id, note_text)
@@ -228,6 +241,7 @@ alter table public.title_scores enable row level security;
 alter table public.partner_pings enable row level security;
 alter table public.title_notes enable row level security;
 alter table public.fcm_tokens enable row level security;
+alter table public.favorites enable row level security;
 
 do $$
 declare
@@ -236,7 +250,7 @@ begin
   foreach t in array array[
     'profiles', 'titles', 'episode_progress_per_profile', 'episode_notes',
     'achievements', 'watch_log', 'title_scores', 'partner_pings', 'title_notes',
-    'fcm_tokens'
+    'fcm_tokens', 'favorites'
   ] loop
     execute format('drop policy if exists anon_all on public.%I', t);
     execute format(
@@ -253,7 +267,8 @@ declare
 begin
   foreach t in array array[
     'titles', 'title_notes', 'title_scores', 'episode_progress_per_profile',
-    'episode_notes', 'achievements', 'watch_log', 'partner_pings', 'profiles'
+    'episode_notes', 'achievements', 'watch_log', 'partner_pings', 'profiles',
+    'favorites'
   ] loop
     if not exists (
       select 1 from pg_publication_tables

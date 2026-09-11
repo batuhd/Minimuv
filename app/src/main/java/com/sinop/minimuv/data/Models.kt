@@ -187,3 +187,17 @@ data class TitleDraft(
     val overviewEn: String? = null,
     val totalEpisodes: Int? = null,
 )
+
+// ── Favori kişi / karakter / stüdyo ───────────────────────────────────────
+
+@Serializable
+data class Favorite(
+    val id: String? = null,
+    @SerialName("profile_id") val profileId: String,
+    @SerialName("fav_type") val favType: String,
+    val source: String,
+    @SerialName("external_id") val externalId: String,
+    val name: String,
+    @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+)

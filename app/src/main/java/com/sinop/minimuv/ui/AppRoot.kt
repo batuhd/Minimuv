@@ -311,6 +311,12 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     onOpenHeatmap = { navController.navigate("heatmap") },
                     onOpenWrapped = { navController.navigate("wrapped") },
                     onOpenTitle = { navController.navigate("detail/${it}") },
+                    onOpenPerson = { source, id ->
+                        navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
+                    },
+                    onOpenStudio = { type, id ->
+                        navController.navigate("studio/${type.db}/$id")
+                    },
                 )
             }
             composable(BottomTab.Settings.route) {
@@ -376,6 +382,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 PersonScreen(
                     source = if (sourceName == "anime") PersonSource.ANIME else PersonSource.TMDB,
                     externalId = externalId,
+                    profileId = profileId,
                     displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },
                     onAddTitle = { navController.navigate("detail/draft") },
@@ -387,6 +394,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 StudioScreen(
                     type = ContentType.fromDb(typeName),
                     externalId = externalId,
+                    profileId = profileId,
                     displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },
                     onAddTitle = { navController.navigate("detail/draft") },

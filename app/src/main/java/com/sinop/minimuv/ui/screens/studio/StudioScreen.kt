@@ -27,6 +27,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -38,28 +39,62 @@ import coil3.compose.AsyncImage
 import com.sinop.minimuv.core.SearchApi
 import com.sinop.minimuv.core.StudioDetails
 import com.sinop.minimuv.data.ContentType
+import com.sinop.minimuv.data.Favorite
+import com.sinop.minimuv.data.FavoritesRepository
 import com.sinop.minimuv.data.TitleDraft
 import com.sinop.minimuv.ui.screens.add.DraftHolder
 import com.sinop.minimuv.ui.screens.person.PersonWorkRow
 import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 
 /** Stüdyo / yapımcı sayfası: ad + logo + yapımları. */
 @Composable
 fun StudioScreen(
     type: ContentType,
     externalId: String,
+    profileId: String,
     displayLang: String?,
     onBack: () -> Unit,
     onAddTitle: () -> Unit,
 ) {
     var studio by remember { mutableStateOf<StudioDetails?>(null) }
     var error by remember { mutableStateOf(false) }
+    var isFav by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val favRepo = remember { FavoritesRepository() }
+    val srcName = if (type == ContentType.ANIME) "anime" else "tmdb"
 
     LaunchedEffect(type, externalId) {
         runCatching { SearchApi.studioDetails(type, externalId) }
             .onSuccess { studio = it; error = it == null }
             .onFailure { error = true }
+        runCatching { favRepo.isFavorite(profileId, "studio", srcName, externalId) }
+            .onSuccess { isFav = it }
+    }
+
+    fun toggleFav() {
+        val s = studio ?: return
+        scope.launch {
+            if (isFav) {
+                runCatching { favRepo.removeFavorite(profileId, "studio", srcName, externalId) }
+                isFav = false
+            } else {
+                runCatching {
+                    favRepo.addFavorite(
+                        Favorite(
+                            profileId = profileId,
+                            favType = "studio",
+                            source = srcName,
+                            externalId = externalId,
+                            name = s.name,
+                            imageUrl = s.logoUrl,
+                        ),
+                    )
+                }
+                isFav = true
+            }
+        }
     }
 
     Column(
@@ -81,7 +116,16 @@ fun StudioScreen(
                 style = MaterialTheme.typography.titleLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (studio != null) {
+                IconButton(onClick = { toggleFav() }) {
+                    Text(
+                        if (isFav) "❤️" else "🤍",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+            }
         }
 
         when {

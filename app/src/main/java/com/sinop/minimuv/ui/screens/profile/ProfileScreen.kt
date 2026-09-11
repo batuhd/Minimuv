@@ -79,16 +79,20 @@ fun ProfileScreen(
     onOpenHeatmap: () -> Unit = {},
     onOpenWrapped: () -> Unit = {},
     onOpenTitle: (String) -> Unit = {},
+    onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
+    onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val profileId by settings.profileId.collectAsState(initial = null)
     val scope = rememberCoroutineScope()
     val repo = remember { ProfileRepository() }
     val titleRepo = remember { TitleRepository() }
+    val favRepo = remember { com.sinop.minimuv.data.FavoritesRepository() }
 
     var profiles by remember { mutableStateOf<List<Profile>>(emptyList()) }
     var stats by remember { mutableStateOf<CoupleStats?>(null) }
     var titles by remember { mutableStateOf<List<com.sinop.minimuv.data.Title>>(emptyList()) }
+    var savedFavorites by remember { mutableStateOf<List<com.sinop.minimuv.data.Favorite>>(emptyList()) }
     var editing by remember { mutableStateOf<Profile?>(null) }
     // Kırpılacak fotoğrafın kaynak Uri'si (seçim → kırpma zinciri)
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
@@ -100,11 +104,13 @@ fun ProfileScreen(
                 val t = titleRepo.getTitles()
                 val log = titleRepo.getWatchLog()
                 val sc = runCatching { titleRepo.getAllTitleScores() }.getOrDefault(emptyList())
-                StatsBundle(p, t, log, sc)
-            }.onSuccess { bundle ->
+                val favs = runCatching { favRepo.getFavorites() }.getOrDefault(emptyList())
+                StatsBundle(p, t, log, sc) to favs
+            }.onSuccess { (bundle, favs) ->
                 profiles = bundle.profiles
                 titles = bundle.titles
                 stats = Achievements.computeStats(bundle.titles, bundle.log, bundle.scores)
+                savedFavorites = favs
             }
         }
     }
@@ -294,6 +300,83 @@ fun ProfileScreen(
                             }
                         }
                         repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                }
+            }
+        }
+
+        if (savedFavorites.isNotEmpty()) {
+            Spacer(Modifier.height(14.dp))
+            SectionCard("⭐ Kişiler & Stüdyolar") {
+                savedFavorites.forEach { fav ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable {
+                                when (fav.favType) {
+                                    "character" -> onOpenPerson(com.sinop.minimuv.core.PersonSource.ANIME, fav.externalId)
+                                    "studio" -> onOpenStudio(
+                                        if (fav.source == "anime") com.sinop.minimuv.data.ContentType.ANIME
+                                        else com.sinop.minimuv.data.ContentType.FILM,
+                                        fav.externalId,
+                                    )
+                                    else -> onOpenPerson(com.sinop.minimuv.core.PersonSource.TMDB, fav.externalId)
+                                }
+                            }
+                            .padding(vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(MidnightCard),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            if (fav.imageUrl != null) {
+                                coil3.compose.AsyncImage(
+                                    model = fav.imageUrl,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                Text(
+                                    when (fav.favType) {
+                                        "character" -> "🎭"
+                                        "studio" -> "🏢"
+                                        else -> "🎬"
+                                    },
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(fav.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                            Text(
+                                when (fav.favType) {
+                                    "character" -> "Karakter"
+                                    "studio" -> "Stüdyo / Yapımcı"
+                                    else -> "Oyuncu / Yönetmen"
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = TextSecondary,
+                            )
+                        }
+                        Text(
+                            "❤️",
+                            modifier = Modifier
+                                .clip(CircleShape)
+                                .clickable {
+                                    scope.launch {
+                                        runCatching { favRepo.removeFavorite(fav.profileId, fav.favType, fav.source, fav.externalId) }
+                                        savedFavorites = savedFavorites.filterNot { it.id == fav.id }
+                                    }
+                                }
+                                .padding(8.dp),
+                        )
                     }
                 }
             }

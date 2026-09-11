@@ -30,6 +30,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -43,28 +44,63 @@ import com.sinop.minimuv.core.PersonDetails
 import com.sinop.minimuv.core.PersonSource
 import com.sinop.minimuv.core.PersonWork
 import com.sinop.minimuv.core.SearchApi
+import com.sinop.minimuv.data.Favorite
+import com.sinop.minimuv.data.FavoritesRepository
 import com.sinop.minimuv.data.TitleDraft
 import com.sinop.minimuv.ui.screens.add.DraftHolder
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.TextSecondary
+import kotlinx.coroutines.launch
 
 /** Kişi sayfası: oyuncu/yönetmen (TMDB) ya da karakter (AniList) biyografisi + filmografisi. */
 @Composable
 fun PersonScreen(
     source: PersonSource,
     externalId: String,
+    profileId: String,
     displayLang: String?,
     onBack: () -> Unit,
     onAddTitle: () -> Unit,
 ) {
     var person by remember { mutableStateOf<PersonDetails?>(null) }
     var error by remember { mutableStateOf(false) }
+    var isFav by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val favRepo = remember { FavoritesRepository() }
+    val favType = if (source == PersonSource.ANIME) "character" else "person"
+    val srcName = if (source == PersonSource.ANIME) "anime" else "tmdb"
 
     LaunchedEffect(source, externalId) {
         runCatching { SearchApi.personDetails(source, externalId) }
             .onSuccess { person = it; error = it == null }
             .onFailure { error = true }
+        runCatching { favRepo.isFavorite(profileId, favType, srcName, externalId) }
+            .onSuccess { isFav = it }
+    }
+
+    fun toggleFav() {
+        val p = person ?: return
+        scope.launch {
+            if (isFav) {
+                runCatching { favRepo.removeFavorite(profileId, favType, srcName, externalId) }
+                isFav = false
+            } else {
+                runCatching {
+                    favRepo.addFavorite(
+                        Favorite(
+                            profileId = profileId,
+                            favType = favType,
+                            source = srcName,
+                            externalId = externalId,
+                            name = p.name,
+                            imageUrl = p.imageUrl,
+                        ),
+                    )
+                }
+                isFav = true
+            }
+        }
     }
 
     Column(
@@ -86,7 +122,16 @@ fun PersonScreen(
                 style = MaterialTheme.typography.titleLarge,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
             )
+            if (person != null) {
+                IconButton(onClick = { toggleFav() }) {
+                    Text(
+                        if (isFav) "❤️" else "🤍",
+                        style = MaterialTheme.typography.titleLarge,
+                    )
+                }
+            }
         }
 
         when {
