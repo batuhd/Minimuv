@@ -107,12 +107,9 @@ fun DetailScreen(
     var totalEpisodesText by remember(loaded?.id, draft) {
         mutableStateOf(loaded?.totalEpisodes?.toString() ?: draft?.totalEpisodes?.toString() ?: "")
     }
-    // Yeni eklenen başlıkta başlangıç tarihi boşsa bugün önerilir
-    var startDate by remember(loaded?.id, draft) {
-        mutableStateOf(loaded?.startDate ?: titleId.takeIf { it == "draft" }?.run {
-            java.time.LocalDate.now().toString()
-        })
-    }
+    // Kuyruğa (Plan) eklenen başlığın başlangıç tarihi boş kalır;
+    // izlemeye başlanınca ya da tamamlanınca o gün damgalanır.
+    var startDate by remember(loaded?.id, draft) { mutableStateOf(loaded?.startDate) }
     var finishDate by remember(loaded?.id, draft) { mutableStateOf(loaded?.finishDate) }
     var rewatches by remember(loaded?.id, draft) { mutableStateOf(loaded?.totalRewatches ?: 0) }
     var notesText by remember(loaded?.id, draft) { mutableStateOf(loaded?.notes ?: "") }
@@ -239,9 +236,13 @@ fun DetailScreen(
                         if (it == WatchStatus.WATCHING.db && startDate == null) {
                             startDate = java.time.LocalDate.now().toString()
                         }
-                        // Tamamlandı seçilince bitiş tarihi boşsa bugün damgalanır
+                        // Tamamlandı seçilince bitiş tarihi boşsa bugün damgalanır;
+                        // direkt tamamlanan yapımda başlangıç da boşsa o gün başlar
                         if (it == WatchStatus.COMPLETED.db && finishDate == null) {
                             finishDate = java.time.LocalDate.now().toString()
+                        }
+                        if (it == WatchStatus.COMPLETED.db && startDate == null) {
+                            startDate = java.time.LocalDate.now().toString()
                         }
                     },
                     onStartRewatch = {
@@ -364,6 +365,10 @@ fun DetailScreen(
                     }
                     // İzlemeye geçilen her durumda başlangıç tarihi boşsa bugün damgalanır
                     if (status == WatchStatus.WATCHING.db && startDate == null) {
+                        startDate = java.time.LocalDate.now().toString()
+                    }
+                    // İzlenmeden tamamlanan yapımda başlangıç da boşsa bugün kabul edilir
+                    if (status == WatchStatus.COMPLETED.db && startDate == null) {
                         startDate = java.time.LocalDate.now().toString()
                     }
                     val changes = buildChanges()
