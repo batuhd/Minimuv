@@ -25,9 +25,11 @@ data class SearchResult(
     val type: ContentType,
     val title: String,
     val altTitle: String? = null,
+    val titleEn: String? = null,
     val year: String?,
     val posterUrl: String?,
     val overview: String?,
+    val overviewEn: String? = null,
     val totalEpisodes: Int?,
 )
 
@@ -97,8 +99,11 @@ data class CastMember(
 )
 
 data class TitleDetails(
+    val title: String? = null,
+    val titleEn: String? = null,
     val tagline: String? = null,
     val overview: String? = null,
+    val overviewEn: String? = null,
     val genres: List<String> = emptyList(),
     val rating: Double? = null,
     val voteCount: Int? = null,
@@ -303,9 +308,11 @@ object SearchApi {
                 type = ContentType.ANIME,
                 title = title,
                 altTitle = alt,
+                titleEn = media.title.english ?: media.title.romaji,
                 year = media.seasonYear?.toString(),
                 posterUrl = media.coverImage?.extraLarge,
                 overview = cleanOverview(media.description),
+                overviewEn = cleanOverview(media.description),
                 totalEpisodes = media.episodes,
             )
         }
@@ -329,9 +336,11 @@ object SearchApi {
                 type = type,
                 title = title,
                 altTitle = original?.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) },
+                titleEn = original?.takeIf { it.isNotBlank() } ?: title,
                 year = (item.releaseDate ?: item.firstAirDate)?.take(4),
                 posterUrl = "https://image.tmdb.org/t/p/w500${item.posterPath}",
                 overview = cleanOverview(item.overview),
+                overviewEn = cleanOverview(item.overview),
                 totalEpisodes = null,
             )
         }
@@ -341,32 +350,42 @@ object SearchApi {
 
     private suspend fun tmdbDetails(type: ContentType, externalId: String): TitleDetails {
         val endpoint = if (type == ContentType.FILM) "movie" else "tv"
-        val response = client.get("https://api.themoviedb.org/3/$endpoint/$externalId") {
-            parameter("api_key", TMDB_API_KEY)
-            parameter("language", "tr-TR")
-            parameter("append_to_response", "credits")
-        }.body<TmdbDetailsResponse>()
+
+        // Türkçe + İngilizce ayrı ayrı istenir: Türkçe açıklaması olmayan yapımlarda
+        // İngilizce metin yedek olarak saklanır ve gösterimde kullanılabilir.
+        suspend fun fetch(lang: String, withCredits: Boolean): TmdbDetailsResponse =
+            client.get("https://api.themoviedb.org/3/$endpoint/$externalId") {
+                parameter("api_key", TMDB_API_KEY)
+                parameter("language", lang)
+                if (withCredits) parameter("append_to_response", "credits")
+            }.body<TmdbDetailsResponse>()
+
+        val tr = fetch("tr-TR", withCredits = true)
+        val en = fetch("en-US", withCredits = false)
 
         val runtimeText = if (type == ContentType.FILM) {
-            response.runtime?.takeIf { it > 0 }?.let { "$it dk" }
+            tr.runtime?.takeIf { it > 0 }?.let { "$it dk" }
         } else {
-            val rt = response.episodeRunTime?.firstOrNull()
-            val seasons = response.numberOfSeasons?.takeIf { it > 0 }?.let { "$it sezon" }
+            val rt = tr.episodeRunTime?.firstOrNull()
+            val seasons = tr.numberOfSeasons?.takeIf { it > 0 }?.let { "$it sezon" }
             listOfNotNull(seasons, rt?.let { "$it dk" }).joinToString(" • ").ifBlank { null }
         }
 
         return TitleDetails(
-            tagline = response.tagline?.takeIf { it.isNotBlank() },
-            overview = cleanOverview(response.overview),
-            genres = response.genres.orEmpty().mapNotNull { it.name },
-            rating = response.voteAverage?.takeIf { it > 0 },
-            voteCount = response.voteCount,
-            year = (response.releaseDate ?: response.firstAirDate)?.take(4),
+            title = tr.title ?: tr.name ?: en.title ?: en.name,
+            titleEn = en.title ?: en.name,
+            tagline = tr.tagline?.takeIf { it.isNotBlank() },
+            overview = cleanOverview(tr.overview) ?: cleanOverview(en.overview),
+            overviewEn = cleanOverview(en.overview) ?: cleanOverview(tr.overview),
+            genres = tr.genres.orEmpty().mapNotNull { it.name },
+            rating = tr.voteAverage?.takeIf { it > 0 },
+            voteCount = tr.voteCount,
+            year = (tr.releaseDate ?: tr.firstAirDate)?.take(4),
             runtimeText = runtimeText,
-            statusText = tmdbStatusTr(response.status),
-            studios = (response.productionCompanies.orEmpty().mapNotNull { it.name } +
-                response.networks.orEmpty().mapNotNull { it.name }).distinct().take(3),
-            cast = response.credits?.cast.orEmpty()
+            statusText = tmdbStatusTr(tr.status),
+            studios = (tr.productionCompanies.orEmpty().mapNotNull { it.name } +
+                tr.networks.orEmpty().mapNotNull { it.name }).distinct().take(3),
+            cast = tr.credits?.cast.orEmpty()
                 .filter { !it.profilePath.isNullOrBlank() }
                 .take(8)
                 .map { c ->
@@ -393,6 +412,7 @@ object SearchApi {
         val graphQl = """
             query (${'$'}id: Int) {
               Media(id: ${'$'}id, type: ANIME) {
+                title { romaji english }
                 description(asHtml: false)
                 genres
                 averageScore
@@ -442,7 +462,10 @@ object SearchApi {
         ).joinToString(" • ").ifBlank { null }
 
         return TitleDetails(
+            title = media.title?.romaji ?: media.title?.english,
+            titleEn = media.title?.english ?: media.title?.romaji,
             overview = cleanOverview(media.description),
+            overviewEn = cleanOverview(media.description),
             genres = media.genres.orEmpty(),
             rating = media.averageScore?.let { it / 10.0 },
             year = media.seasonYear?.toString(),
@@ -512,6 +535,8 @@ private data class TmdbItem(
 
 @Serializable
 private data class TmdbDetailsResponse(
+    val title: String? = null,
+    val name: String? = null,
     val tagline: String? = null,
     val overview: String? = null,
     val genres: List<TmdbGenre>? = null,
@@ -553,6 +578,7 @@ private data class AniListDetailsData(@SerialName("Media") val media: AniListDet
 
 @Serializable
 private data class AniListDetailsMedia(
+    val title: AniListTitle? = null,
     val description: String? = null,
     val genres: List<String>? = null,
     @SerialName("averageScore") val averageScore: Int? = null,

@@ -54,8 +54,10 @@ data class Title(
     val type: String,
     @SerialName("external_id") val externalId: String? = null,
     val title: String,
+    @SerialName("title_en") val titleEn: String? = null,
     @SerialName("poster_url") val posterUrl: String? = null,
     val overview: String? = null,
+    @SerialName("overview_en") val overviewEn: String? = null,
     val status: String = "Plan to Watch",
     val score: Double? = null,
     @SerialName("episode_progress") val episodeProgress: Int = 0,
@@ -81,6 +83,14 @@ data class Title(
         val values = listOfNotNull(story, characters, visuals, audio, enjoyment)
         return if (values.isEmpty()) null else values.average()
     }
+
+    /** Görüntüleme dili ayarına göre başlık (EN seçiliyse İngilizce ad, boşsa TR). */
+    fun displayTitle(lang: String?): String =
+        if (lang == "EN") titleEn ?: title else title
+
+    /** Görüntüleme dili ayarına göre açıklama (EN seçiliyse İngilizce özet, boşsa TR). */
+    fun displayOverview(lang: String?): String? =
+        if (lang == "EN") overviewEn ?: overview else overview
 }
 
 @Serializable
@@ -171,7 +181,9 @@ data class TitleDraft(
     val type: String,
     val externalId: String? = null,
     val title: String,
+    val titleEn: String? = null,
     val posterUrl: String? = null,
     val overview: String? = null,
+    val overviewEn: String? = null,
     val totalEpisodes: Int? = null,
 )

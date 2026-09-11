@@ -296,8 +296,10 @@ fun AddScreen(
                                         type = result.type.db,
                                         externalId = result.externalId,
                                         title = result.title,
+                                        titleEn = result.titleEn,
                                         posterUrl = result.posterUrl,
                                         overview = result.overview,
+                                        overviewEn = result.overviewEn,
                                         totalEpisodes = result.totalEpisodes,
                                     )
                                     onPicked()
@@ -320,8 +322,10 @@ fun AddScreen(
                     type = result.type.db,
                     externalId = result.externalId,
                     title = result.title,
+                    titleEn = result.titleEn,
                     posterUrl = result.posterUrl,
                     overview = result.overview,
+                    overviewEn = result.overviewEn,
                     totalEpisodes = result.totalEpisodes,
                 )
                 onPicked()

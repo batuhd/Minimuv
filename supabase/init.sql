@@ -74,6 +74,8 @@ create table if not exists public.titles (
 
 -- Eski kurulumlarda eksik olabilecek kolonlar (idempotent)
 alter table public.titles add column if not exists overview text;
+alter table public.titles add column if not exists title_en text;
+alter table public.titles add column if not exists overview_en text;
 
 create index if not exists titles_type_idx on public.titles (type);
 create index if not exists titles_status_idx on public.titles (status);
