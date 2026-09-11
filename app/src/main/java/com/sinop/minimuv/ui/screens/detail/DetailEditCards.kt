@@ -2,6 +2,7 @@ package com.sinop.minimuv.ui.screens.detail
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -546,33 +547,32 @@ internal fun NotesCard(
     titleId: String,
     notes: List<com.sinop.minimuv.data.TitleNote>,
     profiles: List<Profile>,
-    onAddNote: (String) -> Unit,
+    onAddNote: (String, String?) -> Unit,
     onUpdateNote: (String, String) -> Unit,
     onDeleteNote: (String) -> Unit,
-    customLists: List<String>,
-    onRemoveList: (String) -> Unit,
-    newListText: String,
-    onNewListText: (String) -> Unit,
-    onAddList: () -> Unit,
     isFavorite: Boolean,
     onFavorite: (Boolean) -> Unit,
 ) {
     var showAddDialog by remember { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<com.sinop.minimuv.data.TitleNote?>(null) }
 
-    val summary = when {
-        notes.isNotEmpty() -> "${notes.size} not"
-        customLists.isNotEmpty() -> "Listeler: ${customLists.joinToString()}"
-        else -> "Henüz not yok"
-    }
+    val summary = if (notes.isNotEmpty()) "${notes.size} not" else "Henüz not yok"
 
     EditSection(
         emoji = "📝",
-        title = "Notlar & Listeler",
+        title = "Notlar",
         summary = summary,
         initiallyExpanded = false,
     ) {
-        // Tek tek notlar
+        if (notes.isEmpty()) {
+            Text(
+                "Henüz bir şey yazmadık 💭",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary,
+                modifier = Modifier.padding(vertical = 4.dp),
+            )
+            Spacer(Modifier.height(6.dp))
+        }
         notes.forEach { note ->
             TitleNoteRow(
                 note = note,
@@ -584,42 +584,11 @@ internal fun NotesCard(
         }
 
         SoftChip(
-            label = "＋ Not ekle",
+            label = "＋ Not ekle ✍️",
             selected = false,
             color = MaterialTheme.colorScheme.primary,
             onClick = { showAddDialog = true },
         )
-
-        if (customLists.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            Text("Listelerimiz", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-            Spacer(Modifier.height(6.dp))
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                customLists.forEach { list ->
-                    SoftChip(
-                        label = list,
-                        selected = true,
-                        color = MaterialTheme.colorScheme.primary,
-                        onClick = { onRemoveList(list) },
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(10.dp))
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = newListText,
-                onValueChange = onNewListText,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                placeholder = { Text("yeni liste ekle…") },
-            )
-            Spacer(Modifier.width(8.dp))
-            MinimuvButton(label = "Ekle", onClick = onAddList)
-        }
 
         Spacer(Modifier.height(12.dp))
         SoftChip(
@@ -634,9 +603,10 @@ internal fun NotesCard(
         NoteTextDialog(
             title = "Yeni not ✍️",
             initial = "",
+            initialEmoji = null,
             onDismiss = { showAddDialog = false },
-            onSave = {
-                onAddNote(it)
+            onSave = { text, emoji ->
+                onAddNote(text, emoji)
                 showAddDialog = false
             },
         )
@@ -645,8 +615,9 @@ internal fun NotesCard(
         NoteTextDialog(
             title = "Notu düzenle",
             initial = target.noteText,
+            initialEmoji = target.emoji,
             onDismiss = { editTarget = null },
-            onSave = { newText ->
+            onSave = { newText, _ ->
                 target.id?.let { id -> onUpdateNote(id, newText) }
                 editTarget = null
             },
@@ -664,60 +635,121 @@ private fun TitleNoteRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            .clip(RoundedCornerShape(14.dp))
             .background(OutlineSoft.copy(alpha = 0.35f))
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.Top,
     ) {
+        Box(
+            Modifier
+                .size(38.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.14f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(note.emoji ?: "💬", style = MaterialTheme.typography.titleMedium)
+        }
+        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
-            Text(
-                "${author?.emoji ?: "👤"} ${author?.name ?: "?"}",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "${author?.emoji ?: "👤"} ${author?.name ?: "?"}",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.weight(1f))
+                note.createdAt?.take(10)?.let {
+                    Text(
+                        formatDate(it),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = TextSecondary,
+                    )
+                }
+            }
             Spacer(Modifier.height(2.dp))
             Text(note.noteText, style = MaterialTheme.typography.bodyMedium)
         }
-        Text(
-            "✏️",
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable(onClick = onEdit)
-                .padding(6.dp),
-        )
-        Text(
-            "🗑️",
-            modifier = Modifier
-                .clip(CircleShape)
-                .clickable(onClick = onDelete)
-                .padding(6.dp),
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                "✏️",
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onEdit)
+                    .padding(6.dp),
+            )
+            Text(
+                "🗑️",
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .clickable(onClick = onDelete)
+                    .padding(6.dp),
+            )
+        }
     }
 }
+
+private val NOTE_EMOJIS = listOf("💕", "😍", "😂", "😢", "🔥", "😱", "🤯", "🥰", "✨", "🤔")
 
 @Composable
 private fun NoteTextDialog(
     title: String,
     initial: String,
+    initialEmoji: String?,
     onDismiss: () -> Unit,
-    onSave: (String) -> Unit,
+    onSave: (String, String?) -> Unit,
 ) {
     var text by remember { mutableStateOf(initial) }
+    var emoji by remember { mutableStateOf(initialEmoji) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(title) },
         text = {
-            OutlinedTextField(
-                value = text,
-                onValueChange = { if (it.length <= 2000) text = it },
-                minLines = 3,
-                placeholder = { Text("Örn: 3. bölümdeki sahne muhteşemdi 😍") },
-            )
+            Column {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= 2000) text = it },
+                    minLines = 3,
+                    placeholder = { Text("Örn: 3. bölümdeki sahne muhteşemdi 😍") },
+                )
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "Hissini seç",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    NOTE_EMOJIS.forEach { e ->
+                        val selected = emoji == e
+                        Box(
+                            Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(
+                                    if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+                                    else OutlineSoft.copy(alpha = 0.4f)
+                                )
+                                .border(
+                                    width = if (selected) 2.dp else 0.dp,
+                                    color = MaterialTheme.colorScheme.primary,
+                                    shape = CircleShape,
+                                )
+                                .clickable { emoji = if (selected) null else e },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(e, style = MaterialTheme.typography.titleMedium)
+                        }
+                    }
+                }
+            }
         },
         confirmButton = {
             TextButton(
                 enabled = text.trim().isNotBlank(),
-                onClick = { onSave(text.trim()) },
+                onClick = { onSave(text.trim(), emoji) },
             ) { Text("Kaydet") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },

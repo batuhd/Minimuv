@@ -62,8 +62,6 @@ data class AchievementDef(
         "15_favori" -> stats.favoriteCount.coerceAtMost(target)
         "ilk_yeniden" -> stats.rewatchCount.coerceAtMost(target)
         "5_yeniden" -> stats.rewatchCount.coerceAtMost(target)
-        "ilk_liste" -> stats.customListCount.coerceAtMost(target)
-        "5_liste" -> stats.customListCount.coerceAtMost(target)
         "uzun_dizi" -> stats.longSeriesCount.coerceAtMost(target)
         "3_uzun_dizi" -> stats.longSeriesCount.coerceAtMost(target)
         "ayri_izleme" -> stats.separateWatchCount.coerceAtMost(target)
@@ -89,7 +87,6 @@ data class CoupleStats(
     val totalEpisodesLogged: Int = 0,
     val favoriteCount: Int = 0,
     val rewatchCount: Int = 0,
-    val customListCount: Int = 0,
     val longSeriesCount: Int = 0,
     val separateWatchCount: Int = 0,
     val perfectScoreCount: Int = 0,
@@ -151,8 +148,6 @@ object Achievements {
         AchievementDef("15_favori", "🖼️", "Stickercı", "15 favori biriktirdiniz.", 15),
         AchievementDef("ilk_yeniden", "🔁", "İkinci Defa mı?", "Bir yapımı yeniden izlemeye başladınız.", 1),
         AchievementDef("5_yeniden", "🕰️", "Karanlık Dönem: Kpop", "Toplam 5 yeniden izleme yaptınız.", 5),
-        AchievementDef("ilk_liste", "🗂️", "Watchlist Sağlam", "İlk özel listenizi oluşturdunuz.", 1),
-        AchievementDef("5_liste", "🗃️", "Her Hafta Yeni Hobi", "5 özel liste oluşturdunuz.", 5),
         AchievementDef("uzun_dizi", "🐢", "Titanlar Bitti", "100+ bölümlük bir yapımı bitirdiniz.", 1),
         AchievementDef("3_uzun_dizi", "🏃", "Yüksek Lisans Sahibi", "3 tane 100+ bölümlük yapım bitirdiniz.", 3),
         AchievementDef("ayri_izleme", "🕊️", "Qardiş Modu", "Ayrı ayrı izleme modunda ilk başlığınız.", 1),
@@ -199,7 +194,6 @@ object Achievements {
         // ── Yeni istatistikler (rozetler için) ────────────────────────────
         val favoriteCount = titles.count { it.isFavorite }
         val rewatchCount = titles.sumOf { it.totalRewatches }
-        val customListCount = titles.flatMap { it.customLists }.distinct().size
         val longSeriesCount = completed.count { it.type != ContentType.FILM.db && (it.totalEpisodes ?: 0) >= 100 }
         val separateWatchCount = titles.count { it.watchMode == WatchMode.AYRI.db }
         val perfectScoreCount = titles.count { (it.score ?: 0.0) >= 9.95 }
@@ -228,7 +222,6 @@ object Achievements {
             totalEpisodesLogged = watchLog.sumOf { it.episodesWatched },
             favoriteCount = favoriteCount,
             rewatchCount = rewatchCount,
-            customListCount = customListCount,
             longSeriesCount = longSeriesCount,
             separateWatchCount = separateWatchCount,
             perfectScoreCount = perfectScoreCount,

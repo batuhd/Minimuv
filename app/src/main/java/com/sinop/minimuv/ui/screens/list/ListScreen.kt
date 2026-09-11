@@ -125,7 +125,6 @@ private fun statusGroup(db: String): String =
 data class ListFilters(
     val type: ContentType? = null,
     val status: WatchStatus? = null,
-    val customList: String? = null,
     val yearRange: ClosedFloatingPointRange<Float>? = null,
     val sort: SortOption = SortOption.RECENT,
 )
@@ -317,10 +316,9 @@ private fun filterAndSort(
         val matchesQuery = q.isBlank() || TextNormalizer.fold(t.title).contains(q)
         val matchesType = filters.type == null || t.type == filters.type!!.db
         val matchesStatus = filters.status == null || t.status == filters.status!!.db
-        val matchesCustomList = filters.customList == null || t.customLists.contains(filters.customList)
         val year = t.startDate?.take(4)?.toFloatOrNull()
         val matchesYear = filters.yearRange == null || (year != null && year >= filters.yearRange!!.start && year <= filters.yearRange!!.endInclusive)
-        matchesQuery && matchesType && matchesStatus && matchesCustomList && matchesYear
+        matchesQuery && matchesType && matchesStatus && matchesYear
     }
     return when (filters.sort) {
         SortOption.RECENT -> result.sortedByDescending { it.createdAt ?: "" }

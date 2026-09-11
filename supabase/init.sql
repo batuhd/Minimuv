@@ -63,7 +63,6 @@ create table if not exists public.titles (
   visuals numeric check (visuals is null or (visuals >= 0 and visuals <= 10)),
   audio numeric check (audio is null or (audio >= 0 and audio <= 10)),
   enjoyment numeric check (enjoyment is null or (enjoyment >= 0 and enjoyment <= 10)),
-  custom_lists text[] not null default '{}',
   is_private boolean not null default false,
   watch_mode text not null default 'birlikte' check (watch_mode in ('birlikte', 'ayri')),
   priority_order int,
@@ -76,6 +75,8 @@ create table if not exists public.titles (
 alter table public.titles add column if not exists overview text;
 alter table public.titles add column if not exists title_en text;
 alter table public.titles add column if not exists overview_en text;
+-- Liste özelliği kaldırıldı: mevcut kolon varsa temizlenir
+alter table public.titles drop column if exists custom_lists;
 
 create index if not exists titles_type_idx on public.titles (type);
 create index if not exists titles_status_idx on public.titles (status);
@@ -169,6 +170,7 @@ create table if not exists public.title_notes (
   title_id uuid not null references public.titles(id) on delete cascade,
   profile_id uuid not null references public.profiles(id) on delete cascade,
   note_text text not null check (char_length(note_text) between 1 and 2000),
+  emoji text,
   created_at timestamptz not null default now()
 );
 

@@ -71,7 +71,6 @@ data class Title(
     val visuals: Double? = null,
     val audio: Double? = null,
     val enjoyment: Double? = null,
-    @SerialName("custom_lists") val customLists: List<String> = emptyList(),
     @SerialName("is_private") val isPrivate: Boolean = false,
     @SerialName("watch_mode") val watchMode: String = "birlikte",
     @SerialName("priority_order") val priorityOrder: Int? = null,
@@ -172,6 +171,7 @@ data class TitleNote(
     @SerialName("title_id") val titleId: String,
     @SerialName("profile_id") val profileId: String,
     @SerialName("note_text") val noteText: String,
+    val emoji: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
 )
 

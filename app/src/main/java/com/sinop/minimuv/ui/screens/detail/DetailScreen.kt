@@ -116,8 +116,6 @@ fun DetailScreen(
     var finishDate by remember(loaded?.id, draft) { mutableStateOf(loaded?.finishDate) }
     var rewatches by remember(loaded?.id, draft) { mutableStateOf(loaded?.totalRewatches ?: 0) }
     var notesText by remember(loaded?.id, draft) { mutableStateOf(loaded?.notes ?: "") }
-    var customListText by remember { mutableStateOf("") }
-    var customLists by remember(loaded?.id, draft) { mutableStateOf(loaded?.customLists ?: emptyList()) }
     var isPrivate by remember(loaded?.id, draft) { mutableStateOf(loaded?.isPrivate ?: false) }
     var isFavorite by remember(loaded?.id, draft) { mutableStateOf(loaded?.isFavorite ?: false) }
     var watchMode by remember(loaded?.id, draft) { mutableStateOf(loaded?.watchMode ?: WatchMode.BIRLIKTE.db) }
@@ -192,7 +190,6 @@ fun DetailScreen(
             if (finishDate != t.finishDate) put("finish_date", finishDate)
             if (rewatches != t.totalRewatches) put("total_rewatches", rewatches)
             if (notesText != (t.notes ?: "")) put("notes", notesText.ifBlank { null })
-            if (customLists != t.customLists) put("custom_lists", customLists)
             if (isPrivate != t.isPrivate) put("is_private", isPrivate)
             if (watchMode != t.watchMode) put("watch_mode", watchMode)
             if (isFavorite != t.isFavorite) put("is_favorite", isFavorite)
@@ -314,22 +311,14 @@ fun DetailScreen(
                     titleId = loaded?.id ?: "draft",
                     notes = titleNotes,
                     profiles = profiles,
-                    onAddNote = { text ->
-                        loaded?.let { vm.addTitleNote(it.id, profileId, text) }
+                    onAddNote = { text, emoji ->
+                        loaded?.let { vm.addTitleNote(it.id, profileId, text, emoji) }
                     },
                     onUpdateNote = { noteId, text ->
                         loaded?.let { vm.updateTitleNote(noteId, it.id, text) }
                     },
                     onDeleteNote = { noteId ->
                         loaded?.let { vm.deleteTitleNote(noteId, it.id) }
-                    },
-                    customLists = customLists,
-                    onRemoveList = { customLists = customLists - it },
-                    newListText = customListText, onNewListText = { customListText = it },
-                    onAddList = {
-                        val v = customListText.trim()
-                        if (v.isNotBlank() && v !in customLists) customLists = customLists + v
-                        customListText = ""
                     },
                     isFavorite = isFavorite, onFavorite = { isFavorite = it },
                 )
@@ -410,7 +399,6 @@ fun DetailScreen(
                                 finishDate = finishDate,
                                 totalRewatches = rewatches,
                                 notes = notesText.ifBlank { null },
-                                customLists = customLists,
                                 isPrivate = isPrivate,
                                 watchMode = watchMode,
                                 isFavorite = isFavorite,

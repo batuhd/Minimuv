@@ -95,11 +95,15 @@ class DetailViewModel : ViewModel() {
 
     // ── Tekil başlık notları ─────────────────────────────────────────────
 
-    fun addTitleNote(titleId: String, profileId: String, text: String) {
+    fun addTitleNote(titleId: String, profileId: String, text: String, emoji: String? = null) {
         val trimmed = text.trim()
         if (trimmed.isEmpty() || titleId == "draft") return
         viewModelScope.launch {
-            runCatching { repo.insertTitleNote(TitleNote(titleId = titleId, profileId = profileId, noteText = trimmed)) }
+            runCatching {
+                repo.insertTitleNote(
+                    TitleNote(titleId = titleId, profileId = profileId, noteText = trimmed, emoji = emoji),
+                )
+            }
                 .onSuccess { titleNotes.value = repo.getTitleNotes(titleId) }
                 .onFailure { error.value = it.message }
         }
