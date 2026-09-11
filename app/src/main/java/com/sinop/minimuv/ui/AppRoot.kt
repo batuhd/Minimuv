@@ -336,6 +336,12 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     settings = settings,
                     onBack = { navController.popBackStack() },
                     onPicked = { navController.navigate("detail/draft") },
+                    onOpenPerson = { source, id ->
+                        navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
+                    },
+                    onOpenStudio = { type, id ->
+                        navController.navigate("studio/${type.db}/$id")
+                    },
                 )
             }
             composable(

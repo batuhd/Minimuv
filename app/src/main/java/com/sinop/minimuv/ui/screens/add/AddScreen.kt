@@ -37,6 +37,7 @@ import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -57,6 +58,8 @@ import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.sinop.minimuv.core.SearchApi
 import com.sinop.minimuv.core.SearchResult
+import com.sinop.minimuv.core.StudioSearchResult
+import com.sinop.minimuv.core.PersonSearchResult
 import com.sinop.minimuv.core.TitleDetails
 import com.sinop.minimuv.core.TitleLanguage
 import com.sinop.minimuv.data.ContentType
@@ -80,21 +83,15 @@ object DraftHolder {
     var draft: TitleDraft? = null
 }
 
-/** Arama sonuçlarını yapım yılına göre filtreleyen seçenekler. */
-enum class YearFilter(val label: String) {
-    ALL("Tümü"),
-    SINCE_2020("2020+"),
-    DECADE_2010("2010'lar"),
-    DECADE_2000("2000'ler"),
-    BEFORE_2000("2000 öncesi");
+/** Arama kategorisi: yapımlar + stüdyo + kişi. */
+enum class SearchCategory(val label: String) {
+    FILM("Film"),
+    DIZI("Dizi"),
+    ANIME("Anime"),
+    STUDIO("Stüdyo"),
+    PERSON("Kişi");
 
-    fun matches(year: Int?): Boolean = when (this) {
-        ALL -> true
-        SINCE_2020 -> year != null && year >= 2020
-        DECADE_2010 -> year != null && year in 2010..2019
-        DECADE_2000 -> year != null && year in 2000..2009
-        BEFORE_2000 -> year != null && year < 2000
-    }
+    val isTitle: Boolean get() = this == FILM || this == DIZI || this == ANIME
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -103,16 +100,18 @@ fun AddScreen(
     settings: SettingsStore,
     onBack: () -> Unit,
     onPicked: () -> Unit,
+    onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
+    onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
 ) {
-    var type by remember { mutableStateOf(ContentType.FILM) }
-    var query by remember { mutableStateOf("") }
-    var results by remember { mutableStateOf<List<SearchResult>?>(null) }
+    var category by rememberSaveable { mutableStateOf(SearchCategory.FILM) }
+    var query by rememberSaveable { mutableStateOf("") }
+    var results by remember { mutableStateOf<List<Any>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf(false) }
     var retryTick by remember { mutableStateOf(0) }
     var preview by remember { mutableStateOf<SearchResult?>(null) }
     var lang by rememberSaveable { mutableStateOf<TitleLanguage?>(null) }
-    var yearFilter by remember { mutableStateOf(YearFilter.ALL) }
+    var yearRange by remember { mutableStateOf<ClosedFloatingPointRange<Float>?>(null) }
     val activeLang = lang ?: TitleLanguage.TR
     val scope = rememberCoroutineScope()
 
@@ -135,17 +134,25 @@ fun AddScreen(
         }
     }
 
-    LaunchedEffect(type, query, activeLang, retryTick) {
+    LaunchedEffect(category, query, activeLang, retryTick) {
         if (query.isBlank()) {
-            results = null
+            results = emptyList()
             searchError = false
             return@LaunchedEffect
         }
         searching = true
-        results = null
+        results = emptyList()
         searchError = false
         delay(450)
-        runCatching { SearchApi.search(type, query, activeLang) }
+        runCatching {
+            when (category) {
+                SearchCategory.FILM -> SearchApi.search(ContentType.FILM, query, activeLang).map { it as Any }
+                SearchCategory.DIZI -> SearchApi.search(ContentType.DIZI, query, activeLang).map { it as Any }
+                SearchCategory.ANIME -> SearchApi.search(ContentType.ANIME, query, activeLang).map { it as Any }
+                SearchCategory.STUDIO -> SearchApi.searchStudio(query, activeLang).map { it as Any }
+                SearchCategory.PERSON -> SearchApi.searchPerson(query, activeLang).map { it as Any }
+            }
+        }
             .onSuccess {
                 results = it
                 searchError = false
@@ -169,32 +176,41 @@ fun AddScreen(
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
             }
             Text(
-                "Yeni başlık ekle",
+                "Başlık ara",
                 style = MaterialTheme.typography.titleLarge,
             )
         }
 
-        // Tür seçimi
+        // Kategori seçimi: Film | Dizi | Anime | Stüdyo | Kişi
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = 16.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(2.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            ContentType.entries.forEach { t ->
-                SoftChip(
-                    label = t.label,
-                    emoji = typeEmoji(t.db),
-                    selected = type == t,
-                    color = typeColor(t.db),
-                    onClick = { type = t },
+            SearchCategory.entries.forEachIndexed { index, cat ->
+                if (index > 0) {
+                    Text("|", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                    Spacer(Modifier.width(2.dp))
+                }
+                val selected = category == cat
+                Text(
+                    cat.label,
+                    style = MaterialTheme.typography.titleSmall,
+                    color = if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
+                    fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else null,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(50))
+                        .clickable { category = cat }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
                 )
             }
         }
 
         Spacer(Modifier.height(8.dp))
 
-        // Dil seçimi: bazı yapımlar Türkçe, bazıları İngilizce adıyla bilinir
+        // Dil seçimi: yapımlar için başlık dili; stüdyo/kişi için de istek dili
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -203,7 +219,7 @@ fun AddScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                "Başlık dili",
+                "Dil",
                 style = MaterialTheme.typography.labelMedium,
                 color = TextSecondary,
             )
@@ -230,10 +246,12 @@ fun AddScreen(
                 .padding(horizontal = 16.dp),
             placeholder = {
                 Text(
-                    when (type) {
-                        ContentType.FILM -> "Film ara… örn. Inception"
-                        ContentType.DIZI -> "Dizi ara… örn. Dark"
-                        ContentType.ANIME -> "Anime ara… örn. Monster"
+                    when (category) {
+                        SearchCategory.FILM -> "Film ara… örn. Inception"
+                        SearchCategory.DIZI -> "Dizi ara… örn. Dark"
+                        SearchCategory.ANIME -> "Anime ara… örn. Monster"
+                        SearchCategory.STUDIO -> "Stüdyo ara… örn. Studio Ghibli"
+                        SearchCategory.PERSON -> "Kişi ara… örn. Leonardo DiCaprio"
                     },
                 )
             },
@@ -251,20 +269,24 @@ fun AddScreen(
         Spacer(Modifier.height(12.dp))
 
         when {
-            searching && results == null -> {
+            searching && results.isEmpty() -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
                 }
             }
             query.isBlank() -> {
                 EmptyState(
-                    emoji = typeEmoji(type.db),
-                    title = "Ne izleyeceğiz?",
-                    subtitle = "Yukarıya bir isim yaz, posterlerle karşına getirelim. Manuel giriş için de alta yazabilirsin.",
+                    emoji = when (category) {
+                        SearchCategory.STUDIO -> "🏢"
+                        SearchCategory.PERSON -> "👤"
+                        else -> typeEmoji(category.name.lowercase())
+                    },
+                    title = "Ne arayalım?",
+                    subtitle = "Yukarıya bir isim yaz; yapımlar, stüdyolar ve kişiler arasında arama yapalım.",
                     modifier = Modifier.fillMaxSize(),
                 )
             }
-            searchError && results.isNullOrEmpty() -> {
+            searchError && results.isEmpty() -> {
                 EmptyState(
                     emoji = "📡",
                     title = "Bağlantı sorunu",
@@ -274,25 +296,35 @@ fun AddScreen(
                     onAction = { retryTick++ },
                 )
             }
-            results.isNullOrEmpty() -> {
+            results.isEmpty() -> {
                 EmptyState(
                     emoji = "🕵️",
                     title = "Bulamadık",
-                    subtitle = "\"${query}\" için sonuç yok. Farklı yazmayı dene - yine de eklemek istersen altına manuel yaz.",
+                    subtitle = "\"${query}\" için sonuç yok. Farklı yazmayı dene.",
                     modifier = Modifier.fillMaxSize(),
-                    actionLabel = "Manuel ekle: \"$query\"",
+                    actionLabel = if (category.isTitle) "Manuel ekle: \"$query\"" else null,
                     onAction = {
-                        DraftHolder.draft = TitleDraft(
-                            type = type.db,
-                            title = query.trim(),
-                        )
-                        onPicked()
+                        if (category.isTitle) {
+                            DraftHolder.draft = TitleDraft(
+                                type = category.name.lowercase(),
+                                title = query.trim(),
+                            )
+                            onPicked()
+                        }
                     },
                 )
             }
             else -> {
-                val currentResults = results.orEmpty()
-                val filteredResults = currentResults.filter { yearFilter.matches(it.year?.toIntOrNull()) }
+                val titleResults = results.filterIsInstance<SearchResult>()
+                val studioResults = results.filterIsInstance<StudioSearchResult>()
+                val personResults = results.filterIsInstance<PersonSearchResult>()
+                val sliderRange = 1900f..2026f
+                val activeYearRange = yearRange ?: sliderRange
+                val filteredTitles = titleResults.filter {
+                    val y = it.year?.toIntOrNull() ?: return@filter true
+                    y >= activeYearRange.start && y <= activeYearRange.endInclusive
+                }
+                val showYearFilter = category.isTitle && titleResults.isNotEmpty()
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = androidx.compose.foundation.layout.PaddingValues(
@@ -302,42 +334,76 @@ fun AddScreen(
                 ) {
                     item {
                         Text(
-                            "Dokun: önizle  •  Basılı tut: hemen ekle",
+                            if (category.isTitle) "Dokun: hemen ekle  •  Basılı tut: önizle"
+                            else "Dokun: sayfayı aç",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary,
                         )
-                        if (currentResults.isNotEmpty()) {
-                            Spacer(Modifier.height(6.dp))
-                            LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                items(YearFilter.entries) { option ->
-                                    SoftChip(
-                                        label = option.label,
-                                        selected = yearFilter == option,
-                                        color = MaterialTheme.colorScheme.primary,
-                                        onClick = { yearFilter = option },
+                        if (showYearFilter) {
+                            Spacer(Modifier.height(10.dp))
+                            Column(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(MidnightCard.copy(alpha = 0.6f))
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                            ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        "Yıl",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        color = TextSecondary,
                                     )
+                                    Spacer(Modifier.weight(1f))
+                                    Text(
+                                        "${activeYearRange.start.toInt()} – ${activeYearRange.endInclusive.toInt()}",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = TextSecondary,
+                                    )
+                                    if (yearRange != null) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(
+                                            "sıfırla",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(50))
+                                                .clickable { yearRange = null }
+                                                .padding(horizontal = 6.dp, vertical = 2.dp),
+                                        )
+                                    }
                                 }
+                                androidx.compose.material3.RangeSlider(
+                                    value = activeYearRange,
+                                    onValueChange = { yearRange = it },
+                                    valueRange = sliderRange,
+                                    colors = androidx.compose.material3.SliderDefaults.colors(
+                                        thumbColor = MaterialTheme.colorScheme.primary,
+                                        activeTrackColor = MaterialTheme.colorScheme.primary,
+                                    ),
+                                )
                             }
                         }
                     }
-                    if (currentResults.isNotEmpty() && filteredResults.isEmpty()) {
+                    if (showYearFilter && titleResults.isNotEmpty() && filteredTitles.isEmpty()) {
                         item {
                             Text(
-                                "Bu yıl aralığında sonuç yok — filtreni gevşet.",
+                                "Bu yıl aralığında sonuç yok — aralığı genişlet.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = TextSecondary,
-                                modifier = Modifier.padding(vertical = 24.dp),
+                                modifier = Modifier.padding(vertical = 20.dp),
                             )
                         }
                     }
-                    items(filteredResults, key = { it.externalId + it.type.db }) { result ->
+                    items(filteredTitles, key = { "t${it.externalId}${it.type.db}" }) { result ->
                         val alreadyAdded = (result.type.db to result.externalId) in existingKeys
                         SearchResultRow(
                             result = result,
                             alreadyAdded = alreadyAdded,
-                            onClick = { preview = result },
-                            onLongClick = {
-                                if (!alreadyAdded) {
+                            onClick = {
+                                if (alreadyAdded) {
+                                    preview = result
+                                } else {
                                     DraftHolder.draft = TitleDraft(
                                         type = result.type.db,
                                         externalId = result.externalId,
@@ -350,6 +416,28 @@ fun AddScreen(
                                     )
                                     onPicked()
                                 }
+                            },
+                            onLongClick = {
+                                if (!alreadyAdded) preview = result
+                            },
+                        )
+                    }
+                    items(studioResults, key = { "s${it.source}${it.externalId}" }) { studio ->
+                        StudioResultRow(
+                            studio = studio,
+                            onClick = {
+                                val type = if (studio.source == "anime") ContentType.ANIME else ContentType.FILM
+                                onOpenStudio(type, studio.externalId)
+                            },
+                        )
+                    }
+                    items(personResults, key = { "p${it.source}${it.externalId}" }) { person ->
+                        PersonResultRow(
+                            person = person,
+                            onClick = {
+                                val source = if (person.source == "anime") com.sinop.minimuv.core.PersonSource.ANIME
+                                    else com.sinop.minimuv.core.PersonSource.TMDB
+                                onOpenPerson(source, person.externalId)
                             },
                         )
                     }
@@ -377,6 +465,8 @@ fun AddScreen(
                 onPicked()
             },
             onDismiss = { preview = null },
+            onOpenPerson = onOpenPerson,
+            onOpenStudio = onOpenStudio,
         )
     }
 }
@@ -456,6 +546,90 @@ private fun SearchResultRow(
     }
 }
 
+@Composable
+private fun StudioResultRow(studio: StudioSearchResult, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MidnightCard)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(MidnightElevated),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (studio.logoUrl != null) {
+                AsyncImage(
+                    model = studio.logoUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit,
+                )
+            } else {
+                Text("🏢", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(studio.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                if (studio.source == "anime") "Anime stüdyosu" else "Yapım şirketi",
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+            )
+        }
+        Text("›", style = MaterialTheme.typography.titleLarge, color = TextSecondary)
+    }
+}
+
+@Composable
+private fun PersonResultRow(person: PersonSearchResult, onClick: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(MidnightCard)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MidnightElevated),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (person.imageUrl != null) {
+                AsyncImage(
+                    model = person.imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Text("👤", style = MaterialTheme.typography.titleMedium)
+            }
+        }
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Text(person.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                person.role ?: (if (person.source == "anime") "Karakter" else "Kişi"),
+                style = MaterialTheme.typography.labelSmall,
+                color = TextSecondary,
+            )
+        }
+        Text("›", style = MaterialTheme.typography.titleLarge, color = TextSecondary)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 private fun SearchPreviewSheet(
@@ -463,13 +637,20 @@ private fun SearchPreviewSheet(
     alreadyAdded: Boolean,
     onAdd: () -> Unit,
     onDismiss: () -> Unit,
+    onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
+    onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
 ) {
     var details by remember { mutableStateOf<TitleDetails?>(null) }
     LaunchedEffect(result.externalId) {
         details = runCatching { SearchApi.details(result.type, result.externalId) }.getOrNull()
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = MidnightElevated) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = sheetState,
+        containerColor = MidnightElevated,
+    ) {
         Column(
             Modifier
                 .fillMaxWidth()
@@ -598,7 +779,14 @@ private fun SearchPreviewSheet(
                     items(details!!.cast.take(10)) { member ->
                         Column(
                             horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier.width(64.dp),
+                            modifier = Modifier
+                                .width(64.dp)
+                                .clickable(enabled = member.id != null) {
+                                    val source = if (result.type == ContentType.ANIME)
+                                        com.sinop.minimuv.core.PersonSource.ANIME
+                                    else com.sinop.minimuv.core.PersonSource.TMDB
+                                    onOpenPerson(source, member.id!!.toString())
+                                },
                         ) {
                             Box(
                                 Modifier
@@ -649,10 +837,33 @@ private fun SearchPreviewSheet(
             if (!details?.studios.isNullOrEmpty()) {
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    "🎬 ${details!!.studios.joinToString("  •  ") { it.name }}",
-                    style = MaterialTheme.typography.labelMedium,
+                    if (result.type == ContentType.ANIME) "Stüdyo" else "Yapımcı",
+                    style = MaterialTheme.typography.labelLarge,
                     color = TextSecondary,
                 )
+                Spacer(Modifier.height(6.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    details!!.studios.forEach { studio ->
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(typeColor(result.type.db).copy(alpha = 0.12f))
+                                .clickable(enabled = studio.id != null) {
+                                    onOpenStudio(com.sinop.minimuv.data.ContentType.fromDb(result.type.db), studio.id!!.toString())
+                                }
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                studio.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = typeColor(result.type.db),
+                            )
+                        }
+                    }
+                }
             }
 
             Spacer(Modifier.height(18.dp))

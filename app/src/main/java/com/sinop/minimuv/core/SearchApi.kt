@@ -152,6 +152,23 @@ data class PersonDetails(
     val works: List<PersonWork> = emptyList(),
 )
 
+/** Stüdyo arama sonucu (TMDB şirket ya da AniList stüdyo). */
+data class StudioSearchResult(
+    val externalId: String,
+    val source: String,
+    val name: String,
+    val logoUrl: String? = null,
+)
+
+/** Kişi arama sonucu (TMDB kişi ya da AniList karakter). */
+data class PersonSearchResult(
+    val externalId: String,
+    val source: String,
+    val name: String,
+    val imageUrl: String? = null,
+    val role: String? = null,
+)
+
 object SearchApi {
 
     // TMDB anahtarı BuildConfig üzerinden local.properties'ten gelir (repoya girmez).
@@ -256,6 +273,111 @@ object SearchApi {
         val ranked = rankResults(merged, normalized)
         synchronized(cache) { cache[key] = ranked }
         return ranked
+    }
+
+    /** Stüdyo ara: TMDB şirket + AniList stüdyo birleştirilir. */
+    suspend fun searchStudio(query: String, lang: TitleLanguage = TitleLanguage.TR): List<StudioSearchResult> {
+        if (query.isBlank()) return emptyList()
+        val results = mutableListOf<StudioSearchResult>()
+        val seen = mutableSetOf<String>()
+        runCatching {
+            val response = client.get("https://api.themoviedb.org/3/search/company") {
+                parameter("api_key", TMDB_API_KEY)
+                parameter("query", query)
+                parameter("language", lang.tmdb)
+            }.body<TmdbCompanySearchResponse>()
+            response.results.orEmpty().forEach { c ->
+                if (seen.add("tmdb${c.id}")) {
+                    results += StudioSearchResult(
+                        externalId = c.id.toString(),
+                        source = "tmdb",
+                        name = c.name ?: "?",
+                        logoUrl = c.logoPath?.let { "https://image.tmdb.org/t/p/w185$it" },
+                    )
+                }
+            }
+        }
+        runCatching {
+            val graphQl = """
+                query (${'$'}search: String) {
+                  Page(page: 1, perPage: 20) {
+                    studios(search: ${'$'}search) { id name }
+                  }
+                }
+            """.trimIndent()
+            val response = client.post("https://graphql.anilist.co") {
+                contentType(KtorContentType.Application.Json)
+                header("Accept", "application/json")
+                header("Origin", "https://anilist.co")
+                header("Referer", "https://anilist.co/")
+                header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+                setBody(AniListRequest(graphQl, mapOf("search" to query)))
+            }.body<AniListStudioSearchResponse>()
+            response.data?.page?.studios.orEmpty().forEach { s ->
+                if (seen.add("anime${s.id}")) {
+                    results += StudioSearchResult(
+                        externalId = s.id.toString(),
+                        source = "anime",
+                        name = s.name ?: "?",
+                    )
+                }
+            }
+        }
+        return results
+    }
+
+    /** Kişi ara: TMDB kişi + AniList karakter birleştirilir. */
+    suspend fun searchPerson(query: String, lang: TitleLanguage = TitleLanguage.TR): List<PersonSearchResult> {
+        if (query.isBlank()) return emptyList()
+        val results = mutableListOf<PersonSearchResult>()
+        val seen = mutableSetOf<String>()
+        runCatching {
+            val response = client.get("https://api.themoviedb.org/3/search/person") {
+                parameter("api_key", TMDB_API_KEY)
+                parameter("query", query)
+                parameter("language", lang.tmdb)
+            }.body<TmdbPersonSearchResponse>()
+            response.results.orEmpty().forEach { p ->
+                if (seen.add("tmdb${p.id}")) {
+                    results += PersonSearchResult(
+                        externalId = p.id.toString(),
+                        source = "tmdb",
+                        name = p.name ?: "?",
+                        imageUrl = p.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" },
+                        role = p.knownForDepartment,
+                    )
+                }
+            }
+        }
+        runCatching {
+            val graphQl = """
+                query (${'$'}search: String) {
+                  Page(page: 1, perPage: 20) {
+                    characters(search: ${'$'}search) { id name { full } image { large } }
+                  }
+                }
+            """.trimIndent()
+            val response = client.post("https://graphql.anilist.co") {
+                contentType(KtorContentType.Application.Json)
+                header("Accept", "application/json")
+                header("Origin", "https://anilist.co")
+                header("Referer", "https://anilist.co/")
+                header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+                setBody(AniListRequest(graphQl, mapOf("search" to query)))
+            }.body<AniListCharacterSearchResponse>()
+            response.data?.page?.characters.orEmpty().forEach { ch ->
+                if (seen.add("anime${ch.id}")) {
+                    results += PersonSearchResult(
+                        externalId = ch.id.toString(),
+                        source = "anime",
+                        name = ch.name?.full ?: "?",
+                        imageUrl = ch.image?.large,
+                        role = "Karakter",
+                    )
+                }
+            }
+        }
+        return results
     }
 
     /** Sonuçları sorguya benzerlikle en alakalıdan sıralar (başlık + alternatif başlık). */
@@ -974,3 +1096,42 @@ private data class AniListStudioMediaNode(
     val coverImage: AniListCover? = null,
     @SerialName("seasonYear") val seasonYear: Int? = null,
 )
+
+@Serializable
+private data class TmdbCompanySearchResponse(val results: List<TmdbCompanySearchItem>? = null)
+
+@Serializable
+private data class TmdbCompanySearchItem(
+    val id: Int? = null,
+    val name: String? = null,
+    @SerialName("logo_path") val logoPath: String? = null,
+)
+
+@Serializable
+private data class TmdbPersonSearchResponse(val results: List<TmdbPersonSearchItem>? = null)
+
+@Serializable
+private data class TmdbPersonSearchItem(
+    val id: Int? = null,
+    val name: String? = null,
+    @SerialName("profile_path") val profilePath: String? = null,
+    @SerialName("known_for_department") val knownForDepartment: String? = null,
+)
+
+@Serializable
+private data class AniListStudioSearchResponse(val data: AniListStudioSearchData? = null)
+
+@Serializable
+private data class AniListStudioSearchData(@SerialName("Page") val page: AniListStudioSearchPage? = null)
+
+@Serializable
+private data class AniListStudioSearchPage(val studios: List<AniListStudioNode>? = null)
+
+@Serializable
+private data class AniListCharacterSearchResponse(val data: AniListCharacterSearchData? = null)
+
+@Serializable
+private data class AniListCharacterSearchData(@SerialName("Page") val page: AniListCharacterSearchPage? = null)
+
+@Serializable
+private data class AniListCharacterSearchPage(val characters: List<AniListCharacterNode>? = null)
