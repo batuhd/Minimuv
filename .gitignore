@@ -32,3 +32,6 @@ hs_err_*.log
 
 # Firebase config (contains API key - keep out of repo)
 app/google-services.json
+
+# Windows/Studio'dan kopyalanan yerel özellik dosyaları (API anahtarı içerebilir)
+*.properties.txt
