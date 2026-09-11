@@ -72,7 +72,9 @@ fun PersonScreen(
     val srcName = if (source == PersonSource.ANIME) "anime" else "tmdb"
 
     LaunchedEffect(source, externalId) {
-        runCatching { SearchApi.personDetails(source, externalId) }
+        val lang = if (displayLang == "EN") com.sinop.minimuv.core.TitleLanguage.EN
+            else com.sinop.minimuv.core.TitleLanguage.TR
+        runCatching { SearchApi.personDetails(source, externalId, lang) }
             .onSuccess { person = it; error = it == null }
             .onFailure { error = true }
         runCatching { favRepo.isFavorite(profileId, favType, srcName, externalId) }

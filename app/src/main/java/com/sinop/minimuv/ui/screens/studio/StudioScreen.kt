@@ -66,7 +66,9 @@ fun StudioScreen(
     val srcName = if (type == ContentType.ANIME) "anime" else "tmdb"
 
     LaunchedEffect(type, externalId) {
-        runCatching { SearchApi.studioDetails(type, externalId) }
+        val lang = if (displayLang == "EN") com.sinop.minimuv.core.TitleLanguage.EN
+            else com.sinop.minimuv.core.TitleLanguage.TR
+        runCatching { SearchApi.studioDetails(type, externalId, lang) }
             .onSuccess { studio = it; error = it == null }
             .onFailure { error = true }
         runCatching { favRepo.isFavorite(profileId, "studio", srcName, externalId) }

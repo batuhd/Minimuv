@@ -334,7 +334,7 @@ fun AddScreen(
                 ) {
                     item {
                         Text(
-                            if (category.isTitle) "Dokun: hemen ekle  •  Basılı tut: önizle"
+                            if (category.isTitle) "Dokun: önizle  •  Basılı tut: hemen ekle"
                             else "Dokun: sayfayı aç",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary,
@@ -401,9 +401,10 @@ fun AddScreen(
                             result = result,
                             alreadyAdded = alreadyAdded,
                             onClick = {
-                                if (alreadyAdded) {
-                                    preview = result
-                                } else {
+                                if (!alreadyAdded) preview = result
+                            },
+                            onLongClick = {
+                                if (!alreadyAdded) {
                                     DraftHolder.draft = TitleDraft(
                                         type = result.type.db,
                                         externalId = result.externalId,
@@ -416,9 +417,6 @@ fun AddScreen(
                                     )
                                     onPicked()
                                 }
-                            },
-                            onLongClick = {
-                                if (!alreadyAdded) preview = result
                             },
                         )
                     }

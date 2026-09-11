@@ -668,18 +668,22 @@ object SearchApi {
     // ── Kişi sayfaları (oyuncu / yönetmen / karakter) ─────────────────────
 
     /** Kişi biyografisi + filmografisi. Hata olursa null döner. */
-    suspend fun personDetails(source: PersonSource, externalId: String): PersonDetails? =
+    suspend fun personDetails(
+        source: PersonSource,
+        externalId: String,
+        lang: TitleLanguage = TitleLanguage.TR,
+    ): PersonDetails? =
         searchWithRetry {
             when (source) {
-                PersonSource.TMDB -> tmdbPersonDetails(externalId)
-                PersonSource.ANIME -> anilistPersonDetails(externalId)
+                PersonSource.TMDB -> tmdbPersonDetails(externalId, lang)
+                PersonSource.ANIME -> anilistPersonDetails(externalId, lang)
             }
         }
 
-    private suspend fun tmdbPersonDetails(personId: String): PersonDetails {
+    private suspend fun tmdbPersonDetails(personId: String, lang: TitleLanguage): PersonDetails {
         val response = client.get("https://api.themoviedb.org/3/person/$personId") {
             parameter("api_key", TMDB_API_KEY)
-            parameter("language", "tr-TR")
+            parameter("language", lang.tmdb)
             parameter("append_to_response", "combined_credits")
         }.body<TmdbPersonDetailsResponse>()
         val works = buildList {
@@ -718,7 +722,7 @@ object SearchApi {
         )
     }
 
-    private suspend fun anilistPersonDetails(characterId: String): PersonDetails {
+    private suspend fun anilistPersonDetails(characterId: String, lang: TitleLanguage): PersonDetails {
         val graphQl = """
             query (${'$'}id: Int) {
               Character(id: ${'$'}id) {
@@ -751,12 +755,19 @@ object SearchApi {
         val character = response.data?.character ?: throw IllegalStateException("AniList karakteri boş")
         val works = character.media?.edges.orEmpty().mapNotNull { edge ->
             val node = edge.node ?: return@mapNotNull null
-            val title = node.title?.romaji ?: node.title?.english ?: "?"
+            val title = when (lang) {
+                TitleLanguage.EN -> node.title?.english ?: node.title?.romaji
+                TitleLanguage.TR -> node.title?.romaji ?: node.title?.english
+            } ?: "?"
+            val titleEn = when (lang) {
+                TitleLanguage.EN -> node.title?.romaji ?: node.title?.english
+                TitleLanguage.TR -> node.title?.english ?: node.title?.romaji
+            }
             PersonWork(
                 externalId = node.id.toString(),
                 type = if (node.type == "MOVIE") ContentType.FILM.db else ContentType.ANIME.db,
                 title = title,
-                titleEn = node.title?.english ?: node.title?.romaji,
+                titleEn = titleEn,
                 year = node.seasonYear?.toString(),
                 posterUrl = node.coverImage?.extraLarge,
                 role = edge.characterRole,
@@ -772,21 +783,25 @@ object SearchApi {
 
     // ── Stüdyo sayfaları (yapımcı şirket / anime stüdyosu) ────────────────
 
-    suspend fun studioDetails(type: ContentType, externalId: String): StudioDetails? =
+    suspend fun studioDetails(
+        type: ContentType,
+        externalId: String,
+        lang: TitleLanguage = TitleLanguage.TR,
+    ): StudioDetails? =
         searchWithRetry {
             when (type) {
-                ContentType.ANIME -> anilistStudioDetails(externalId)
-                else -> tmdbStudioDetails(externalId)
+                ContentType.ANIME -> anilistStudioDetails(externalId, lang)
+                else -> tmdbStudioDetails(externalId, lang)
             }
         }
 
-    private suspend fun tmdbStudioDetails(companyId: String): StudioDetails {
+    private suspend fun tmdbStudioDetails(companyId: String, lang: TitleLanguage): StudioDetails {
         val info = client.get("https://api.themoviedb.org/3/company/$companyId") {
             parameter("api_key", TMDB_API_KEY)
         }.body<TmdbCompanyResponse>()
         val movies = client.get("https://api.themoviedb.org/3/company/$companyId/movies") {
             parameter("api_key", TMDB_API_KEY)
-            parameter("language", "tr-TR")
+            parameter("language", lang.tmdb)
         }.body<TmdbCompanyMoviesResponse>()
         val works = movies.results.orEmpty().mapNotNull { item ->
             if (item.posterPath == null) return@mapNotNull null
@@ -806,7 +821,7 @@ object SearchApi {
         )
     }
 
-    private suspend fun anilistStudioDetails(studioId: String): StudioDetails {
+    private suspend fun anilistStudioDetails(studioId: String, lang: TitleLanguage): StudioDetails {
         val graphQl = """
             query (${'$'}id: Int) {
               Studio(id: ${'$'}id) {
@@ -836,12 +851,19 @@ object SearchApi {
         val studio = response.data?.studio ?: throw IllegalStateException("AniList stüdyosu boş")
         val works = studio.media?.edges.orEmpty().mapNotNull { edge ->
             val node = edge.node ?: return@mapNotNull null
-            val title = node.title?.romaji ?: node.title?.english ?: "?"
+            val title = when (lang) {
+                TitleLanguage.EN -> node.title?.english ?: node.title?.romaji
+                TitleLanguage.TR -> node.title?.romaji ?: node.title?.english
+            } ?: "?"
+            val titleEn = when (lang) {
+                TitleLanguage.EN -> node.title?.romaji ?: node.title?.english
+                TitleLanguage.TR -> node.title?.english ?: node.title?.romaji
+            }
             PersonWork(
                 externalId = node.id.toString(),
                 type = if (node.type == "MOVIE") ContentType.FILM.db else ContentType.ANIME.db,
                 title = title,
-                titleEn = node.title?.english ?: node.title?.romaji,
+                titleEn = titleEn,
                 year = node.seasonYear?.toString(),
                 posterUrl = node.coverImage?.extraLarge,
             )
