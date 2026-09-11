@@ -16,10 +16,13 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -48,6 +51,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
@@ -536,6 +540,76 @@ private fun SearchPreviewSheet(
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.9f),
                     maxLines = 8,
                     overflow = TextOverflow.Ellipsis,
+                )
+            }
+
+            // ── Oyuncular / Karakterler ────────────────────────────────────
+            if (!details?.cast.isNullOrEmpty()) {
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    if (result.type == ContentType.ANIME) "Karakterler" else "Oyuncular",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.height(8.dp))
+                LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(details!!.cast.take(10)) { member ->
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier.width(64.dp),
+                        ) {
+                            Box(
+                                Modifier
+                                    .size(58.dp)
+                                    .clip(CircleShape)
+                                    .background(MidnightElevated),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (member.imageUrl != null) {
+                                    AsyncImage(
+                                        model = member.imageUrl,
+                                        contentDescription = null,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = ContentScale.Crop,
+                                    )
+                                } else {
+                                    Text(
+                                        member.name.take(1),
+                                        style = MaterialTheme.typography.titleMedium,
+                                        color = TextSecondary,
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                member.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                textAlign = TextAlign.Center,
+                            )
+                            member.role?.takeIf { it.isNotBlank() }?.let {
+                                Text(
+                                    it,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = TextSecondary,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            // ── Stüdyo / Yapımcı ───────────────────────────────────────────
+            if (!details?.studios.isNullOrEmpty()) {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "🎬 ${details!!.studios.joinToString("  •  ")}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary,
                 )
             }
 
