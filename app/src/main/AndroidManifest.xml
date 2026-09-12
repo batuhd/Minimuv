@@ -37,6 +37,13 @@
             android:exported="true"
             android:theme="@style/Theme.Minimuv.Crop" />
 
+        <!-- Firebase App Distribution kurulum ekranı AppCompatActivity olduğundan
+             AppCompat türevi tema ister; verilmezse "Theme.AppCompat" crash'i olur. -->
+        <activity
+            android:name="com.google.firebase.appdistribution.impl.InstallActivity"
+            android:exported="false"
+            android:theme="@style/Theme.Minimuv.FirebaseInstall" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

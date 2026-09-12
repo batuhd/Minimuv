@@ -10,4 +10,10 @@
     <style name="Theme.Minimuv.Crop" parent="Theme.AppCompat">
         <item name="android:windowBackground">#0E1116</item>
     </style>
+
+    <!-- Firebase App Distribution kurulum ekranı (InstallActivity) AppCompatActivity'dir;
+         AppCompat soyundan tema zorunlu kılar. -->
+    <style name="Theme.Minimuv.FirebaseInstall" parent="Theme.AppCompat.NoActionBar">
+        <item name="android:windowBackground">#0E1116</item>
+    </style>
 </resources>

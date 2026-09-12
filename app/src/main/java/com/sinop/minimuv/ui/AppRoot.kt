@@ -57,6 +57,7 @@ import com.sinop.minimuv.core.PersonSource
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.ui.components.MinimuvButton
+import com.sinop.minimuv.ui.components.InAppUpdateHost
 import com.sinop.minimuv.ui.screens.achievements.AchievementsScreen
 import com.sinop.minimuv.ui.screens.add.AddScreen
 import com.sinop.minimuv.ui.screens.detail.DetailScreen
@@ -407,4 +408,6 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             }
         }
     }
+
+    InAppUpdateHost()
 }
