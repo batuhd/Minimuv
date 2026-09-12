@@ -8,6 +8,7 @@ import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleRepository
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
@@ -34,7 +35,10 @@ class ListViewModel : ViewModel() {
             var attempt = 0
             while (attempt < 3) {
                 val result = runCatching {
-                    repo.getTitles() to profileRepo.getProfiles()
+                    // Liste ve profiller paralel çekilir — sıralı iki ağ turu yerine bir tur
+                    val titlesDeferred = async { repo.getTitlesLite() }
+                    val profilesDeferred = async { profileRepo.getProfiles() }
+                    titlesDeferred.await() to profilesDeferred.await()
                 }
                 result.onSuccess { (titlesList, profilesList) ->
                     titles.value = titlesList
@@ -56,9 +60,9 @@ class ListViewModel : ViewModel() {
         viewModelScope.launch {
             RealtimeManager.events
                 .filter { it == "titles" || it == "episode_progress_per_profile" }
-                .debounce(250)
+                .debounce(500)
                 .collect {
-                    runCatching { repo.getTitles() }
+                    runCatching { repo.getTitlesLite() }
                         .onSuccess { titles.value = it }
                 }
         }

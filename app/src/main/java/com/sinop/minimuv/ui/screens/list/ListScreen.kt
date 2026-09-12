@@ -245,7 +245,9 @@ fun ListScreen(
                     }
                 }
                 else -> {
-                    val filtered = filterAndSort(titles!!, query, filters, profiles)
+                    val filtered = remember(titles, query, filters) {
+                        filterAndSort(titles!!, query, filters)
+                    }
                     if (filtered.isEmpty()) {
                         EmptyState(
                             emoji = "🍿",
@@ -297,11 +299,10 @@ private fun filterAndSort(
     titles: List<Title>,
     query: String,
     filters: ListFilters,
-    profiles: List<Profile>,
 ): List<Title> {
+    val foldedQuery = TextNormalizer.fold(query)
     val result = titles.filter { t ->
-        val q = TextNormalizer.fold(query)
-        val matchesQuery = q.isBlank() || TextNormalizer.fold(t.title).contains(q)
+        val matchesQuery = foldedQuery.isBlank() || TextNormalizer.fold(t.title).contains(foldedQuery)
         val matchesType = filters.type == null || t.type == filters.type!!.db
         val matchesStatus = filters.status == null || t.status == filters.status!!.db
         val year = t.startDate?.take(4)?.toFloatOrNull()
@@ -332,10 +333,13 @@ private fun GroupedLibrary(
     onEditTitle: (String) -> Unit,
     onOpenPlanOrder: () -> Unit,
 ) {
-    val sections = WatchStatus.entries.mapNotNull { s ->
-        val items = titles.filter { statusGroup(it.status) == s.db }
-        if (items.isEmpty()) null else s to items
+    val sections = remember(titles) {
+        WatchStatus.entries.mapNotNull { s ->
+            val items = titles.filter { statusGroup(it.status) == s.db }
+            if (items.isEmpty()) null else s to items
+        }
     }
+    val creatorByProfile = remember(profiles) { profiles.associateBy { it.id } }
     when (viewMode) {
         ViewMode.GRID_3, ViewMode.GRID_2 -> {
             val columns = if (viewMode == ViewMode.GRID_3) 3 else 2
@@ -385,7 +389,7 @@ private fun GroupedLibrary(
                             priorityLabel = if (status == WatchStatus.PLAN && title.priorityOrder != null) {
                                 "${title.priorityOrder}. sırada"
                             } else null,
-                            creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
+                            creatorEmoji = creatorByProfile[title.createdByProfileId]?.emoji,
                             lang = lang,
                             onClick = { onOpenTitle(title.id) },
                             onLongClick = { onEditTitle(title.id) },
@@ -448,6 +452,7 @@ private fun FlatLibrary(
     onOpenTitle: (String) -> Unit,
     onEditTitle: (String) -> Unit = {},
 ) {
+    val creatorByProfile = remember(profiles) { profiles.associateBy { it.id } }
     when (viewMode) {
         ViewMode.GRID_3, ViewMode.GRID_2 -> {
             val columns = if (viewMode == ViewMode.GRID_3) 3 else 2
@@ -463,7 +468,7 @@ private fun FlatLibrary(
                 items(titles, key = { it.id }) { title ->
                     PosterCard(
                         title,
-                        creatorEmoji = profiles.firstOrNull { it.id == title.createdByProfileId }?.emoji,
+                        creatorEmoji = creatorByProfile[title.createdByProfileId]?.emoji,
                         lang = lang,
                         onClick = { onOpenTitle(title.id) },
                         onLongClick = { onEditTitle(title.id) },

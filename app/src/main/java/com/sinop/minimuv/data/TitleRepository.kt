@@ -3,6 +3,7 @@ package com.sinop.minimuv.data
 import com.sinop.minimuv.core.SupabaseProvider
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.postgrest.query.Order
 import kotlinx.serialization.json.JsonNull
 import com.sinop.minimuv.data.PartnerPing
@@ -12,6 +13,30 @@ class TitleRepository {
     suspend fun getTitles(): List<Title> =
         SupabaseProvider.client.postgrest.from("titles")
             .select { order("created_at", Order.ASCENDING) }
+            .decodeList<Title>()
+
+    /** Liste ekranı için gerekli kolonları çeker — overview/notlar gibi ağır
+     *  alanlar taşınmaz; JSON payload ve decode süresi belirgin azalır. */
+    suspend fun getTitlesLite(): List<Title> =
+        SupabaseProvider.client.postgrest.from("titles")
+            .select(
+                Columns.list(
+                    "id",
+                    "created_by_profile_id",
+                    "type",
+                    "title",
+                    "title_en",
+                    "poster_url",
+                    "status",
+                    "score",
+                    "episode_progress",
+                    "total_episodes",
+                    "start_date",
+                    "total_rewatches",
+                    "priority_order",
+                    "created_at",
+                )
+            ) { order("created_at", Order.ASCENDING) }
             .decodeList<Title>()
 
     suspend fun getTitle(id: String): Title? =
