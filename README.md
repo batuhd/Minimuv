@@ -13,7 +13,7 @@ Letterboxd'ın poster odaklı sinefil estetiği ile Duolingo'nun oyunlaştırıl
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=android&logoColor=white" />
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Realtime-3ECF8E?logo=supabase&logoColor=white" />
   <img alt="SDK" src="https://img.shields.io/badge/minSdk-26%20·%20targetSdk-36-3DDC84" />
-  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-2.5.7-F5A623" />
+  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-2.5.15-F5A623" />
 </p>
 
 </div>
@@ -82,6 +82,7 @@ Letterboxd'ın poster odaklı sinefil estetiği ile Duolingo'nun oyunlaştırıl
 
 * Kararsız kaldığınızda "Sırada" listesinden seçim yapan, **afişli dilimlerden** oluşan canvas çark (afiş yoksa numara + renk lejantı).
 * Tür filtresi ve "İlk 3 / İlk 5 / İlk 10" seçenekleri; 5 saniyelik yavaşlayan dönüş, titreşimli geri bildirim, kazanan kartından tek dokunuşla detaya geçiş.
+* **🎵 Çark sesi** - dönüş sırasında her dilim geçişinde "tik", kazanan belirlenince kısa marş; `🔊 Ses açık / 🔇 Ses kapalı` anahtarı. Kazanan kartı lejantın üstünde gösterilir, lejant kompakt tutulur.
 
 ### 🏅 Rozet Yolculuğu
 
@@ -139,6 +140,12 @@ Veritabanı olayı ───┼─ Uygulama KAPALI → pg_net trigger → notify
 * Bildirilenler: başlık ekleme, durum değişiklikleri (izleme/tamamlama/bırakma…), puan verme/güncelleme, başlık notu, bölüm notu (spoiler kilidine saygılı), bölüm kilometre taşları ("İkiniz de 10. bölümü geçtiniz!"), gizli notlar ve yıldönümü hatırlatmaları ("Tam 1 yıl önce bugün…").
 * **Çift bildirim koruması** - FCM mesajı bildirimi doğrudan içermez; uygulama Supabase'deki gerçek durumu kontrol edip bildirimi kendisi gösterir. Son görülen olay zaman damgaları DataStore'da kalıcı tutulur; realtime açıkken FCM yolu sessizce geçer. Kalıcı servis bildirimi yoktur.
 
+### 📲 Uygulama İçi Güncelleme (Firebase App Distribution)
+
+* Tester (Van & Sinop), uygulamayı açtığında Firebase App Distribution üzerinden **yeni sürüm varsa otomatik uyarılır**; tek dokunuşla arka planda indirip kurar.
+* Özel güncelleme penceresi: **"Yeni sürüm var 🎉" → `Güncelle`** butonu, indirme ilerleme çubuğu, ardından sistem kurulum ekranı (`Yükle`). Tester daha önce giriş yapmamışsa Google hesabıyla oturum açar.
+* `google-services.json` olmayan API'siz sürümde güncelleme kontrolü kendiliğinden kapanır.
+
 ### 🤫 Gizli menü
 
 <img src="docs/screenshots/settings-secret-note.jpg" width="240" alt="Gizli menü" style="float: right; margin-left: 1rem; margin-bottom: 1rem;" />
@@ -186,10 +193,11 @@ Veritabanı olayı ───┼─ Uygulama KAPALI → pg_net trigger → notify
 | Anime arama + detay | AniList GraphQL API |
 | Görseller | Coil 3 |
 | Bildirimler | Firebase Cloud Messaging 24 + WorkManager + Supabase Edge Function (pg_net trigger) |
+| Uygulama içi güncelleme | Firebase App Distribution 16 (`firebase-appdistribution`) — özel `InAppUpdateHost` penceresi |
 | Yerel ayarlar | Jetpack DataStore |
 | Sürükle-bırak | sh.calvin.reorderable |
 | Fotoğraf kırpma | vanniktech/android-image-cropper |
-| Hedef | minSdk 26 (Android 8.0) · targetSdk 36 · v1.2.1 |
+| Hedef | minSdk 26 (Android 8.0) · targetSdk 36 · v2.5.15 |
 
 ---
 
@@ -247,28 +255,28 @@ Bilgiler DataStore'da saklanır; Profil sekmesinden istediğiniz an diğer profi
 
 ---
 
-## 📦 Yayınlar (Release) — v2.5.7
+## 📦 Yayınlar (Release) — v2.5.15
 
-İki ayrı sürüm üretilir; ikisi de kişisel dağıtım için **debug keystore** ile imzalanır (`app/build.gradle.kts` → `signingConfigs.release`).
+Her sürümde **aynı versionCode/versionName ile iki APK** üretilir; ikisi de **debug keystore** ile imzalanır (`app/build.gradle.kts` → `signingConfigs.release`). Çıktı yolu aynı olduğu için **önce API'siz, sonra API'li** derlenir.
 
-### 1️⃣ Kişisel sürüm (API anahtarlı) — Van & Sinop'un telefonlarına
-TMDB araması, kişi/stüdyo sayfaları ve İngilizce açıklama fallback'i tam çalışır.
+### 1️⃣ API'li sürüm (TMDB anahtarlı) — masaüstüne
+TMDB araması, kişi/stüdyo sayfaları ve İngilizce açıklama fallback'i tam çalışır; tester telefonlarına ve Firebase App Distribution'a bu yüklenir.
 
 ```bash
 # local.properties'e TMDB anahtarınız yazılı olduğundan emin olun (tmdb.api.key=...)
 ./gradlew assembleRelease
-# Çıktı: app/build/outputs/apk/release/app-release.apk
+cp app/build/outputs/apk/release/app-release.apk ~/Masaüstü/minimuv-vX.Y.Z.apk
 ```
 
-### 2️⃣ GitHub sürümü (API'siz) — herkese açık yayın
-TMDB anahtarı **derlenmez** (boş BuildConfig), bu yüzden arama kapalıdır; realtime + WorkManager yedekleri çalışır.
+### 2️⃣ API'siz sürüm — GitHub Releases'e
+TMDB anahtarı **derlenmez** (boş BuildConfig), bu yüzden arama kapalıdır; gerisi çalışır.
 
 ```bash
 ./gradlew assembleRelease -PtmdbApiKey=""
-# Çıktı: app/build/outputs/apk/release/app-release.apk
+cp app/build/outputs/apk/release/app-release.apk ~/Sürümler/minimuv-vX.Y.Z.apk   # GitHub'a yüklenir
 ```
 
-> `google-services.json` repoda yoktur; GitHub sürümünde FCM pasiftir. Kişisel sürüm için dosyayı `app/` klasörüne koyup yeniden derleyin.
+> **İn-app güncelleme için:** `versionCode` telefonda kurulu olandan büyük olmalı; Firebase aynı `versionCode`'un yeniden yüklenmesini reddettiği için her testte mutlaka artırın. `google-services.json` repoda yoktur; GitHub sürümünde FCM pasiftir. Kişisel sürüm için dosyayı `app/` klasörüne koyup yeniden derleyin.
 
 ---
 
@@ -318,18 +326,19 @@ app/src/main/java/com/sinop/minimuv/
 ├── core/            # SupabaseProvider, RealtimeManager, SearchApi (TMDB+AniList, TextNormalizer),
 │                    # bildirim çekirdeği: NotificationHelper + PartnerEventWatcher,
 │                    # Ping/Score/Note/Milestone/TitleTransition/Anniversary takipçileri,
-│                    # MinimuvMessagingService (FCM) + NotificationWorker (WorkManager)
+│                    # MinimuvMessagingService (FCM) + NotificationWorker (WorkManager),
+│                    # WheelSound (çark sesleri, SoundPool)
 ├── data/            # Modeller, SettingsStore (DataStore), Repository sınıfları,
 │                    # Achievements (27 rozet tanımı + ortak istatistik hesabı) + AchievementChecker
 ├── ui/
 │   ├── theme/       # Midnight paleti, 15 vurgu rengi, sabit tür/durum renk kodlaması, Baloo2+Nunito
-│   ├── components/  # PosterCard, StatusChip, ScoreBadge, SoftChip, konfeti animasyonu…
+│   ├── components/  # PosterCard, StatusChip, ScoreBadge, SoftChip, InAppUpdateHost, konfeti animasyonu…
 │   └── screens/
 │       ├── list/    # Gruplandırılmış kütüphane, 4 görünüm modu, filtre çekmecesi,
 │       │            # sürükle-bırak sıra düzenleme (PlanOrderScreen)
 │       ├── detail/  # MAL tarzı okuma + katlanabilir kartlı düzenleme (puan, not, liste)
 │       ├── add/     # Debounce'lu arama, önizleme sayfası, manuel ekleme
-│       ├── wheel/   # Afişli randevu çarkı (canvas)
+│       ├── wheel/   # Afişli randevu çarkı (canvas) + ses (WheelSound)
 │       ├── achievements/  # Rozet yolculuğu (patika + konfeti)
 │       ├── stats/   # Heatmap (26 hafta) + Wrapped (yıl özeti)
 │       ├── profile/ # Profil yönetimi, kırpmalı fotoğraf, favoriler
