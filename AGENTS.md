@@ -16,7 +16,7 @@ export JAVA_HOME=$HOME/jdk && export PATH=$JAVA_HOME/bin:$PATH
 
 - TMDB anahtarı **repoya girmez**; `local.properties` → `tmdb.api.key` (gitignore'lu). `-PtmdbApiKey` ile override edilir.
 - `google-services.json` repoda yoktur → FCM pasiftir (realtime + WorkManager yedekleri çalışır). Dosya yoksa **in-app update de kapanır** (`BuildConfig.FCM_APP_ID.isBlank()` guard'ı).
-- Versiyon: `app/build.gradle.kts` → `versionCode` / `versionName` (şu an **2.5.15** / **265**).
+- Versiyon: `app/build.gradle.kts` → `versionCode` / `versionName` (şu an **2.0.0** / **200**, "Lucky in Love"; eski şema: MAJ*100+MIN*10+PATCH).
 - Release imzası debug keystore ile yapılır (`~/.android/debug.keystore`) — debug ve release aynı anahtarla imzalanır; in-app update bu yüzden kurulu sürümün üzerine sorunsuz kurulur.
 
 ## ⚠️ Release Kuralı: HER SÜRÜMDE İKİ APK
