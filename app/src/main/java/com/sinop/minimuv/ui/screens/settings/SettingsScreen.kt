@@ -50,7 +50,6 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sinop.minimuv.BuildConfig
 import com.sinop.minimuv.core.TitleLanguage
-import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.SoftChip
@@ -71,11 +70,8 @@ fun SettingsScreen(
     val accentName by settings.themeAccent.collectAsState(initial = null)
     val accent = ThemeAccent.entries.firstOrNull { it.name == accentName } ?: ThemeAccent.BLUE
     val scope = rememberCoroutineScope()
-    val repo = remember { ProfileRepository() }
     val titleRepo = remember { TitleRepository() }
 
-    var confirmReset by remember { mutableStateOf(false) }
-    var resetDone by remember { mutableStateOf(false) }
     var aboutTaps by remember { mutableIntStateOf(0) }
     var showSecretMenu by remember { mutableStateOf(false) }
 
@@ -232,40 +228,6 @@ fun SettingsScreen(
             }
         }
         Spacer(Modifier.padding(top = 12.dp))
-
-        SectionCard("⚠️ Tehlikeli Bölge") {
-            SettingsRow(
-                "🗑️ Tüm izleme verilerini sıfırla",
-                color = MaterialTheme.colorScheme.error,
-            ) { confirmReset = true }
-            if (resetDone) {
-                Text(
-                    "Her şey temizlendi ✨ Sıfırdan başlıyoruz!",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(top = 6.dp),
-                )
-            }
-        }
-        Spacer(Modifier.padding(top = 24.dp))
-    }
-
-    if (confirmReset) {
-        AlertDialog(
-            onDismissRequest = { confirmReset = false },
-            title = { Text("Emin misin? 😨") },
-            text = { Text("Tüm başlıklar, puanlar, notlar, rozetler ve izleme geçmişi kalıcı olarak silinecek. Profilleriniz kalır.") },
-            confirmButton = {
-                TextButton(onClick = {
-                    confirmReset = false
-                    scope.launch {
-                        runCatching { repo.resetAllData() }
-                        resetDone = true
-                    }
-                }) { Text("Hepsini sil", color = MaterialTheme.colorScheme.error) }
-            },
-            dismissButton = { TextButton(onClick = { confirmReset = false }) { Text("Vazgeç") } },
-        )
     }
 
     // 🤫 Gizli menü: partnere mesaj + bildirim

@@ -52,11 +52,4 @@ class ProfileRepository {
         return "${bucket.publicUrl(path)}?v=${System.currentTimeMillis()}"
     }
 
-    /** Tüm izleme verisini sıfırlar (profiller kalır).
-     *  Tek atomik Postgres TRUNCATE ile — yarıda kesilme ihtimali yok. */
-    suspend fun resetAllData() {
-        android.util.Log.d("MinimuvReset", "rpc reset_all_data çağrılıyor")
-        SupabaseProvider.client.postgrest.rpc("reset_all_data")
-        android.util.Log.d("MinimuvReset", "sıfırlama tamamlandı")
-    }
 }
