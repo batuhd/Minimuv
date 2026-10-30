@@ -1,0 +1,50 @@
+ M AGENTS.md
+ M app/src/main/AndroidManifest.xml
+ M app/src/main/java/com/sinop/minimuv/core/BackgroundNotifications.kt
+ M app/src/main/java/com/sinop/minimuv/core/SearchApi.kt
+ M app/src/main/java/com/sinop/minimuv/data/Models.kt
+ M app/src/main/java/com/sinop/minimuv/data/SettingsStore.kt
+ M app/src/main/java/com/sinop/minimuv/data/TitleRepository.kt
+ M app/src/main/java/com/sinop/minimuv/ui/AppRoot.kt
+ M app/src/main/java/com/sinop/minimuv/ui/components/Components.kt
+ M app/src/main/java/com/sinop/minimuv/ui/components/InAppUpdate.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/achievements/AchievementsScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/add/AddScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailComponents.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailEditCards.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailViewModel.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/list/ListScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/list/ListViewModel.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/list/PlanOrderScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/person/PersonScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/profile/ProfileScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/settings/SettingsScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/setup/ProfileSelectScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/setup/SupabaseSetupScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/stats/HeatmapScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/stats/WrappedScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/studio/StudioScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/screens/wheel/WheelScreen.kt
+ M app/src/main/java/com/sinop/minimuv/ui/theme/Color.kt
+ M app/src/main/java/com/sinop/minimuv/ui/theme/Theme.kt
+ M app/src/main/java/com/sinop/minimuv/ui/theme/Type.kt
+ M app/src/main/java/com/sinop/minimuv/ui/theme/icons/MinimuvIcons.kt
+ D app/src/main/res/font/baloo2.ttf
+ D app/src/main/res/font/nunito.ttf
+?? app/src/main/java/com/sinop/minimuv/ui/components/Dc.kt
+?? app/src/main/java/com/sinop/minimuv/ui/screens/list/LibraryScreen.kt
+?? app/src/main/java/com/sinop/minimuv/ui/theme/Tokens.kt
+?? app/src/main/res/font/fraunces_600.ttf
+?? app/src/main/res/font/fraunces_600_ext.ttf
+?? app/src/main/res/font/fraunces_700.ttf
+?? app/src/main/res/font/fraunces_700_ext.ttf
+?? app/src/main/res/font/pjs_400.ttf
+?? app/src/main/res/font/pjs_400_ext.ttf
+?? app/src/main/res/font/pjs_500.ttf
+?? app/src/main/res/font/pjs_500_ext.ttf
+?? app/src/main/res/font/pjs_600.ttf
+?? app/src/main/res/font/pjs_600_ext.ttf
+?? app/src/main/res/font/pjs_700.ttf
+?? app/src/main/res/font/pjs_700_ext.ttf
+?? audit-reports/GIT_STATUS_BASELINE.txt

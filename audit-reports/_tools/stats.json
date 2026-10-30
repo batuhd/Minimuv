@@ -1,0 +1,200 @@
+{
+ "total": 173,
+ "categories": {
+  "BUG": {
+   "total": 70,
+   "Kritik": 0,
+   "Yüksek": 5,
+   "Orta": 25,
+   "Düşük": 40,
+   "Bilgi": 0
+  },
+  "SEC": {
+   "total": 15,
+   "Kritik": 1,
+   "Yüksek": 2,
+   "Orta": 5,
+   "Düşük": 5,
+   "Bilgi": 2
+  },
+  "DEAD": {
+   "total": 26,
+   "Kritik": 0,
+   "Yüksek": 0,
+   "Orta": 6,
+   "Düşük": 19,
+   "Bilgi": 1
+  },
+  "DUP": {
+   "total": 7,
+   "Kritik": 0,
+   "Yüksek": 0,
+   "Orta": 1,
+   "Düşük": 6,
+   "Bilgi": 0
+  },
+  "PERF": {
+   "total": 18,
+   "Kritik": 0,
+   "Yüksek": 0,
+   "Orta": 9,
+   "Düşük": 9,
+   "Bilgi": 0
+  },
+  "QUAL": {
+   "total": 37,
+   "Kritik": 0,
+   "Yüksek": 0,
+   "Orta": 5,
+   "Düşük": 28,
+   "Bilgi": 4
+  }
+ },
+ "workflow_raw": 172,
+ "workflow_stats": {
+  "raw": 174,
+  "deduped": 173,
+  "verified": 172,
+  "extras": 0,
+  "dropped": 1,
+  "per_label": {
+   "core-bildirim": 11,
+   "core-arama-ag": 12,
+   "data-katmani": 11,
+   "uygulama-tema": 17,
+   "bilesenler": 10,
+   "kutuphane-liste": 11,
+   "detay-ekran": 15,
+   "detay-kartlar": 12,
+   "ekle-kisi-studyo": 12,
+   "profil-ayarlar": 9,
+   "istatistik": 12,
+   "altyapi-yapilandirma": 10,
+   "supabase": 9,
+   "kalite-test-a11y": 13,
+   "bagimlilik-tedarik": 10
+  },
+  "categories": {
+   "BUG": {
+    "total": 64,
+    "Orta": 22,
+    "Düşük": 37,
+    "Yüksek": 5
+   },
+   "PERF": {
+    "total": 18,
+    "Orta": 8,
+    "Düşük": 10
+   },
+   "QUAL": {
+    "total": 41,
+    "Düşük": 32,
+    "Orta": 5,
+    "Bilgi": 4
+   },
+   "DEAD": {
+    "total": 26,
+    "Düşük": 18,
+    "Orta": 7,
+    "Bilgi": 1
+   },
+   "DUP": {
+    "total": 7,
+    "Düşük": 6,
+    "Orta": 1
+   },
+   "SEC": {
+    "total": 16,
+    "Düşük": 6,
+    "Yüksek": 2,
+    "Bilgi": 4,
+    "Orta": 4
+   }
+  },
+  "started": [
+   "audit:core-bildirim",
+   "audit:core-arama-ag",
+   "audit:data-katmani",
+   "audit:uygulama-tema",
+   "audit:bilesenler",
+   "audit:kutuphane-liste",
+   "audit:detay-ekran",
+   "audit:detay-kartlar",
+   "audit:ekle-kisi-studyo",
+   "audit:cark-rozet",
+   "audit:profil-ayarlar",
+   "audit:istatistik",
+   "audit:altyapi-yapilandirma",
+   "audit:supabase",
+   "cross:dead-code",
+   "cross:duplicate",
+   "cross:guvenlik",
+   "cross:performans",
+   "cross:kalite-test-a11y",
+   "cross:bagimlilik-tedarik",
+   "verify:app_src_main_java_com_sinop_minimuv_core_PartnerEvents.kt_1",
+   "verify:app_src_main_java_com_sinop_minimuv_core_PartnerEventsRuntim",
+   "verify:app_src_main_java_com_sinop_minimuv_core_BackgroundNotificat",
+   "verify:app_src_main_java_com_sinop_minimuv_core_NotificationWorker.",
+   "verify:app_src_main_java_com_sinop_minimuv_core_SearchApi.kt_5",
+   "verify:app_src_main_java_com_sinop_minimuv_core_SearchApi.kt_6",
+   "verify:app_src_main_java_com_sinop_minimuv_core_SupabaseProvider.kt",
+   "verify:app_src_main_java_com_sinop_minimuv_core_ConnectionValidator",
+   "verify:app_src_main_java_com_sinop_minimuv_core_WheelSound.kt_9",
+   "verify:app_src_main_java_com_sinop_minimuv_data_TitleRepository.kt_",
+   "verify:app_src_main_java_com_sinop_minimuv_data_AchievementChecker.",
+   "verify:app_src_main_java_com_sinop_minimuv_data_Achievements.kt_12",
+   "verify:app_src_main_java_com_sinop_minimuv_data_SettingsStore.kt_13",
+   "verify:app_src_main_java_com_sinop_minimuv_data_Models.kt_14",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_AppRoot.kt_15",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_AppRoot.kt_16",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_theme_Theme.kt_17",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_theme_icons_MinimuvIc",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_theme_Color.kt_19",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_components_Confetti.k",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_components_Components",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_components_Dc.kt_22",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_components_InAppUpdat",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_list_LibraryS",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_list_PlanOrde",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_list_ListView",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_list_ListScre",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_detail_Detail",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_detail_Detail",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_detail_Detail",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_detail_Detail",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_detail_Detail",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_detail_Detail",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_add_AddScreen",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_person_Person",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_studio_Studio",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_setup_Supabas",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_setup_Profile",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_settings_Sett",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_profile_Profi",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_stats_Heatmap",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_stats_Wrapped",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_stats_Wrapped",
+   "verify:app_src_main_AndroidManifest.xml_44",
+   "verify:AGENTS.md_45",
+   "verify:app_build.gradle.kts_46",
+   "verify:gradle_libs.versions.toml_47",
+   "verify:app_src_main_res_values_colors.xml_48",
+   "verify:gradle_wrapper_gradle-wrapper.properties_49",
+   "verify:app_src_test_java_com_sinop_minimuv_ExampleUnitTest.kt_50",
+   "verify:supabase_init.sql_51",
+   "verify:supabase_functions_notify_index.ts_52",
+   "verify:app_src_main_res_values_strings.xml_53",
+   "verify:app_src_main_java_com_sinop_minimuv_ui_screens_wheel_WheelVi",
+   "verify:settings.gradle.kts_55",
+   "completeness-critic"
+  ],
+  "failures": [
+   "audit:cark-rozet",
+   "cross:guvenlik",
+   "cross:performans",
+   "cross:dead-code",
+   "cross:duplicate"
+  ]
+ }
+}

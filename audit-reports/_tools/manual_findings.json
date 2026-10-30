@@ -1,0 +1,617 @@
+[
+  {
+    "category": "BUG",
+    "title": "Realtime yenileme ile refreshCoupleScore arasında sonsuz yazma döngüsü",
+    "severity": "Yüksek",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/data/TitleRepository.kt",
+    "startLine": 132,
+    "endLine": 142,
+    "description": "refreshCoupleScore, puanlar değişmese bile titles.score kolonunu koşulsuz UPDATE eder. Detay ekranındaki reload bu fonksiyonu her çağrıda çalıştırır; titles tablosundaki UPDATE ise Supabase Realtime üzerinden yeniden 'titles' olayı üretir. DetailViewModel bu olayı 300 ms debounce ile tekrar reload'a çevirir. Sonuç: detay ekranı açık kaldığı sürece yaklaşık her 300 ms'de bir ağ isteği + UPDATE + realtime mesajı oluşan kapalı bir döngü.",
+    "impact": "Sunucuda sürekli gereksiz yazma (WAL şişmesi), mobil veri/pil tüketimi, Supabase rate limit ve realtime kotası riski. Aynı başlık iki cihazda açıksa iki taraflı döngü birbirini besler. Kullanıcı fark etmez; uzun vadede kota/limit kaynaklı servis kesintisi görülebilir.",
+    "evidence": "TitleRepository.refreshCoupleScore (132-142) her durumda `from(\"titles\").update { set(\"score\", ...) }` çalıştırır; değerin mevcut değerle aynı olup olmadığını kontrol etmez. DetailViewModel.reload (80-103) satır 89'da bu fonksiyonu koşulsuz çağırır. Aynı ViewModel 68-76'da `RealtimeManager.events.filter { it == \"titles\" ... }.debounce(300).collect { reload(id) }` ile titles olayında yeniden yükler.",
+    "suggestion": "1) refreshCoupleScore içinde önce mevcut titles.score değerini okuyup yuvarlanmış ortalama ile aynıysa UPDATE'i atlayın. 2) Daha iyisi: ortalamayı title_scores üzerindeki bir AFTER INSERT/UPDATE/DELETE trigger'ı ile hesaplayıp yalnızca değer gerçekten değiştiğinde titles.score'u güncelleyin. 3) reload içinden refreshCoupleScore çağrısını kaldırın; yalnızca puan kaydetme akışında çağırın. 4) Realtime aboneliğinde kendi yazdığınız olayları ayıklamak için olay kaynağı/updated_at karşılaştırması ekleyin.",
+    "fixDifficulty": "Orta",
+    "effort": "2-4 saat",
+    "dependencies": "Supabase realtime publication, TitleRepository, DetailViewModel",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailViewModel.kt",
+        "startLine": 68,
+        "endLine": 103,
+        "note": "titles olayında reload; reload içinde koşulsuz refreshCoupleScore"
+      },
+      {
+        "file": "supabase/init.sql",
+        "startLine": 263,
+        "endLine": 285,
+        "note": "titles tablosunun realtime publication'a eklenmesi"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "SEC",
+    "title": "Herkese açık anon anahtar + anon_all RLS + anon reset_all_data: uzaktan tam veri erişimi ve silme",
+    "severity": "Kritik",
+    "confidence": "Kesin",
+    "file": "supabase/init.sql",
+    "startLine": 214,
+    "endLine": 261,
+    "description": "Uygulama, gerçek Supabase proje URL'sini ve publishable/anon anahtarını SupabaseSetupScreen içinde varsayılan değer olarak taşır; bu değerler GitHub'a çıkan API'siz APK dahil her derlemede bulunur. Veritabanında tüm tablolarda `anon_all` politikası `using (true) with check (true)` ile anon role tam yetki verir. Ayrıca SECURITY DEFINER reset_all_data() fonksiyonu anon role grant edilmiştir ve PostgREST üzerinden `/rpc/reset_all_data` ile çağrılabilir. APK'yı indiren herkes anahtarı çıkarıp tüm çift verisini okuyabilir, değiştirebilir, silebilir ve tek çağrıyla tüm tabloları truncate edebilir.",
+    "impact": "Mahremiyet ihlali (izleme geçmişi, notlar, puanlar, profil/avatar, FCM tokenları), veri kaybı (uzaktan wipe), veri tahrifatı, bildirim spam'i ve Supabase kotası/ücret saldırısı. Uygulamanın 'özel çift uygulaması' tehdit modeliyle doğrudan çelişir; AGENTS.md'deki herkese açık GitHub APK dağıtımı saldırıyı uzaktan ve ölçeklenebilir hale getirir.",
+    "evidence": "SupabaseSetupScreen.kt:44 `var url by remember { mutableStateOf(\"https://ziet****.supabase.co\") }`; :45 `var key by remember { mutableStateOf(\"sb_p****\") }`. init.sql:246-261 döngüsü 11 tabloya `for all to anon, authenticated using (true) with check (true)` politikası ekler. init.sql:214-230 reset_all_data SECURITY DEFINER olarak title_notes, partner_pings, title_scores, episode_notes, episode_progress_per_profile, watch_log, achievements ve titles tablolarını truncate eder; :230 `grant execute ... to anon, authenticated`. init.sql:233 yorumu 'APK paylaşılmaz' derken AGENTS.md:36 API'siz APK'nın GitHub Releases'e çıktığını belirtir.",
+    "suggestion": "1) Anahtarı koddan çıkarın ve daha önce dağıtılan anahtarı Supabase panelinden rotate edin. 2) Supabase Auth (anonim oturum veya cihaz/çift bazlı oturum) ekleyip RLS politikalarını `auth.uid()` ve bir `couple_id`/`profile_id` üyeliğine bağlayın; `anon_all` politikalarını kaldırın. 3) reset_all_data() fonksiyonunu silin veya yalnızca service_role'e grant edin; uygulamada kullanılmıyorsa tamamen kaldırın. 4) Storage avatars bucket'ını private yapın; select/insert/update politikalarını sahiplikle sınırlayın. 5) Realtime publication'ı yalnızca yetkili çift aboneliklerine açın.",
+    "fixDifficulty": "Zor",
+    "effort": "2-4 gün",
+    "dependencies": "Supabase Auth/RLS tasarımı, istemci oturum akışı, tüm repository sorguları, dağıtım süreci",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/setup/SupabaseSetupScreen.kt",
+        "startLine": 44,
+        "endLine": 45,
+        "note": "Gerçek proje URL'si ve publishable anahtar varsayılan değer olarak gömülü"
+      },
+      {
+        "file": "supabase/init.sql",
+        "startLine": 21,
+        "endLine": 33,
+        "note": "Public avatars bucket; anon select/insert/update politikaları"
+      },
+      {
+        "file": "supabase/init.sql",
+        "startLine": 246,
+        "endLine": 261,
+        "note": "11 tabloda anon_all tam yetki politikası"
+      },
+      {
+        "file": "supabase/init.sql",
+        "startLine": 230,
+        "endLine": 230,
+        "note": "Yıkıcı RPC'nin anon role grant edilmesi"
+      },
+      {
+        "file": "supabase/functions/notify/index.ts",
+        "startLine": 89,
+        "endLine": 162,
+        "note": "Kimlik doğrulamasız Edge Function; herkes POST edebilir"
+      },
+      {
+        "file": "AGENTS.md",
+        "startLine": 36,
+        "endLine": 36,
+        "note": "API'siz APK'nın GitHub Releases'e çıktığı dağıtım kuralı"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "SEC",
+    "title": "Firebase Admin SDK özel anahtarı proje kökünde düz metin olarak duruyor",
+    "severity": "Yüksek",
+    "confidence": "Kesin",
+    "file": "com-sinop-minimuv-firebase-adminsdk-fbsvc-15e82199ce.json",
+    "startLine": 5,
+    "endLine": 5,
+    "description": "Proje kökünde, Firebase projesine tam admin yetkisi veren servis hesabı JSON dosyası bulunuyor. Dosya .gitignore ile takip dışında tutulmuş olsa da düz metin ve dünya-okunur izinlerle (644) duruyor; yedekleme, klasör paylaşımı, zip veya yanlışlıkla `git add -f` ile sızabilir. İçindeki private_key değeri '----****' ile başlar; raporlama amacıyla tam değer yazılmamıştır.",
+    "impact": "Sızması halinde saldırgan Firebase projesinde FCM gönderimi, App Distribution yönetimi ve proje kaynaklarına erişim gibi admin işlemleri yapabilir; kullanıcı cihazlarına sahte bildirim gönderebilir. Uygulama kodundan çalışma zamanı sırrı olarak kullanılmıyor, yalnızca geliştirme makinesinde duruyor.",
+    "evidence": "Dosya: com-sinop-minimuv-firebase-adminsdk-fbsvc-15e82199ce.json:5 (`\"private_key\": \"----****\"`). `ls -l` izinleri `-rw-r--r--`; `.gitignore:37` `*firebase-adminsdk*` ile ignore edilmiş, `git status` takip etmiyor. Değerin tamamı bilinçli olarak raporlanmadı.",
+    "suggestion": "1) Google Cloud konsolundan bu servis hesabı anahtarını derhal iptal edin ve yenisini üretmeyin; uygulama bu dosyayı kullanmıyor. 2) Dosyayı proje ağacından silin; gerekiyorsa ev dizini dışında, şifreli bir kasada saklayın. 3) Firebase Admin işlemleri için Application Default Credentials veya Secret Manager kullanın. 4) Repo/CI için secret tarama (gitleaks/trufflehog) ekleyin.",
+    "fixDifficulty": "Kolay",
+    "effort": "10-15 dakika (anahtar iptali + dosya silme)",
+    "dependencies": "Firebase/Google Cloud konsol erişimi",
+    "relatedLocations": [],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "SEC",
+    "title": "local.properties ve kopyasında gerçek TMDB/Supabase kimlik bilgileri düz metin",
+    "severity": "Orta",
+    "confidence": "Kesin",
+    "file": "local.properties",
+    "startLine": 9,
+    "endLine": 13,
+    "description": "Yerel yapılandırma dosyasında TMDB API anahtarı (35cb****), Supabase URL'si (http****) ve publishable anahtar (sb_p****) düz metin olarak duruyor. Aynı TMDB anahtarının bir kopyası local.properties.txt dosyasında da var. Her iki dosya git tarafından ignore edilse de yedek/cihaz paylaşımı, bulut senkronizasyonu veya yanlışlıkla arşivleme ile sızabilir; TMDB anahtarı kotanın tükenmesine yol açabilir.",
+    "impact": "TMDB kotası tükenmesi/üçüncü taraf kullanımı; Supabase anahtarı zaten kaynak kodda gömülü olduğundan SEC-01'deki riski büyütür. Yerel dosya sızıntısı, çiftin verisine erişim için ek bir yol oluşturur.",
+    "evidence": "local.properties:9 `tmdb.api.key=35cb****`; :12 `SUPABASE_URL=http****`; :13 `SUPABASE_ANON_KEY=sb_p****`. local.properties.txt:11 aynı TMDB anahtarını içerir. `git check-ignore -v local.properties` ve `*.properties.txt` ignore kurallarını doğrular; dosyalar takip edilmiyor.",
+    "suggestion": "1) TMDB anahtarını TMDB panelinden yenileyin. 2) local.properties.txt kopyasını silin; tek kaynak kullanın. 3) Mümkünse anahtarları ortam değişkeni/Gradle property ile geçin ve diskte şifreli saklayın. 4) Düzenli secret taraması ve `.gitignore` kontrolü ekleyin.",
+    "fixDifficulty": "Kolay",
+    "effort": "15 dakika",
+    "dependencies": "TMDB paneli; yerel geliştirme ortamı",
+    "relatedLocations": [
+      {
+        "file": "local.properties.txt",
+        "startLine": 11,
+        "endLine": 11,
+        "note": "Aynı TMDB anahtarının ikinci kopyası"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "SEC",
+    "title": "notify Edge Function kimlik doğrulaması, şema doğrulaması ve hız sınırı olmadan herkese açık",
+    "severity": "Orta",
+    "confidence": "Kesin",
+    "file": "supabase/functions/notify/index.ts",
+    "startLine": 89,
+    "endLine": 162,
+    "description": "Fonksiyon yalnızca POST metodunu kontrol eder; JWT, webhook imzası veya paylaşılan sır doğrulaması yapmaz. Gövdedeki table/type/payload alanlarına göre tüm kayıtlı FCM tokenlarına bildirim gönderir. Herkes internetten bu endpoint'e istek atarak bildirim bombardımanı başlatabilir, FCM kotasını tüketebilir ve token envanterini dolaylı olarak yoklayabilir.",
+    "impact": "Push spam, kullanıcı rahatsızlığı, FCM/Supabase kota ve maliyet artışı; güvenilir bildirim kanalının itibar kaybı. Ayrıca fonksiyon hatalı gövdeyle 500 döndürerek gereksiz hata trafiği üretir.",
+    "evidence": "index.ts:89-96 yalnızca `req.method !== \"POST\"` ve gövde varlığını kontrol eder; `req.json()` sonrası şema doğrulaması yok. 99-153 arasında gelen `table`/`type` değerlerine göre `fcm_tokens` tablosundan tokenlar çekilip `send()` çağrılır. Herhangi bir auth header/JWT kontrolü bulunmuyor.",
+    "suggestion": "1) Fonksiyonu `verify_jwt = true` ile yayınlayın ve yalnızca service_role/webhook sırrı taşıyan çağrıları kabul edin. 2) pg_net trigger'ında Vault/secret ile saklanan güçlü bir bearer kullanın. 3) Gövdeyi katı bir şemayla doğrulayın (table/type beyaz listesi, payload boyutu). 4) Token başına hız sınırı ve toplam istek kotası ekleyin. 5) Hatalı token temizliğini service_role ile yapın.",
+    "fixDifficulty": "Orta",
+    "effort": "3-6 saat",
+    "dependencies": "Supabase Edge Function ayarları, pg_net trigger'ları, secret yönetimi",
+    "relatedLocations": [
+      {
+        "file": "supabase/init.sql",
+        "startLine": 297,
+        "endLine": 311,
+        "note": "pg_net trigger'ının placeholder anon bearer ile POST atması"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "SEC",
+    "title": "Üretim logları kullanıcı notu ve puan gibi kişisel verileri logcat'e yazıyor",
+    "severity": "Düşük",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailViewModel.kt",
+    "startLine": 184,
+    "endLine": 184,
+    "description": "updateWithScore, değişiklik haritasını (not metni dahil) ve puanı doğrudan Log.d ile logcat'e yazıyor. Kütüphane sıralama ve realtime kodunda da benzer debug logları var. Android'de logcat, hata raporu/bug report ve bazı üretici tanılama araçlarıyla okunabilir.",
+    "impact": "Mahrem notların ve puanların cihaz loglarında açığa çıkması; destek/bug report paylaşımında veri sızıntısı. Üretimde gereksiz log gürültüsü ve performans maliyeti.",
+    "evidence": "DetailViewModel.kt:184 `android.util.Log.d(\"MinimuvDetail\", \"updateWithScore id=$id changes=$changes score=${score?.score} logDelta=$watchLogDelta\")`; `changes` buildChanges (DetailScreen.kt:215-229) içinde `notes` alanını taşır. Ayrıca LibraryScreen.kt:189,197 ve ListViewModel.kt:91,99,104 sıralama logları içerir.",
+    "suggestion": "1) Not/puan içeren logları kaldırın veya yalnızca debug derlemesinde ve redakte edilmiş alanlarla çalıştırın. 2) Ortak bir logger abstraksiyonu ekleyip release'te no-op yapın. 3) Log seviyesini BuildConfig.DEBUG ile kapılayın.",
+    "fixDifficulty": "Kolay",
+    "effort": "20 dakika",
+    "dependencies": "Yok",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailScreen.kt",
+        "startLine": 215,
+        "endLine": 229,
+        "note": "changes haritasına not metninin eklenmesi"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/list/ListViewModel.kt",
+        "startLine": 89,
+        "endLine": 109,
+        "note": "Sıralama debug logları"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "AYRI izleme modunda anime bölüm ilerlemesi rozet ve istatistiklerde sayılmıyor",
+    "severity": "Orta",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/data/Achievements.kt",
+    "startLine": 165,
+    "endLine": 166,
+    "description": "animeEpisodes yalnızca titles.episode_progress kolonunu toplar. AYRI modda ilerleme episode_progress_per_profile tablosuna yazılır; titles.episode_progress güncellenmez. Bu nedenle AYRI izlenen animelerin bölümleri '50/100/200/500/1000 anime bölümü' rozetlerinde ve profil/rozet istatistiklerinde eksik görünür. Aynı sorun Profil ekranındaki izleme saati hesabını da etkiler.",
+    "impact": "Rozetlerin geç açılması veya hiç açılmaması; kullanıcıya yanlış istatistik. AYRI modu kullanan çiftlerde ilerleme kaybı algısı.",
+    "evidence": "Achievements.kt:165-166 `titles.filter { type == ANIME }.sumOf { if (COMPLETED) (totalEpisodes ?: episodeProgress) else episodeProgress }`. TitleRepository.setEpisodeProgress (158-179) yalnızca `episode_progress_per_profile` tablosuna yazar; titles güncellenmez. DetailViewModel.setProgress (312-328) bu yolu kullanır. ProfileScreen.totalWatchHours (198-204) da titles.episodeProgress üzerinden hesaplanır.",
+    "suggestion": "1) animeEpisodes hesabına episode_progress_per_profile satırlarını dahil edin; iki profil arasında çift sayımı önlemek için iş kuralını netleştirin (ör. en yüksek ilerleme veya toplam). 2) Alternatif olarak AYRI modda titles.episode_progress'i de senkron tutun. 3) Profil saat hesabını aynı kaynağa bağlayın. 4) Rozet testlerine AYRI mod senaryosu ekleyin.",
+    "fixDifficulty": "Orta",
+    "effort": "2-4 saat",
+    "dependencies": "TitleRepository, DetailViewModel, Achievements, ProfileScreen",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/data/TitleRepository.kt",
+        "startLine": 158,
+        "endLine": 179,
+        "note": "Yalnızca per-profile tabloya yazan setEpisodeProgress"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailViewModel.kt",
+        "startLine": 312,
+        "endLine": 328,
+        "note": "AYRI modda anında yazan setProgress"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "Profil ekranındaki rozet/istatistik hesabı başlık notlarını yok sayıyor",
+    "severity": "Orta",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/profile/ProfileScreen.kt",
+    "startLine": 127,
+    "endLine": 127,
+    "description": "Profil ekranı Achievements.computeStats'i yalnızca titles, watchLog ve scores ile çağırır; titleNotes parametresi varsayılan boş listeye düşer. Rozetler ekranı ise aynı hesabı getAllTitleNotes() sonucuyla yapar. Bu nedenle not bazlı rozetler ve açılan rozet sayısı iki ekranda farklı çıkar.",
+    "impact": "Aynı kullanıcı için iki farklı rozet sayısı/ilerlemesi; güven kaybı ve tutarsız 'açılan rozet' göstergesi. Not yazma davranışı rozet kazanımına yansımaz.",
+    "evidence": "ProfileScreen.kt:127 `Achievements.computeStats(bundle.titles, bundle.log, bundle.scores)` (titleNotes yok). AchievementsViewModel.kt:54-55 `val notes = getAllTitleNotes(); computeStats(titles, log, scores, notes)`. Achievements.notesCount (208-211) titleNotes'a bağlıdır.",
+    "suggestion": "1) ProfileScreen reload'ında getAllTitleNotes() sonucunu da yükleyip computeStats'e geçirin. 2) İki ekran için tek bir istatistik kaynağı/ViewModel kullanın. 3) Not rozetlerini kapsayan bir UI testi ekleyin.",
+    "fixDifficulty": "Kolay",
+    "effort": "30-45 dakika",
+    "dependencies": "ProfileScreen, AchievementsViewModel, TitleRepository.getAllTitleNotes",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/achievements/AchievementsViewModel.kt",
+        "startLine": 54,
+        "endLine": 55,
+        "note": "Doğru çağrı: titleNotes dahil"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/data/Achievements.kt",
+        "startLine": 208,
+        "endLine": 211,
+        "note": "notesCount titleNotes'a bağlı"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "'10 Mükemmel' rozeti çift ortalaması 9.95 ile açılıyor; 'tam 10 puan' koşuluyla uyuşmuyor",
+    "severity": "Düşük",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/data/Achievements.kt",
+    "startLine": 199,
+    "endLine": 199,
+    "description": "perfectScoreCount, titles.score (iki profilin ortalaması) >= 9.95 olan başlıkları sayar. Rozet açıklaması '10 başlığa tam 10 puan verdiniz' der. 10 ve 9.9 gibi iki puanın ortalaması 9.95 olduğunda hiçbir profil tam 10 vermemiş olsa da rozet ilerler. Ayrıca aynı başlık iki kez değil bir kez sayılır, bu doğru; ancak 'tam 10' anlamı kaybolur.",
+    "impact": "Rozetin anlamı ve açıklaması tutarsız; kullanıcı hak etmediği rozeti kazanabilir veya neden kazandığını anlamaz.",
+    "evidence": "Achievements.kt:199 `val perfectScoreCount = titles.count { (it.score ?: 0.0) >= 9.95 }`; rozet tanımı :154 `AchievementDef(\"10_mukemmel\", ..., \"10 başlığa tam 10 puan verdiniz.\", 10)`. titles.score TitleRepository.refreshCoupleScore (132-142) tarafından ortalama olarak yazılır.",
+    "suggestion": "1) perfectScoreCount'u title_scores üzerinden hesaplayın ve her iki profilin de 10.0 verdiği başlıkları sayın. 2) veya rozet açıklamasını 'ortalama 9.95+' olarak değiştirin. 3) Aynı yaklaşımı highScoreCount için de gözden geçirin.",
+    "fixDifficulty": "Orta",
+    "effort": "1-2 saat",
+    "dependencies": "title_scores verisi, computeStats imzası",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/data/TitleRepository.kt",
+        "startLine": 132,
+        "endLine": 142,
+        "note": "titles.score çift ortalaması olarak yazılır"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "Sistem teması (SYSTEM) seçeneği arayüzden erişilemiyor",
+    "severity": "Düşük",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/profile/ProfileScreen.kt",
+    "startLine": 227,
+    "endLine": 231,
+    "description": "Profil ekranındaki tema düğmesi yalnızca 'light' ve 'dark' değerleri arasında geçiş yapar; SettingsScreen'de tema modu seçici yoktur. AppRoot ve MinimuvTheme ThemeMode.SYSTEM'i destekler ve sistem temasını izler, ancak kullanıcı bu moda hiçbir zaman geçemez. İlk kurulumdan sonra sistem teması davranışı kullanılamaz.",
+    "impact": "Kullanıcı cihazın karanlık/aydınlık ayarına otomatik uyum sağlayamaz; 'sistem teması' özelliği ölü kalır. Beklenti ile davranış uyuşmaz.",
+    "evidence": "ProfileScreen.kt:227-231 `val nextMode = if (currentThemeMode == \"light\") \"dark\" else \"light\"; settings.setThemeMode(nextMode)`. AppRoot.kt:93-98 mod eşlemesinde \"system\" -> ThemeMode.SYSTEM var; Theme.kt:100-105 SYSTEM -> isSystemInDarkTheme(). SettingsScreen'de tema modu kontrolü yok (yalnızca accent seçici, 101-124).",
+    "suggestion": "1) Ayarlar ekranına üç seçenekli (Koyu/Açık/Sistem) bir tema modu seçici ekleyin. 2) Profil ekranındaki tek düğmeyi üç durumlu döngü yapın. 3) Varsayılanı SYSTEM yapmayı değerlendirin.",
+    "fixDifficulty": "Kolay",
+    "effort": "1 saat",
+    "dependencies": "SettingsScreen, SettingsStore, ThemeMode",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/AppRoot.kt",
+        "startLine": 93,
+        "endLine": 98,
+        "note": "system modu destekleniyor"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/theme/Theme.kt",
+        "startLine": 100,
+        "endLine": 105,
+        "note": "SYSTEM -> isSystemInDarkTheme"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "Çark dönerken tür filtresi değiştirilirse yanlış kazanan açıklanabilir",
+    "severity": "Düşük",
+    "confidence": "Muhtemel",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/wheel/WheelScreen.kt",
+    "startLine": 183,
+    "endLine": 212,
+    "description": "spinWheel başladığında pool listesini closure içinde dondurur; animasyon biterken kazananı bu eski pool'dan seçer. Tür filtresi çipleri dönüş sırasında devre dışı bırakılmadığı için pool değişebilir: ekrandaki çark yeni listeyle çizilirken popup eski listeden bir kazanan gösterebilir; poster eşleşmesi de yeni haritada bulunamaz. Ayrıca LaunchedEffect(pool) winner/showWinner'ı sıfırlar.",
+    "impact": "Kullanıcıya çarkta görünmeyen bir yapım kazanan olarak sunulabilir; eşleşmeyen poster ve güven kaybı. Nadir ama tekrar edilebilir bir yarış.",
+    "evidence": "WheelScreen.kt:140-142 pool `remember(titles, typeFilter)`; :183-212 spinWheel closure'ı `pool` ve `pool.size` kullanır, animasyon sonunda `winner = pool[index]`. :144-147 `LaunchedEffect(pool) { winner = null; showWinner = false }`. Filtre çipleri dönüş sırasında `enabled = !spinning` ile korunmuyor (yalnızca çevir düğmeleri korunuyor, :305, :348).",
+    "suggestion": "1) Dönüş başında pool'un kopyasını alıp (`val spinPool = pool`) hem animasyon hem kazanan hesabında onu kullanın. 2) Dönüş sırasında filtre çiplerini devre dışı bırakın. 3) LaunchedEffect(pool) yalnızca !spinning iken sıfırlasın. 4) Kazananı pool değişiminden bağımsız saklayın.",
+    "fixDifficulty": "Kolay",
+    "effort": "30-60 dakika",
+    "dependencies": "WheelScreen, WinnerPopup",
+    "relatedLocations": [],
+    "status": "supheli",
+    "source": "manual"
+  },
+  {
+    "category": "PERF",
+    "title": "Çark tüm posterleri sınırsız eşzamanlı yükleyip bitmap olarak bellekte tutuyor",
+    "severity": "Orta",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/wheel/WheelScreen.kt",
+    "startLine": 595,
+    "endLine": 625,
+    "description": "rememberPosterBitmaps, seçili havuzdaki her poster URL'si için aynı anda async istek başlatır ve dönen tüm bitmap'leri Map içinde tutar. Havuz 'Sırada' listesinin tamamı olabildiği için yüzlerce poster aynı anda indirilebilir; 360 px bitmap'ler ARGB_8888 ile yaklaşık 0,5 MB/adet olup onlarca MB'a çıkabilir. Filtre değişiminde eski harita bırakılır ama yeni yükleme yine sınırsızdır.",
+    "impact": "Ağ burst'ü, bellek baskısı ve düşük RAM'li cihazlarda OOM/ANR riski; çark açılışının yavaşlaması. Realtime yenilemelerde tekrar tekrar indirme.",
+    "evidence": "WheelScreen.kt:595-625 `urls.map { url -> async(Dispatchers.IO) { ... } }.awaitAll()`; eşzamanlılık sınırı yok, bitmap'ler `bitmaps` state'inde tutuluyor. Aynı dosyada `rememberPosterBitmaps(pool)` her pool değişiminde yeniden çalışır (:181).",
+    "suggestion": "1) Eşzamanlı indirmeyi 4-8 ile sınırlayın (Semaphore). 2) Bitmap'leri 128-192 px'e küçültün ve RGB_565 kullanın. 3) Havuzu görünür dilimlerle sınırlayın veya posterleri yalnızca kazanan popup'ında yükleyin. 4) Coil disk/memory cache'ini paylaşın. 5) Çark dilimlerinde poster yerine renk+baş harf kullanma seçeneği ekleyin.",
+    "fixDifficulty": "Orta",
+    "effort": "2-4 saat",
+    "dependencies": "Coil ImageLoader, WheelCanvas",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/wheel/WheelScreen.kt",
+        "startLine": 180,
+        "endLine": 181,
+        "note": "Pool değişiminde tüm posterlerin yeniden yüklenmesi"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "DEAD",
+    "title": "WheelSound SoundPool kaynakları hiç serbest bırakılmıyor",
+    "severity": "Düşük",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/wheel/WheelScreen.kt",
+    "startLine": 135,
+    "endLine": 138,
+    "description": "WheelScreen DisposableEffect içinde WheelSound.init çağırır ancak onDispose boş; WheelSound nesnesinde release() metodu yok ve SoundPool uygulama süreci boyunca açık kalır. Ayrıca ready bayrağı iki sesin herhangi birinin yüklenmesiyle true olur; diğer ses henüz hazır değilken çalınmaya çalışılabilir.",
+    "impact": "Ses kaynakları ve yüklenen sample'lar süreç ömrü boyunca bellekte kalır; çark ekranına girip çıkan kullanıcıda gereksiz kaynak tüketimi. Küçük ölçekli bir sızıntı.",
+    "evidence": "WheelScreen.kt:135-138 `DisposableEffect(appContext) { WheelSound.init(appContext); onDispose { } }`. WheelSound.kt:9-33 SoundPool `pool` singleton, `release()` yok; `setOnLoadCompleteListener { _, _, _ -> ready = true }` her iki sample için ayrım yapmaz.",
+    "suggestion": "1) WheelSound'a `release()` ekleyin; onDispose'da çağırın. 2) ready bayrağını yüklenen sample sayısıyla (2/2) yönetin. 3) SoundPool'u yalnızca çark ekranı görünürken tutun. 4) Yükleme hatasını loglayın.",
+    "fixDifficulty": "Kolay",
+    "effort": "20-30 dakika",
+    "dependencies": "WheelSound",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/core/WheelSound.kt",
+        "startLine": 9,
+        "endLine": 33,
+        "note": "release yok; ready iki sample için tek bayrak"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "İzliyoruz ve Sırada bölümleri aynı priority_order alanını paylaşıyor",
+    "severity": "Düşük",
+    "confidence": "Muhtemel",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/list/LibraryScreen.kt",
+    "startLine": 154,
+    "endLine": 160,
+    "description": "Her iki bölüm de sıralamayı titles.priority_order üzerinden yapar; sürükleme sonunda aynı reorderPlanList çağrılır ve yalnızca o bölümün kimliklerine 1..n arası öncelik atanır. İki bölümün öncelik değerleri çakışır; bir bölümü sıralamak diğer bölümün göreli sırasını bozabilir. Yerel continueOrder/planOrder set karşılaştırması yalnızca küme değişince yenilendiği için bozulma bazen ancak uygulama yeniden açılınca görünür.",
+    "impact": "Kullanıcının yaptığı sıralama kalıcı ve öngörülebilir değil; 'İzliyoruz' şeridi ile 'Sırada' listesi arasında beklenmeyen sıra değişimleri.",
+    "evidence": "LibraryScreen.kt:154-159 watching ve planIds `priorityOrder` ile sıralanır; :353 `vm.reorderPlanList(continueOrder.toList())`; :406 ve :421 `vm.reorderPlanList(planOrder.toList())`. ListViewModel.kt:89-109 her kimliğe `index + 1` yazar. Tek bir priority_order alanı iki farklı liste için kullanılır.",
+    "suggestion": "1) İzliyoruz ve Sırada için ayrı sıralama alanları (ör. continue_order, plan_order) veya bölüm bazlı scope ekleyin. 2) Tek alan korunacaksa sıralamayı tüm 'sırada/izleniyor' evreni üzerinde tek listede yapın. 3) Yerel sıralamayı küme karşılaştırması yerine sunucudan gelen sıralı listeyle senkronize edin.",
+    "fixDifficulty": "Orta",
+    "effort": "3-5 saat",
+    "dependencies": "init.sql şeması, TitleRepository.updatePriority, LibraryScreen",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/list/ListViewModel.kt",
+        "startLine": 89,
+        "endLine": 109,
+        "note": "1..n öncelik ataması"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/data/TitleRepository.kt",
+        "startLine": 73,
+        "endLine": 80,
+        "note": "updatePriority tek alanı yazar"
+      }
+    ],
+    "status": "supheli",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "Kendi durum değişikliğiniz için de partner bildirimi üretilebiliyor",
+    "severity": "Düşük",
+    "confidence": "Muhtemel",
+    "file": "app/src/main/java/com/sinop/minimuv/core/BackgroundNotifications.kt",
+    "startLine": 120,
+    "endLine": 127,
+    "description": "TitleTransitionTracker.diff, yeni eklenen başlıklarda createdByProfileId ile kendi eklemesini ayıklar; ancak mevcut bir başlığın status değişiminde kimin değiştirdiğini kontrol etmez. Kullanıcı kendi cihazında durumu değiştirdiğinde realtime olayı watcher'ı tetikler ve 'İzlemeye başladınız!' / 'Birlikte bitirdiniz!' gibi bir bildirim kendisine gösterilebilir.",
+    "impact": "Gereksiz/şaşırtıcı self-bildirim; partner bildirimiyle karışma ve bildirim yorgunluğu.",
+    "evidence": "BackgroundNotifications.kt:120-127 `byId.values.forEach { old -> if (old == null) { if (createdByProfileId != profileId) ... } else if (old != status) notes += statusNote(...) }`; status dalında profileId/created_by kontrolü yok. titles tablosunda son değiştiren profil kolonu bulunmuyor.",
+    "suggestion": "1) titles tablosuna updated_by_profile_id ekleyin ve status bildirimini yalnızca aktör farklıysa üretin. 2) Alternatif olarak istemci kendi yazdığı değişikliği kısa süreli bir yerel işaretle bastırsın. 3) Realtime olayında old/new payload'daki created_by veya audit alanını kullanın.",
+    "fixDifficulty": "Orta",
+    "effort": "2-3 saat",
+    "dependencies": "init.sql şeması, TitleRepository.update, realtime payload",
+    "relatedLocations": [],
+    "status": "supheli",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "Spoiler nedeniyle atlanan bölüm notu, ilerleme sonra açılsa da bir daha bildirilmiyor",
+    "severity": "Düşük",
+    "confidence": "Muhtemel",
+    "file": "app/src/main/java/com/sinop/minimuv/core/BackgroundNotifications.kt",
+    "startLine": 433,
+    "endLine": 444,
+    "description": "processEpisodeNotes, gelen her notta `newLast` değerini spoiler kontrolünden ÖNCE ilerletir. Partnerin ilerideki bir bölüme yazdığı not, kullanıcı o bölüme gelmediği için bildirilmez; ancak su işareti (lastEpisodeNoteAt) o notun zamanına çekilir. Kullanıcı bölüme geldiğinde not artık 'eski' sayılır ve bildirim bir daha üretilmez.",
+    "impact": "Spoiler koruması doğru çalışsa da kullanıcı, hakkı olan bildirimi kalıcı olarak kaçırır; partner etkileşimi görünmez olur.",
+    "evidence": "BackgroundNotifications.kt:433-444: `if (ts <= lastSeen || profileId == note.profileId) return; if (ts > newLast) newLast = ts; ... if (myProgress < note.episodeNumber) return@forEach`; :454-456 `newLast` kaydedilir. Atlanan notun zamanı su işaretine dahil edilir.",
+    "suggestion": "1) `newLast` değerini yalnızca bildirim gerçekten gösterildiğinde ilerletin; spoiler nedeniyle atlanan notları bekleyen kuyrukta tutun. 2) veya su işaretini notun zamanı yerine, işlenen en düşük bekleyen zamanın bir öncesinde tutun. 3) İlerleme güncellendiğinde bekleyen notları yeniden değerlendirin.",
+    "fixDifficulty": "Orta",
+    "effort": "2-4 saat",
+    "dependencies": "SettingsStore.lastEpisodeNoteAt, episode_progress_per_profile",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/core/BackgroundNotifications.kt",
+        "startLine": 454,
+        "endLine": 456,
+        "note": "newLast'in kaydedilmesi"
+      }
+    ],
+    "status": "supheli",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "Realtime bayrağı kopan bağlantıda true kalıyor; FCM mesajları sessizce düşürülüyor",
+    "severity": "Orta",
+    "confidence": "Muhtemel",
+    "file": "app/src/main/java/com/sinop/minimuv/core/PartnerEventsRuntime.kt",
+    "startLine": 20,
+    "endLine": 49,
+    "description": "PartnerEventsRuntime.start, `started` bayrağını asenkron kurulumdan önce true yapar; yalnızca kurulum sırasında oluşan hata veya eksik ayarda false'a çeker. Bağlantı kurulduktan sonra realtime kanalı koparsa (ağ değişimi, uyku, sunucu hatası) bayrak true kalır. MinimuvMessagingService, `isRunning()` true olduğunda FCM mesajını işlemeden döner; böylece uygulama açık görünürken kopan realtime yüzünden partner bildirimleri kaybolur.",
+    "impact": "Sessiz bildirim kaybı: kullanıcı uygulamayı açık sanır, realtime ölü, FCM yolu da kapatılmış olur. Özellikle ağ değişimi ve arka plandan dönüşte tekrarlanabilir.",
+    "evidence": "PartnerEventsRuntime.kt:20-28 `@Volatile started`; `start` içinde `if (started) return; started = true`; :37-40 yalnızca eksik ayarda false; :47-49 yalnızca başlatma hatasında false; bağlantı sonrası durum izlenmiyor. MinimuvMessagingService.kt:44 `if (PartnerEventsRuntime.isRunning()) return`.",
+    "suggestion": "1) Realtime kanalının gerçek durumunu (connected/disconnected) izleyin ve `started`'ı buna bağlayın. 2) Bağlantı koptuğunda FCM yolunu yeniden açın; yeniden bağlanma denemesi yapın. 3) `isRunning` yerine kısa süreli bir 'son realtime olayı' zaman damgası kullanın. 4) FCM mesajını yine de dedup korumalı işleyip realtime ile çift bildirimi engelleyin.",
+    "fixDifficulty": "Orta",
+    "effort": "3-5 saat",
+    "dependencies": "RealtimeManager, MinimuvMessagingService, PartnerEventWatcher",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/core/MinimuvMessagingService.kt",
+        "startLine": 44,
+        "endLine": 44,
+        "note": "Realtime açıkken FCM'in tamamen düşürülmesi"
+      }
+    ],
+    "status": "supheli",
+    "source": "manual"
+  },
+  {
+    "category": "QUAL",
+    "title": "Açık temada sabit Color.White metinler okunamaz hale geliyor",
+    "severity": "Orta",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/profile/ProfileScreen.kt",
+    "startLine": 220,
+    "endLine": 237,
+    "description": "Açık tema tokenlarında arka plan #F4F3F7, kart yüzeyi #FFFFFF ve metin koyu renklidir. Buna rağmen birçok yerde metin/ikon rengi doğrudan Color.White olarak verilmiş. Profil ekranındaki 'Aşk' başlığı ve üst bar ikonları, düzenleme kartlarındaki 'Bölümler' başlığı ve ilerleme sayıları açık temada beyaz zemin üzerinde beyaz kalır. Toplamda UI katmanında 114 Color.White kullanımı var; hepsi hatalı değil (koyu gradyan/renkli yüzeylerde doğru) ancak token yerine sabit renk kullanımı temayı kırıyor.",
+    "impact": "Açık tema kullanılamaz/okunamaz; erişilebilirlik ihlali ve tutarsız görünüm. Kullanıcı tema değiştirdiğinde metinleri kaybeder.",
+    "evidence": "Tokens.kt:82-90 lightTokens bg=0xFFF4F3F7, surface1=0xFFFFFFFF, text=0xFF1A1A20. ProfileScreen.kt:220-224 `color = Color.White` ('Aşk'), :232-237 ikon tint Color.White. DetailEditCards.kt:205 `color = Color.White` ('Bölümler' başlığı), :313 ilerleme sayısı. `rg -n \"Color.White\" app/src/main/java/com/sinop/minimuv/ui | wc -l` = 114.",
+    "suggestion": "1) Metin/ikon renklerini `tk.text`, `tk.ink`, `tk.textMuted` gibi tokenlara bağlayın. 2) Koyu gradyan üzerindeki beyazlar için özel bir `onDark`/`onAccent` tokenı tanımlayın ve yalnızca orada kullanın. 3) Açık tema için Compose preview/screenshot testi ekleyin. 4) 114 kullanımı gözden geçirip yalnızca gerçekten renkli yüzeylerde bırakın.",
+    "fixDifficulty": "Orta",
+    "effort": "4-8 saat",
+    "dependencies": "Tokens, tüm ekranlar, tema testleri",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailEditCards.kt",
+        "startLine": 198,
+        "endLine": 206,
+        "note": "Kart başlığı beyaz"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/detail/DetailEditCards.kt",
+        "startLine": 306,
+        "endLine": 316,
+        "note": "İlerleme sayısı beyaz"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/theme/Tokens.kt",
+        "startLine": 82,
+        "endLine": 90,
+        "note": "Açık tema tokenları"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "QUAL",
+    "title": "Edge-to-edge durum çubuğu simgeleri uygulama temasına göre ayarlanmıyor",
+    "severity": "Düşük",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/MainActivity.kt",
+    "startLine": 12,
+    "endLine": 12,
+    "description": "enableEdgeToEdge() parametresiz çağrılıyor; SystemBarStyle.auto sistemin gece moduna göre simge rengi seçiyor. Uygulama teması ise sistemden bağımsız (Ayarlar'dan light/dark seçilebiliyor). Sistem koyu + uygulama açık olduğunda durum çubuğu beyaz simgeleri açık arka plan üzerinde kalır; tersi durumda siyah simgeler koyu zeminde kaybolur. Kodda isAppearanceLightStatusBars/SystemBarStyle ayarı yok.",
+    "impact": "Durum çubuğu saat/pil/sinyal simgeleri okunamaz; görsel kalite ve erişilebilirlik sorunu.",
+    "evidence": "MainActivity.kt:12 `enableEdgeToEdge()` (parametresiz). `rg -n \"isAppearanceLightStatusBars|SystemBarStyle\" app/src/main/java` sonuç vermiyor. Theme.kt:100-105 uygulama temasını sistemden bağımsız seçiyor.",
+    "suggestion": "1) enableEdgeToEdge'ı uygulama temasına göre `SystemBarStyle.light/dark` ile yapılandırın. 2) veya Compose içinde `WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !useDark` ayarlayın. 3) Tema değişiminde bu ayarı güncelleyin.",
+    "fixDifficulty": "Kolay",
+    "effort": "30-45 dakika",
+    "dependencies": "MainActivity, ThemeMode",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/theme/Theme.kt",
+        "startLine": 100,
+        "endLine": 105,
+        "note": "Tema modu sistemden bağımsız"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "QUAL",
+    "title": "Üç ekranda statusBarsPadding yok; başlık ve geri düğmesi durum çubuğunun altında kalıyor",
+    "severity": "Düşük",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/ui/screens/stats/HeatmapScreen.kt",
+    "startLine": 61,
+    "endLine": 70,
+    "description": "Edge-to-edge açıkken HeatmapScreen, AchievementsScreen ve SettingsScreen üst içeriklerine statusBarsPadding uygulamıyor. Heatmap'te başlık/geri düğmesi, Rozetler'de geri düğmesi ve başlık, Ayarlar'da 'Ayarlar' başlığı durum çubuğunun altına çizilebilir. Diğer ekranlarda (Library, Detail, Profile, Wheel, Add, Person, Studio, Wrapped) bu padding mevcut.",
+    "impact": "Çentikli/edge-to-edge cihazlarda içerik durum çubuğuyla çakışır; geri düğmesine erişim zorlaşır, görsel bozulma.",
+    "evidence": "HeatmapScreen.kt:61 `Column(Modifier.fillMaxSize())`; üst Row 62-70 padding(8.dp) içeriyor, statusBarsPadding yok. AchievementsScreen.kt:79-88 LazyColumn contentPadding top=10.dp, statusBarsPadding yok. SettingsScreen.kt:81-85 Column padding(20.dp), statusBarsPadding yok. Diğer ekranlarda `statusBarsPadding()` çağrıları mevcut (ör. ProfileScreen.kt:210, WheelScreen.kt:224).",
+    "suggestion": "1) Üç ekranın kök Column/LazyColumn'ına `.statusBarsPadding()` ekleyin. 2) Ortak bir `ScreenScaffold`/modifier ile bu padding'i standartlaştırın. 3) Edge-to-edge screenshot testi ekleyin.",
+    "fixDifficulty": "Kolay",
+    "effort": "20-30 dakika",
+    "dependencies": "HeatmapScreen, AchievementsScreen, SettingsScreen",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/achievements/AchievementsScreen.kt",
+        "startLine": 79,
+        "endLine": 88,
+        "note": "Rozetler ekranı üst padding"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/settings/SettingsScreen.kt",
+        "startLine": 81,
+        "endLine": 85,
+        "note": "Ayarlar ekranı üst padding"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  },
+  {
+    "category": "BUG",
+    "title": "API'siz GitHub derlemesinde TMDB araması sessizce boş dönüyor ve negatif sonuç önbelleğe alınıyor",
+    "severity": "Orta",
+    "confidence": "Kesin",
+    "file": "app/src/main/java/com/sinop/minimuv/core/SearchApi.kt",
+    "startLine": 191,
+    "endLine": 192,
+    "description": "TMDB anahtarı boş olduğunda (AGENTS.md'deki GitHub API'siz derleme) searchTmdb istekleri 401 döner; SearchApi bunu runCatching ile yutup boş liste kabul eder ve boş sonucu cache'e yazar. AddScreen bu durumu 'sonuç yok' olarak gösterir; kullanıcı TMDB aramasının bu sürümde kapalı olduğunu öğrenemez. Retry düğmesi de aynı cache'lenmiş boş sonucu döndürür.",
+    "impact": "GitHub sürümünde Film/Dizi araması bozuk görünür; kullanıcı hata ile gerçek 'sonuç yok' durumunu ayırt edemez. Negatif cache oturum boyunca düzelmez.",
+    "evidence": "SearchApi.kt:191-192 `private val TMDB_API_KEY = BuildConfig.TMDB_API_KEY`; :290-299 her strateji `runCatching { searchWithRetry { ... } }.getOrDefault(emptyList())`; :300-301 `synchronized(cache) { cache[key] = ranked }` boş listeyi de saklar. AddScreen.kt:173-177 ağ hatası durumunu gösterecek `searchError` yalnızca SearchApi istisna fırlatırsa true olur; SearchApi fırlatmıyor.",
+    "suggestion": "1) `TMDB_API_KEY.isBlank()` ise Film/Dizi aramalarında açık bir 'Bu derlemede TMDB araması kapalı' hatası döndürün. 2) Boş/hatalı sonuçları negatif cache'lemeyin veya kısa TTL koyun. 3) SearchApi'ye `Result`/sealed hata tipi ekleyip çağıranın hata ile boş sonucu ayırmasını sağlayın. 4) AddScreen'de yapılandırma eksikliği için ayrı bilgi mesajı gösterin.",
+    "fixDifficulty": "Orta",
+    "effort": "2-4 saat",
+    "dependencies": "SearchApi, AddScreen, BuildConfig",
+    "relatedLocations": [
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/core/SearchApi.kt",
+        "startLine": 290,
+        "endLine": 301,
+        "note": "Hataların boş listeye çevrilmesi ve cache'lenmesi"
+      },
+      {
+        "file": "app/src/main/java/com/sinop/minimuv/ui/screens/add/AddScreen.kt",
+        "startLine": 173,
+        "endLine": 177,
+        "note": "Ölü hata durumu"
+      }
+    ],
+    "status": "kesin",
+    "source": "manual"
+  }
+]
