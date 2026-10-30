@@ -26,6 +26,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -58,6 +59,8 @@ import com.sinop.minimuv.ui.theme.Gold
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.TextSecondary
 import com.sinop.minimuv.ui.theme.ThemeAccent
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -109,7 +112,14 @@ fun SettingsScreen(
                             .clickable { scope.launch { settings.setThemeAccent(a.name) } },
                         contentAlignment = Alignment.Center,
                     ) {
-                        if (a == accent) Text("✓", color = com.sinop.minimuv.ui.theme.onColorFor(a.primary))
+                        if (a == accent) {
+                            Icon(
+                                MinimuvIcons.Check,
+                                contentDescription = null,
+                                tint = com.sinop.minimuv.ui.theme.onColorFor(a.primary),
+                                modifier = Modifier.size(18.dp),
+                            )
+                        }
                     }
                 }
             }
@@ -214,13 +224,13 @@ fun SettingsScreen(
             ) {
                 Text("Minimuv v${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleSmall)
                 if (aboutTaps in 1..6) {
-                    Text(
+                    EmojiText(
                         "${7 - aboutTaps} tane daha… 🤫",
                         style = MaterialTheme.typography.bodySmall,
                         color = Gold,
                     )
                 }
-                Text(
+                EmojiText(
                     "Van & Sinop için, sevgiyle yapıldı. 💑",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
@@ -236,7 +246,7 @@ fun SettingsScreen(
         var sent by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showSecretMenu = false },
-            title = { Text("💌 Partnere gizli not") },
+            title = { EmojiText("💌 Partnere gizli not", style = MaterialTheme.typography.headlineSmall) },
             text = {
                 Column {
                     Text(
@@ -249,11 +259,11 @@ fun SettingsScreen(
                         value = secretText,
                         onValueChange = { if (it.length <= 500) secretText = it },
                         minLines = 2,
-                        placeholder = { Text("Seni seviyorum, bu akşam film var mı? 💕") },
+                        placeholder = { Text("Seni seviyorum, bu akşam film var mı?") },
                     )
                     if (sent) {
                         Spacer(Modifier.height(8.dp))
-                        Text("Gönderildi! 💘", color = MaterialTheme.colorScheme.primary)
+                        EmojiText("Gönderildi! 💘", color = MaterialTheme.colorScheme.primary)
                     }
                 }
             },
@@ -268,7 +278,7 @@ fun SettingsScreen(
                             secretText = ""
                         }
                     }
-                }) { Text("Gönder 💌") }
+                }) { EmojiText("Gönder 💌") }
             },
             dismissButton = {
                 TextButton(onClick = { showSecretMenu = false }) { Text("Kapat") }
@@ -326,7 +336,7 @@ private fun SectionCard(title: String, defaultOpen: Boolean = false, content: @C
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
+            EmojiText(
                 title,
                 style = MaterialTheme.typography.labelLarge,
                 color = TextSecondary,
@@ -363,7 +373,7 @@ private fun SettingsRow(label: String, color: Color = MaterialTheme.colorScheme.
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(label, style = MaterialTheme.typography.titleSmall, color = color, modifier = Modifier.weight(1f))
+        EmojiText(label, style = MaterialTheme.typography.titleSmall, color = color, modifier = Modifier.weight(1f))
         Text("›", color = TextSecondary, style = MaterialTheme.typography.titleLarge)
     }
 }

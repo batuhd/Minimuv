@@ -4,6 +4,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,30 +18,24 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -50,34 +45,52 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.sinop.minimuv.core.PersonSearchResult
 import com.sinop.minimuv.core.SearchApi
 import com.sinop.minimuv.core.SearchResult
 import com.sinop.minimuv.core.StudioSearchResult
-import com.sinop.minimuv.core.PersonSearchResult
+import com.sinop.minimuv.core.TextNormalizer
 import com.sinop.minimuv.core.TitleDetails
 import com.sinop.minimuv.core.TitleLanguage
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleDraft
 import com.sinop.minimuv.data.TitleRepository
+import com.sinop.minimuv.ui.components.DcPaths
 import com.sinop.minimuv.ui.components.EmptyState
+import com.sinop.minimuv.ui.components.FilterPill
 import com.sinop.minimuv.ui.components.MinimuvButton
-import com.sinop.minimuv.ui.components.SoftChip
+import com.sinop.minimuv.ui.components.SearchPill
+import com.sinop.minimuv.ui.components.SectionHeader
+import com.sinop.minimuv.ui.components.SvgPath
+import com.sinop.minimuv.ui.components.screenGlow
 import com.sinop.minimuv.ui.theme.Baloo2
+import com.sinop.minimuv.ui.theme.Fraunces
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
+import com.sinop.minimuv.ui.theme.tokens
 import com.sinop.minimuv.ui.theme.typeColor
 import com.sinop.minimuv.ui.theme.typeEmoji
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import java.util.Locale
 
 object DraftHolder {
     var draft: TitleDraft? = null
@@ -85,6 +98,7 @@ object DraftHolder {
 
 /** Arama kategorisi: yapımlar + stüdyo + kişi. */
 enum class SearchCategory(val label: String) {
+    HEPSI("Hepsi"),
     FILM("Film"),
     DIZI("Dizi"),
     ANIME("Anime"),
@@ -98,12 +112,12 @@ enum class SearchCategory(val label: String) {
 @Composable
 fun AddScreen(
     settings: SettingsStore,
-    onBack: () -> Unit,
     onPicked: () -> Unit,
     onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
     onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
 ) {
-    var category by rememberSaveable { mutableStateOf(SearchCategory.FILM) }
+    val tk = tokens()
+    var category by rememberSaveable { mutableStateOf(SearchCategory.HEPSI) }
     var query by rememberSaveable { mutableStateOf("") }
     var results by remember { mutableStateOf<List<Any>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
@@ -111,23 +125,20 @@ fun AddScreen(
     var retryTick by remember { mutableStateOf(0) }
     var preview by remember { mutableStateOf<SearchResult?>(null) }
     var lang by rememberSaveable { mutableStateOf<TitleLanguage?>(null) }
-    var yearRange by remember { mutableStateOf<ClosedFloatingPointRange<Float>?>(null) }
     val activeLang = lang ?: TitleLanguage.TR
     val scope = rememberCoroutineScope()
 
     // Kayıtlı dil tercihi yüklenir (boşsa TR); değişince hatırlanır.
-    val savedLang by settings.searchLang.collectAsState(initial = null)
     LaunchedEffect(Unit) {
-        if (lang == null) {
-            lang = savedLang?.let { runCatching { TitleLanguage.valueOf(it) }.getOrNull() } ?: TitleLanguage.TR
-        }
+        val saved = runCatching { settings.searchLang.first() }.getOrNull()
+        if (lang == null) lang = TitleLanguage.fromDb(saved)
     }
 
     // Zaten koleksiyonda olan yapımlar (tür + harici id) — tekrar eklenmesin
     val repo = remember { TitleRepository() }
     var existingKeys by remember { mutableStateOf<Set<Pair<String, String>>>(emptySet()) }
     LaunchedEffect(Unit) {
-        runCatching { repo.getTitles() }.onSuccess { list ->
+        runCatching { repo.getTitlesLite() }.onSuccess { list ->
             existingKeys = list.mapNotNull { t ->
                 t.externalId?.let { t.type to it }
             }.toSet()
@@ -138,6 +149,7 @@ fun AddScreen(
         if (query.isBlank()) {
             results = emptyList()
             searchError = false
+            searching = false
             return@LaunchedEffect
         }
         searching = true
@@ -146,6 +158,7 @@ fun AddScreen(
         delay(450)
         runCatching {
             when (category) {
+                SearchCategory.HEPSI -> SearchApi.searchAll(query, activeLang).map { it as Any }
                 SearchCategory.FILM -> SearchApi.search(ContentType.FILM, query, activeLang).map { it as Any }
                 SearchCategory.DIZI -> SearchApi.search(ContentType.DIZI, query, activeLang).map { it as Any }
                 SearchCategory.ANIME -> SearchApi.search(ContentType.ANIME, query, activeLang).map { it as Any }
@@ -165,279 +178,202 @@ fun AddScreen(
         searching = false
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
-            }
-            Text(
-                "Başlık ara",
-                style = MaterialTheme.typography.titleLarge,
-            )
-        }
-
-        // Kategori seçimi: Film | Dizi | Anime | Stüdyo | Kişi
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 4.dp),
-            horizontalArrangement = Arrangement.spacedBy(2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            SearchCategory.entries.forEachIndexed { index, cat ->
-                if (index > 0) {
-                    Text("|", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
-                    Spacer(Modifier.width(2.dp))
-                }
-                val selected = category == cat
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(tk.bg)
+            .screenGlow(vanAlpha = 0.28f, sinopAlpha = 0.30f),
+    ) {
+        Column(Modifier.fillMaxSize().statusBarsPadding()) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 16.dp, end = 16.dp, top = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
                 Text(
-                    cat.label,
-                    style = MaterialTheme.typography.titleSmall,
-                    color = if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
-                    fontWeight = if (selected) androidx.compose.ui.text.font.FontWeight.Bold else null,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(50))
-                        .clickable { category = cat }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    "Ara",
+                    fontFamily = Fraunces,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 34.sp,
+                    letterSpacing = (-0.5).sp,
+                    lineHeight = 36.sp,
+                    color = tk.text,
+                    modifier = Modifier.weight(1f),
                 )
+                // Not: Dil seçimi şimdilik arama ekranında; ileride Ayarlar'a taşınacak.
+                TitleLanguage.entries.forEach { option ->
+                    FilterPill(
+                        option.label,
+                        activeLang == option,
+                        onClick = {
+                            lang = option
+                            scope.launch { runCatching { settings.saveSearchLang(option.name) } }
+                        },
+                        modifier = Modifier.padding(start = 6.dp),
+                    )
+                }
             }
-        }
 
-        Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(10.dp))
 
-        // Dil seçimi: yapımlar için başlık dili; stüdyo/kişi için de istek dili
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                "Dil",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary,
+            SearchPill(
+                query = query,
+                placeholder = when (category) {
+                    SearchCategory.HEPSI -> "Film, dizi, anime ara…"
+                    SearchCategory.FILM -> "Film ara… örn. Inception"
+                    SearchCategory.DIZI -> "Dizi ara… örn. Dark"
+                    SearchCategory.ANIME -> "Anime ara… örn. Monster"
+                    SearchCategory.STUDIO -> "Stüdyo ara… örn. Studio Ghibli"
+                    SearchCategory.PERSON -> "Kişi ara… örn. Leonardo DiCaprio"
+                },
+                onChange = { query = it },
+                onClose = { query = "" },
+                modifier = Modifier.padding(horizontal = 16.dp),
             )
-            TitleLanguage.entries.forEach { option ->
-                SoftChip(
-                    label = option.label,
-                    selected = activeLang == option,
-                    color = MaterialTheme.colorScheme.secondary,
-                    onClick = {
-                        lang = option
-                        scope.launch { runCatching { settings.saveSearchLang(option.name) } }
-                    },
-                )
-            }
-        }
 
-        Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(10.dp))
 
-        OutlinedTextField(
-            value = query,
-            onValueChange = { query = it },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            placeholder = {
-                Text(
-                    when (category) {
-                        SearchCategory.FILM -> "Film ara… örn. Inception"
-                        SearchCategory.DIZI -> "Dizi ara… örn. Dark"
-                        SearchCategory.ANIME -> "Anime ara… örn. Monster"
-                        SearchCategory.STUDIO -> "Stüdyo ara… örn. Studio Ghibli"
-                        SearchCategory.PERSON -> "Kişi ara… örn. Leonardo DiCaprio"
-                    },
-                )
-            },
-            leadingIcon = { Icon(Icons.Filled.Search, null) },
-            singleLine = true,
-            shape = RoundedCornerShape(50),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedContainerColor = MidnightCard,
-                unfocusedContainerColor = MidnightCard,
-                focusedBorderColor = Color.Transparent,
-                unfocusedBorderColor = Color.Transparent,
-            ),
-        )
-
-        Spacer(Modifier.height(12.dp))
-
-        when {
-            searching && results.isEmpty() -> {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SearchCategory.entries.forEach { cat ->
+                    FilterPill(cat.label, category == cat, onClick = { category = cat })
                 }
             }
-            query.isBlank() -> {
-                EmptyState(
-                    emoji = when (category) {
-                        SearchCategory.STUDIO -> "🏢"
-                        SearchCategory.PERSON -> "👤"
-                        else -> typeEmoji(category.name.lowercase())
-                    },
-                    title = "Ne arayalım?",
-                    subtitle = "Yukarıya bir isim yaz; yapımlar, stüdyolar ve kişiler arasında arama yapalım.",
-                    modifier = Modifier.fillMaxSize(),
-                )
-            }
-            searchError && results.isEmpty() -> {
-                EmptyState(
-                    emoji = "📡",
-                    title = "Bağlantı sorunu",
-                    subtitle = "\"${query}\" için arama şu an yanıt vermedi. İnterneti kontrol edip tekrar dene.",
-                    modifier = Modifier.fillMaxSize(),
-                    actionLabel = "Tekrar dene",
-                    onAction = { retryTick++ },
-                )
-            }
-            results.isEmpty() -> {
-                EmptyState(
-                    emoji = "🕵️",
-                    title = "Bulamadık",
-                    subtitle = "\"${query}\" için sonuç yok. Farklı yazmayı dene.",
-                    modifier = Modifier.fillMaxSize(),
-                    actionLabel = if (category.isTitle) "Manuel ekle: \"$query\"" else null,
-                    onAction = {
-                        if (category.isTitle) {
-                            DraftHolder.draft = TitleDraft(
-                                type = category.name.lowercase(),
-                                title = query.trim(),
-                            )
-                            onPicked()
-                        }
-                    },
-                )
-            }
-            else -> {
-                val titleResults = results.filterIsInstance<SearchResult>()
-                val studioResults = results.filterIsInstance<StudioSearchResult>()
-                val personResults = results.filterIsInstance<PersonSearchResult>()
-                val sliderRange = 1900f..2026f
-                val activeYearRange = yearRange ?: sliderRange
-                val filteredTitles = titleResults.filter {
-                    val y = it.year?.toIntOrNull() ?: return@filter true
-                    y >= activeYearRange.start && y <= activeYearRange.endInclusive
+
+            Spacer(Modifier.height(12.dp))
+
+            val titleResults = results.filterIsInstance<SearchResult>()
+            val suggestion = remember(titleResults, query) {
+                if (query.isBlank()) return@remember null
+                val top = titleResults.firstOrNull() ?: return@remember null
+                val q = TextNormalizer.fold(query.trim())
+                val t = TextNormalizer.fold(top.title)
+                top.title.takeIf {
+                    q.isNotBlank() && !t.contains(q) && !q.contains(t) &&
+                        TextNormalizer.similarity(q, t) >= 0.35
                 }
-                val showYearFilter = category.isTitle && titleResults.isNotEmpty()
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                        start = 16.dp, end = 16.dp, bottom = 32.dp,
-                    ),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    item {
-                        Text(
-                            if (category.isTitle) "Dokun: önizle  •  Basılı tut: hemen ekle"
-                            else "Dokun: sayfayı aç",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary,
-                        )
-                        if (showYearFilter) {
-                            Spacer(Modifier.height(10.dp))
-                            Column(
-                                Modifier
-                                    .fillMaxWidth()
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(MidnightCard.copy(alpha = 0.6f))
-                                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                            ) {
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Text(
-                                        "Yıl",
-                                        style = MaterialTheme.typography.labelMedium,
-                                        color = TextSecondary,
-                                    )
-                                    Spacer(Modifier.weight(1f))
-                                    Text(
-                                        "${activeYearRange.start.toInt()} – ${activeYearRange.endInclusive.toInt()}",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = TextSecondary,
-                                    )
-                                    if (yearRange != null) {
-                                        Spacer(Modifier.width(6.dp))
-                                        Text(
-                                            "sıfırla",
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier
-                                                .clip(RoundedCornerShape(50))
-                                                .clickable { yearRange = null }
-                                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                                        )
-                                    }
-                                }
-                                androidx.compose.material3.RangeSlider(
-                                    value = activeYearRange,
-                                    onValueChange = { yearRange = it },
-                                    valueRange = sliderRange,
-                                    colors = androidx.compose.material3.SliderDefaults.colors(
-                                        thumbColor = MaterialTheme.colorScheme.primary,
-                                        activeTrackColor = MaterialTheme.colorScheme.primary,
-                                    ),
+            }
+
+            when {
+                searching && results.isEmpty() -> {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        CircularProgressIndicator(color = tk.van)
+                    }
+                }
+                query.isBlank() -> {
+                    EmptyState(
+                        emoji = when (category) {
+                            SearchCategory.STUDIO -> "🏢"
+                            SearchCategory.PERSON -> "👤"
+                            SearchCategory.HEPSI -> "🎬"
+                            else -> typeEmoji(category.name.lowercase())
+                        },
+                        title = "Ne arayalım?",
+                        subtitle = "Yukarıya bir isim yaz; film, dizi, anime, stüdyo ve kişiler arasında arayalım.",
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
+                searchError && results.isEmpty() -> {
+                    EmptyState(
+                        emoji = "📡",
+                        title = "Bağlantı sorunu",
+                        subtitle = "\"${query}\" için arama şu an yanıt vermedi. İnterneti kontrol edip tekrar dene.",
+                        modifier = Modifier.fillMaxSize(),
+                        actionLabel = "Tekrar dene",
+                        onAction = { retryTick++ },
+                    )
+                }
+                results.isEmpty() -> {
+                    EmptyState(
+                        emoji = "🕵️",
+                        title = "Bulamadık",
+                        subtitle = "\"${query}\" için sonuç yok. Farklı yazmayı dene.",
+                        modifier = Modifier.fillMaxSize(),
+                        actionLabel = if (category.isTitle) "Manuel ekle: \"$query\"" else null,
+                        onAction = {
+                            if (category.isTitle) {
+                                DraftHolder.draft = TitleDraft(
+                                    type = category.name.lowercase(),
+                                    title = query.trim(),
                                 )
+                                onPicked()
+                            }
+                        },
+                    )
+                }
+                else -> {
+                    val studioResults = results.filterIsInstance<StudioSearchResult>()
+                    val personResults = results.filterIsInstance<PersonSearchResult>()
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                            start = 16.dp, end = 16.dp, top = 4.dp, bottom = 140.dp,
+                        ),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (suggestion != null) {
+                            item {
+                                SuggestionBar(suggestion, onClick = { query = suggestion })
                             }
                         }
-                    }
-                    if (showYearFilter && titleResults.isNotEmpty() && filteredTitles.isEmpty()) {
                         item {
-                            Text(
-                                "Bu yıl aralığında sonuç yok — aralığı genişlet.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = TextSecondary,
-                                modifier = Modifier.padding(vertical = 20.dp),
+                            SectionHeader(
+                                title = "Sonuçlar",
+                                trailing = "TMDB + AniList",
+                                modifier = Modifier.padding(top = 4.dp),
                             )
                         }
-                    }
-                    items(filteredTitles, key = { "t${it.externalId}${it.type.db}" }) { result ->
-                        val alreadyAdded = (result.type.db to result.externalId) in existingKeys
-                        SearchResultRow(
-                            result = result,
-                            alreadyAdded = alreadyAdded,
-                            onClick = {
-                                if (!alreadyAdded) preview = result
-                            },
-                            onLongClick = {
-                                if (!alreadyAdded) {
-                                    DraftHolder.draft = TitleDraft(
-                                        type = result.type.db,
-                                        externalId = result.externalId,
-                                        title = result.title,
-                                        titleEn = result.titleEn,
-                                        posterUrl = result.posterUrl,
-                                        overview = result.overview,
-                                        overviewEn = result.overviewEn,
-                                        totalEpisodes = result.totalEpisodes,
-                                    )
-                                    onPicked()
-                                }
-                            },
-                        )
-                    }
-                    items(studioResults, key = { "s${it.source}${it.externalId}" }) { studio ->
-                        StudioResultRow(
-                            studio = studio,
-                            onClick = {
-                                val type = if (studio.source == "anime") ContentType.ANIME else ContentType.FILM
-                                onOpenStudio(type, studio.externalId)
-                            },
-                        )
-                    }
-                    items(personResults, key = { "p${it.source}${it.externalId}" }) { person ->
-                        PersonResultRow(
-                            person = person,
-                            onClick = {
-                                val source = if (person.source == "anime") com.sinop.minimuv.core.PersonSource.ANIME
-                                    else com.sinop.minimuv.core.PersonSource.TMDB
-                                onOpenPerson(source, person.externalId)
-                            },
-                        )
+                        items(titleResults, key = { "t${it.externalId}${it.type.db}" }) { result ->
+                            val alreadyAdded = (result.type.db to result.externalId) in existingKeys
+                            SearchResultRow(
+                                result = result,
+                                alreadyAdded = alreadyAdded,
+                                onClick = {
+                                    if (!alreadyAdded) preview = result
+                                },
+                                onLongClick = {
+                                    if (!alreadyAdded) {
+                                        DraftHolder.draft = TitleDraft(
+                                            type = result.type.db,
+                                            externalId = result.externalId,
+                                            title = result.title,
+                                            titleEn = result.titleEn,
+                                            posterUrl = result.posterUrl,
+                                            overview = result.overview,
+                                            overviewEn = result.overviewEn,
+                                            totalEpisodes = result.totalEpisodes,
+                                        )
+                                        onPicked()
+                                    }
+                                },
+                            )
+                        }
+                        items(studioResults, key = { "s${it.source}${it.externalId}" }) { studio ->
+                            StudioResultRow(
+                                studio = studio,
+                                onClick = {
+                                    val type = if (studio.source == "anime") ContentType.ANIME else ContentType.FILM
+                                    onOpenStudio(type, studio.externalId)
+                                },
+                            )
+                        }
+                        items(personResults, key = { "p${it.source}${it.externalId}" }) { person ->
+                            PersonResultRow(
+                                person = person,
+                                onClick = {
+                                    val source = if (person.source == "anime") com.sinop.minimuv.core.PersonSource.ANIME
+                                        else com.sinop.minimuv.core.PersonSource.TMDB
+                                    onOpenPerson(source, person.externalId)
+                                },
+                            )
+                        }
                     }
                 }
             }
@@ -469,6 +405,33 @@ fun AddScreen(
     }
 }
 
+/** "Şunu mu demek istedin" — dokununca sorguyu öneriyle değiştirir. */
+@Composable
+private fun SuggestionBar(suggestion: String, onClick: () -> Unit) {
+    val tk = tokens()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(tk.surface2)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SvgPath(DcPaths.SPARKLE, null, tint = tk.gold, viewportSize = 16.dp)
+        Spacer(Modifier.width(10.dp))
+        Text(
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = tk.textSoft)) { append("Şunu mu demek istedin: ") }
+                withStyle(SpanStyle(color = tk.text, fontWeight = FontWeight.Bold)) { append(suggestion) }
+            },
+            fontSize = 14.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SearchResultRow(
@@ -477,24 +440,37 @@ private fun SearchResultRow(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
 ) {
+    val tk = tokens()
+    var runtimeText by remember(result.externalId) { mutableStateOf<String?>(null) }
+    LaunchedEffect(result.externalId) {
+        if (result.type == ContentType.FILM) {
+            runtimeText = SearchApi.movieRuntime(result.externalId)?.let { formatRuntime(it) }
+        }
+    }
+    val meta = listOfNotNull(
+        result.year,
+        runtimeText,
+        result.totalEpisodes?.let { "$it bölüm" },
+        result.rating?.let { String.format(Locale.US, "%.1f", it) },
+    ).joinToString(" · ")
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MidnightCard)
+            .clip(RoundedCornerShape(20.dp))
+            .background(tk.surface2)
             .combinedClickable(
                 onClick = onClick,
                 onLongClick = onLongClick,
             )
-            .padding(10.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .width(48.dp)
+                .width(64.dp)
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MidnightElevated),
+                .clip(RoundedCornerShape(10.dp))
+                .background(tk.surface3),
         ) {
             if (result.posterUrl != null) {
                 AsyncImage(
@@ -509,57 +485,87 @@ private fun SearchResultRow(
         Column(Modifier.weight(1f)) {
             Text(
                 result.title,
-                style = MaterialTheme.typography.titleSmall,
+                fontFamily = Fraunces,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                lineHeight = 19.sp,
+                color = tk.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (result.altTitle != null) {
+            if (meta.isNotBlank()) {
+                Spacer(Modifier.height(3.dp))
                 Text(
-                    result.altTitle,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = TextSecondary,
+                    meta,
+                    fontSize = 13.sp,
+                    color = tk.textSoft,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
-            Text(
-                buildString {
-                    append(result.type.label)
-                    result.year?.let { append(" • $it") }
-                    result.totalEpisodes?.let { append(" • $it bölüm") }
-                },
-                style = MaterialTheme.typography.labelMedium,
-                color = typeColor(result.type.db),
-            )
+            Spacer(Modifier.height(8.dp))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(tk.surface3)
+                    .padding(horizontal = 10.dp, vertical = 3.dp),
+            ) {
+                Text(
+                    "${result.type.label} · ${if (result.type == ContentType.ANIME) "AniList" else "TMDB"}",
+                    fontSize = 11.sp,
+                    color = tk.textMuted,
+                    maxLines = 1,
+                )
+            }
         }
-        if (alreadyAdded) {
-            Text(
-                "✓ Eklendi",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary,
-            )
-        } else {
-            Text("+", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary)
-        }
+        Spacer(Modifier.width(10.dp))
+        AddActionButton(alreadyAdded)
     }
 }
 
 @Composable
+private fun AddActionButton(alreadyAdded: Boolean) {
+    val tk = tokens()
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .then(
+                if (alreadyAdded) Modifier.background(tk.done)
+                else Modifier.background(Brush.linearGradient(listOf(tk.van, tk.sinop))),
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        SvgPath(
+            if (alreadyAdded) DcPaths.CHECK else DcPaths.PLUS,
+            null,
+            tint = tk.ink,
+            viewportSize = 18.dp,
+        )
+    }
+}
+
+private fun formatRuntime(minutes: Int): String =
+    if (minutes >= 60) String.format(Locale.US, "%ds %02ddk", minutes / 60, minutes % 60)
+    else "$minutes dk"
+
+@Composable
 private fun StudioResultRow(studio: StudioSearchResult, onClick: () -> Unit) {
+    val tk = tokens()
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MidnightCard)
+            .clip(RoundedCornerShape(20.dp))
+            .background(tk.surface2)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(44.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(MidnightElevated),
+                .size(56.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(tk.surface3),
             contentAlignment = Alignment.Center,
         ) {
             if (studio.logoUrl != null) {
@@ -570,38 +576,48 @@ private fun StudioResultRow(studio: StudioSearchResult, onClick: () -> Unit) {
                     contentScale = ContentScale.Fit,
                 )
             } else {
-                Text("🏢", style = MaterialTheme.typography.titleMedium)
+                MinimuvEmojiIcon("🏢", size = 20.dp)
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(studio.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                studio.name,
+                fontFamily = Fraunces,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = tk.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
             Text(
                 if (studio.source == "anime") "Anime stüdyosu" else "Yapım şirketi",
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
+                fontSize = 13.sp,
+                color = tk.textSoft,
             )
         }
-        Text("›", style = MaterialTheme.typography.titleLarge, color = TextSecondary)
+        Text("›", fontSize = 22.sp, color = tk.textMuted)
     }
 }
 
 @Composable
 private fun PersonResultRow(person: PersonSearchResult, onClick: () -> Unit) {
+    val tk = tokens()
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
-            .background(MidnightCard)
+            .clip(RoundedCornerShape(20.dp))
+            .background(tk.surface2)
             .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
+            .padding(12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
             Modifier
-                .size(44.dp)
+                .size(56.dp)
                 .clip(CircleShape)
-                .background(MidnightElevated),
+                .background(tk.surface3),
             contentAlignment = Alignment.Center,
         ) {
             if (person.imageUrl != null) {
@@ -612,19 +628,28 @@ private fun PersonResultRow(person: PersonSearchResult, onClick: () -> Unit) {
                     contentScale = ContentScale.Crop,
                 )
             } else {
-                Text("👤", style = MaterialTheme.typography.titleMedium)
+                MinimuvEmojiIcon("👤", size = 20.dp)
             }
         }
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(person.name, style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(
+                person.name,
+                fontFamily = Fraunces,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp,
+                color = tk.text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(3.dp))
             Text(
                 person.role ?: (if (person.source == "anime") "Karakter" else "Kişi"),
-                style = MaterialTheme.typography.labelSmall,
-                color = TextSecondary,
+                fontSize = 13.sp,
+                color = tk.textSoft,
             )
         }
-        Text("›", style = MaterialTheme.typography.titleLarge, color = TextSecondary)
+        Text("›", fontSize = 22.sp, color = tk.textMuted)
     }
 }
 
@@ -706,7 +731,12 @@ private fun SearchPreviewSheet(
                 Spacer(Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     if (rating != null) {
-                        Text("🌟", style = MaterialTheme.typography.titleSmall)
+                        Icon(
+                            MinimuvIcons.Star,
+                            contentDescription = null,
+                            tint = Color(0xFFFFD166),
+                            modifier = Modifier.size(16.dp),
+                        )
                         Spacer(Modifier.width(4.dp))
                         Text(
                             String.format(java.util.Locale.US, "%.1f", rating),
@@ -850,7 +880,7 @@ private fun SearchPreviewSheet(
                                 .clip(RoundedCornerShape(50))
                                 .background(typeColor(result.type.db).copy(alpha = 0.12f))
                                 .clickable(enabled = studio.id != null) {
-                                    onOpenStudio(com.sinop.minimuv.data.ContentType.fromDb(result.type.db), studio.id!!.toString())
+                                    onOpenStudio(result.type, studio.id!!.toString())
                                 }
                                 .padding(horizontal = 10.dp, vertical = 4.dp),
                         ) {
@@ -866,7 +896,7 @@ private fun SearchPreviewSheet(
 
             Spacer(Modifier.height(18.dp))
             if (alreadyAdded) {
-                Text(
+                EmojiText(
                     "✓ Bu yapım zaten koleksiyonunuzda",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary,

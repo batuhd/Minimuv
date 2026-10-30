@@ -1,6 +1,10 @@
 package com.sinop.minimuv.ui.screens.detail
 
+import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -10,11 +14,11 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -24,6 +28,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.MoreVert
+import com.sinop.minimuv.ui.theme.statusColor
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,10 +44,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -52,16 +61,37 @@ import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleScore
 import com.sinop.minimuv.data.WatchMode
 import com.sinop.minimuv.data.WatchStatus
+import com.sinop.minimuv.core.CastMember
+import com.sinop.minimuv.core.PersonSource
 import com.sinop.minimuv.ui.components.ConfettiOverlay
 import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.components.StatusChip
-import com.sinop.minimuv.ui.theme.Baloo2
+import com.sinop.minimuv.ui.screens.profile.AvatarView
+import com.sinop.minimuv.ui.screens.profile.parseColorSafe
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.TextSecondary
-import com.sinop.minimuv.ui.theme.statusColor
 import com.sinop.minimuv.ui.theme.typeColor
-import com.sinop.minimuv.ui.theme.typeEmoji
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import java.util.UUID
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material.icons.filled.MoreHoriz
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.sp
+import com.sinop.minimuv.data.Profile
+import com.sinop.minimuv.data.TitleNote
+import com.sinop.minimuv.ui.theme.readableOn
+import com.sinop.minimuv.ui.theme.tokens
+import com.sinop.minimuv.ui.theme.together
 
 private fun round1(v: Double): Double = Math.round(v * 10.0) / 10.0
 
@@ -94,15 +124,15 @@ fun DetailScreen(
     val isDraft = titleId == "draft" && loaded == null
     if (isDraft && draft == null) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Bir şeyler eksik 🤔", color = TextSecondary)
+            EmojiText("Bir şeyler eksik 🤔", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
         }
         return
     }
 
-    // Okuma/düzenleme modu: taslak her zaman düzenlemede açılır.
+    // Okuma/düzenleme modu: varsayılan olarak okuma modunda açılır.
     // Düzenlemeden geri basınca ekrandan çıkmak yerine okuma moduna döner.
-    var editing by remember(titleId) { mutableStateOf(startInEdit || isDraft) }
-    androidx.activity.compose.BackHandler(enabled = editing && !isDraft) { editing = false }
+    var editing by remember(titleId) { mutableStateOf(startInEdit) }
+    androidx.activity.compose.BackHandler(enabled = editing) { editing = false }
 
     // ── Düzenlenebilir durumlar ──────────────────────────────────────────
     var status by remember(loaded?.id, draft) { mutableStateOf(loaded?.status ?: WatchStatus.PLAN.db) }
@@ -170,14 +200,17 @@ fun DetailScreen(
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showFinishDatePicker by remember { mutableStateOf(false) }
     var celebrate by remember { mutableStateOf(0) }
+    var menuOpen by remember { mutableStateOf(false) }
 
     val type = loaded?.type ?: draft?.type ?: ContentType.FILM.db
     val titleText = loaded?.displayTitle(displayLang) ?: draft?.title ?: ""
     val posterUrl = loaded?.posterUrl ?: draft?.posterUrl
+    val yearText = loaded?.startDate?.take(4) ?: details?.year?.takeIf { it.isNotBlank() }
     val typeColor = typeColor(type)
     val isSeries = type != ContentType.FILM.db
     val oldStatus = loaded?.status
     val totalEpisodes = totalEpisodesText.toIntOrNull()
+    val (editMyColor, editPartnerColor) = coupleColors(myProfile, partnerProfile, typeColor, TextSecondary)
 
     fun buildChanges(): Map<String, Any?> {
         val t = loaded ?: return emptyMap()
@@ -203,20 +236,17 @@ fun DetailScreen(
     ) {
         Column(Modifier.fillMaxSize()) {
             if (editing) {
-                // Düzenleme modunda kompakt başlık — ekran alanını tam kullan
+                // Düzenleme modunda üst bilgi kartı (Poster, başlık, rozetler)
                 CompactEditHeader(
                     titleText = titleText,
                     posterUrl = posterUrl,
                     type = type,
-                    onBack = onBack,
-                )
-            } else {
-                DetailHeader(
-                    titleText = titleText,
-                    posterUrl = posterUrl,
-                    type = type,
-                    creatorName = profiles.firstOrNull { it.id == (loaded?.createdByProfileId ?: profileId) },
-                    onBack = onBack,
+                    yearText = yearText,
+                    saving = saving,
+                    onBack = {
+                        if (isDraft) onBack() else editing = false
+                    },
+                    onMoreOptions = if (!isDraft) { { showDeleteConfirm = true } } else null,
                 )
             }
 
@@ -228,32 +258,22 @@ fun DetailScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
-                Spacer(Modifier.height(48.dp))
+                Spacer(Modifier.height(10.dp))
 
                 StatusCard(
                     selected = status,
-                    onSelect = {
-                        status = it
-                        // İzlemeye başlayınca başlangıç tarihi boşsa bugün damgalanır
-                        if (it == WatchStatus.WATCHING.db && startDate == null) {
+                    onSelect = { newStatus ->
+                        status = newStatus
+                        if (newStatus == WatchStatus.REWATCHING.db) {
+                            rewatches = rewatches + 1
+                        }
+                        if ((newStatus == WatchStatus.WATCHING.db || newStatus == WatchStatus.REWATCHING.db) && startDate == null) {
                             startDate = java.time.LocalDate.now().toString()
                         }
-                        // Tamamlandı seçilince bitiş tarihi boşsa bugün damgalanır;
-                        // direkt tamamlanan yapımda başlangıç da boşsa o gün başlar
-                        if (it == WatchStatus.COMPLETED.db && finishDate == null) {
+                        if (newStatus == WatchStatus.COMPLETED.db && finishDate == null) {
                             finishDate = java.time.LocalDate.now().toString()
                         }
-                        if (it == WatchStatus.COMPLETED.db && startDate == null) {
-                            startDate = java.time.LocalDate.now().toString()
-                        }
-                    },
-                    onStartRewatch = {
-                        // Yeniden izleme: durum İzliyoruz'a döner, sayaç artar, ilerleme sıfırlanır
-                        status = WatchStatus.WATCHING.db
-                        rewatches = rewatches + 1
-                        optSharedProgress = 0
-                        sharedTouched = true
-                        if (startDate == null) {
+                        if (newStatus == WatchStatus.COMPLETED.db && startDate == null) {
                             startDate = java.time.LocalDate.now().toString()
                         }
                     },
@@ -264,7 +284,6 @@ fun DetailScreen(
                     isSeries = isSeries,
                     sharedProgress = optSharedProgress,
                     onSharedProgress = {
-                        // Log KAYDET anında yazılır (çift sayım ve kaydetmeden çıkma tutarsızlığı olmasın)
                         sharedTouched = true
                         optSharedProgress = it.coerceAtLeast(0)
                     },
@@ -284,18 +303,14 @@ fun DetailScreen(
                         loaded?.let { vm.setProgress(it.id, profileId, newValue.coerceAtLeast(0), delta) }
                     },
                     typeColor = typeColor,
-                )
-
-                DatesCard(
-                    startDate = startDate, onFinishStart = { showStartDatePicker = true },
-                    finishDate = finishDate, onFinishFinish = { showFinishDatePicker = true },
-                    rewatches = rewatches, onRewatches = { rewatches = it },
+                    myColor = editMyColor,
+                    partnerColor = editPartnerColor,
                 )
 
                 ScoreCard(
-                    myName = myProfile?.name ?: "Sen",
+                    myName = myProfile?.displayName ?: "Sen",
                     myEmoji = myProfile?.emoji ?: "😊",
-                    partnerName = partnerProfile?.name,
+                    partnerName = partnerProfile?.displayName,
                     partnerEmoji = partnerProfile?.emoji,
                     myScore = myScore,
                     isAutoScore = computedAvg != null,
@@ -308,6 +323,14 @@ fun DetailScreen(
                     advAudio = advAudio, onAdvAudio = { touchScore(); locAudio = it },
                     advEnjoyment = advEnjoyment, onAdvEnjoyment = { touchScore(); locEnjoyment = it },
                     typeColor = typeColor,
+                    myColor = editMyColor,
+                    partnerColor = editPartnerColor,
+                )
+
+                DatesCard(
+                    startDate = startDate, onFinishStart = { showStartDatePicker = true },
+                    finishDate = finishDate, onFinishFinish = { showFinishDatePicker = true },
+                    rewatches = rewatches, onRewatches = { rewatches = it },
                 )
 
                 NotesCard(
@@ -323,33 +346,12 @@ fun DetailScreen(
                     onDeleteNote = { noteId ->
                         loaded?.let { vm.deleteTitleNote(noteId, it.id) }
                     },
-                    isFavorite = isFavorite, onFavorite = { isFavorite = it },
+                    episodeNotes = notes,
+                    myProfileId = profileId,
+                    onDeleteEpisodeNote = { vm.deleteNote(it) },
                 )
 
-                val loadedId = loaded?.id
-                if (watchMode == WatchMode.AYRI.db && isSeries && loadedId != null) {
-                    EpisodeNotesSection(
-                        notes = notes,
-                        myProfileId = profileId,
-                        myProgress = optMyProgress,
-                        profiles = profiles,
-                        onAddNote = { ep, text, emoji ->
-                            vm.addNote(
-                                EpisodeNote(
-                                    titleId = loadedId,
-                                    profileId = profileId,
-                                    episodeNumber = ep,
-                                    noteText = text.ifBlank { null },
-                                    emojiReaction = emoji,
-                                ),
-                            ) {}
-                        },
-                        onDeleteNote = { vm.deleteNote(it) },
-                        typeColor = typeColor,
-                    )
-                }
-
-                Spacer(Modifier.height(4.dp))
+                Spacer(Modifier.height(8.dp))
             }
 
             // ── Alt sabit kaydet çubuğu ──────────────────────────────────
@@ -457,6 +459,8 @@ fun DetailScreen(
             )
             } else {
                 DetailViewContent(
+                    titleText = titleText,
+                    posterUrl = posterUrl,
                     type = type,
                     status = status,
                     overview = loaded?.overview ?: draft?.overview,
@@ -465,22 +469,121 @@ fun DetailScreen(
                     onOpenPerson = onOpenPerson,
                     onOpenStudio = onOpenStudio,
                     coupleScore = loaded?.score,
-                    myScore = serverMyScore?.score,
-                    partnerScore = partnerScoreRow?.score,
-                    episodeProgress = optSharedProgress,
+                    myScoreRow = serverMyScore,
+                    partnerScoreRow = partnerScoreRow,
+                    myProfile = myProfile,
+                    partnerProfile = partnerProfile,
                     totalEpisodes = totalEpisodes,
                     isSeries = isSeries,
                     startDate = startDate,
                     finishDate = finishDate,
                     rewatches = rewatches,
+                    watchMode = watchMode,
                     notes = titleNotes,
                     profiles = profiles,
                     isFavorite = isFavorite,
-                    onEdit = { editing = true },
                 )
             }
 
             ConfettiOverlay(trigger = celebrate)
+        }
+
+        // Üst bar (geri + taşma menüsü) ve düzenleme FAB'ı kaydırmada sabit kalır
+        if (!editing) {
+            val tk = tokens()
+            Row(
+                Modifier
+                    .align(Alignment.TopCenter)
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                GlassCircleButton(onClick = onBack) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = "Geri",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
+                }
+                Box {
+                    GlassCircleButton(onClick = { menuOpen = true }) {
+                        Icon(
+                            Icons.Filled.MoreHoriz,
+                            contentDescription = "Diğer",
+                            tint = Color.White,
+                            modifier = Modifier.size(22.dp),
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        DropdownMenuItem(
+                            text = { Text("Düzenle") },
+                            leadingIcon = { Icon(MinimuvIcons.Edit, contentDescription = null) },
+                            onClick = {
+                                menuOpen = false
+                                editing = true
+                            },
+                        )
+                        DropdownMenuItem(
+                            text = { Text(if (isFavorite) "Favoriden çıkar" else "Favorilere ekle") },
+                            leadingIcon = {
+                                Icon(
+                                    if (isFavorite) MinimuvIcons.Heart else MinimuvIcons.HeartOutline,
+                                    contentDescription = null,
+                                )
+                            },
+                            onClick = {
+                                menuOpen = false
+                                val next = !isFavorite
+                                isFavorite = next
+                                loaded?.let { t ->
+                                    vm.update(t.id, mapOf("is_favorite" to next)) {}
+                                }
+                            },
+                        )
+                        if (!isDraft) {
+                            DropdownMenuItem(
+                                text = {
+                                    Text("Sil", color = MaterialTheme.colorScheme.error)
+                                },
+                                leadingIcon = {
+                                    Icon(
+                                        Icons.Filled.Delete,
+                                        contentDescription = null,
+                                        tint = MaterialTheme.colorScheme.error,
+                                    )
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    showDeleteConfirm = true
+                                },
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Düzenle FAB'ı — sağ altta sabit
+            Box(
+                Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(20.dp)
+                    .size(60.dp)
+                    .clip(CircleShape)
+                    .background(tk.together)
+                    .clickable { editing = true },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    MinimuvIcons.Edit,
+                    contentDescription = "Düzenle",
+                    tint = tk.ink,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 
@@ -488,7 +591,7 @@ fun DetailScreen(
         AlertDialog(
             onDismissRequest = { showDeleteConfirm = false },
             title = { Text("Emin misin?") },
-            text = { Text("Bu başlık koleksiyondan kalıcı olarak silinecek. 🥺") },
+            text = { EmojiText("Bu başlık koleksiyondan kalıcı olarak silinecek. 🥺", style = MaterialTheme.typography.bodyMedium) },
             confirmButton = {
                 TextButton(onClick = {
                     showDeleteConfirm = false
@@ -514,132 +617,131 @@ internal fun CompactEditHeader(
     titleText: String,
     posterUrl: String?,
     type: String,
+    yearText: String?,
+    saving: Boolean,
     onBack: () -> Unit,
+    onMoreOptions: (() -> Unit)? = null,
 ) {
-    Row(
-        modifier = Modifier
+    val tk = tokens()
+    Column(
+        Modifier
             .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 8.dp, vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(tk.bg)
+            .statusBarsPadding()
+            .padding(horizontal = 16.dp, vertical = 10.dp),
     ) {
-        IconButton(onClick = onBack) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri")
-        }
-        Box(
-            Modifier
-                .width(38.dp)
-                .height(54.dp)
-                .clip(RoundedCornerShape(8.dp))
-                .background(MidnightCard),
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween,
         ) {
-            if (posterUrl != null) {
-                AsyncImage(
-                    model = posterUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
+            GlassCircleButton(onClick = onBack) {
+                Icon(
+                    MinimuvIcons.Close,
+                    contentDescription = "Kapat",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+            Text(
+                "Düzenle",
+                style = MaterialTheme.typography.titleMedium.copy(
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                ),
+                color = Color.White,
+            )
+            GlassCircleButton(onClick = { onMoreOptions?.invoke() }) {
+                Icon(
+                    Icons.Default.MoreVert,
+                    contentDescription = "Diğer",
+                    tint = Color.White,
+                    modifier = Modifier.size(18.dp),
                 )
             }
         }
-        Spacer(Modifier.width(12.dp))
-        Column(Modifier.weight(1f)) {
-            Text(
-                titleText,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                "${type.uppercase()} • Düzenle",
-                style = MaterialTheme.typography.labelSmall,
-                color = typeColor(type),
-            )
-        }
-    }
-}
 
-@Composable
-internal fun DetailHeader(
-    titleText: String,
-    posterUrl: String?,
-    type: String,
-    creatorName: com.sinop.minimuv.data.Profile?,
-    onBack: () -> Unit,
-) {
-    Box(Modifier.fillMaxWidth().height(160.dp)) {
-        if (posterUrl != null) {
-            AsyncImage(
-                model = posterUrl,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop,
-            )
-        }
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(Brush.verticalGradient(listOf(Color(0x66000000), Color(0xF20E1116)))),
-        )
-        IconButton(onClick = onBack, modifier = Modifier.align(Alignment.TopStart)) {
-            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Geri", tint = Color.White)
-        }
-    }
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(start = 16.dp, end = 16.dp),
-        verticalAlignment = Alignment.Bottom,
-    ) {
-        Box(
-            Modifier
-                .width(88.dp)
-                .height(132.dp)
-                .offset(y = (-44).dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(MidnightCard),
-        ) {
-            if (posterUrl != null) {
-                AsyncImage(
-                    model = posterUrl,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            }
-        }
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(start = 14.dp),
-        ) {
-            Text(
-                titleText,
-                style = MaterialTheme.typography.headlineSmall,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Spacer(Modifier.height(4.dp))
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(type.uppercase(), style = MaterialTheme.typography.labelMedium, color = typeColor(type))
-                if (creatorName != null) {
-                    Text("  •  ", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                    Text(
-                        "${creatorName.emoji ?: "👤"} ${creatorName.name}",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextSecondary,
+        Spacer(Modifier.height(14.dp))
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                Modifier
+                    .width(68.dp)
+                    .height(100.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(tk.surface2)
+                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp)),
+            ) {
+                if (posterUrl != null) {
+                    AsyncImage(
+                        model = posterUrl,
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
+            Spacer(Modifier.width(14.dp))
+            Column(Modifier.weight(1f)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    val labelType = when (type.lowercase()) {
+                        "anime" -> "Anime"
+                        "series", "tv", "dizi" -> "Dizi"
+                        else -> "Film"
+                    }
+                    Box(
+                        Modifier
+                            .clip(RoundedCornerShape(50))
+                            .background(tk.surface2)
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    ) {
+                        Text(
+                            labelType,
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+                            color = tk.textSoft,
+                        )
+                    }
+                    if (!yearText.isNullOrBlank()) {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(tk.surface2)
+                                .padding(horizontal = 10.dp, vertical = 4.dp),
+                        ) {
+                            Text(
+                                yearText,
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+                                color = tk.textSoft,
+                            )
+                        }
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    titleText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 24.sp,
+                    lineHeight = 28.sp,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
     }
 }
 
-// ── Okuma modu: başlığın özet görünümü (MAL esintili detaylar) ───────────
+// ── Okuma modu: yeni detay tasarımı ─────────────────────────────────────
+// Bulanık afiş zemini + afiş/başlık bloğu + puan kartı + hikâye + kadro.
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun DetailViewContent(
+    titleText: String,
+    posterUrl: String?,
     type: String,
     status: String,
     overview: String?,
@@ -648,345 +750,1130 @@ internal fun DetailViewContent(
     onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
     onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
     coupleScore: Double?,
-    myScore: Double?,
-    partnerScore: Double?,
-    episodeProgress: Int,
+    myScoreRow: TitleScore?,
+    partnerScoreRow: TitleScore?,
+    myProfile: Profile?,
+    partnerProfile: Profile?,
     totalEpisodes: Int?,
     isSeries: Boolean,
     startDate: String?,
     finishDate: String?,
     rewatches: Int,
-    notes: List<com.sinop.minimuv.data.TitleNote>,
-    profiles: List<com.sinop.minimuv.data.Profile>,
+    watchMode: String,
+    notes: List<TitleNote>,
+    profiles: List<Profile>,
     isFavorite: Boolean,
-    onEdit: () -> Unit,
 ) {
+    val tk = tokens()
+    val heroHeight = (LocalConfiguration.current.screenHeightDp * 0.21f).dp
+
+    val story = when {
+        displayLang == "EN" -> (details?.overviewEn?.takeIf { it.isNotBlank() }
+            ?: details?.overview?.takeIf { it.isNotBlank() })
+        else -> (details?.overview?.takeIf { it.isNotBlank() }
+            ?: details?.overviewEn?.takeIf { it.isNotBlank() })
+    } ?: overview?.takeIf { it.isNotBlank() }
+
+    val people = details?.cast.orEmpty()
+    val personSource = if (type == "anime") {
+        com.sinop.minimuv.core.PersonSource.ANIME
+    } else {
+        com.sinop.minimuv.core.PersonSource.TMDB
+    }
+    val studios = details?.studios.orEmpty()
+    val directors = details?.directors.orEmpty()
+    val producers = details?.producers.orEmpty()
+    val creators = details?.creators.orEmpty()
+    val yearText = details?.year?.takeIf { it.isNotBlank() }
+    val productionStatus = details?.statusText?.takeIf { it.isNotBlank() }
+
+    // Banner meta: tür · sezon · bölüm · süre (yıl artık Bilgi'de)
+    val episodes = totalEpisodes?.takeIf { it > 0 }
+        ?: details?.episodeCount?.takeIf { it > 0 }
+        ?: details?.runtimeText?.let {
+            Regex("(\\d+)\\s*bölüm").find(it.lowercase())?.groupValues?.get(1)?.toIntOrNull()
+        }?.takeIf { it > 0 }
+    val durationMinutes = (if (isSeries) details?.episodeRuntimeMinutes else details?.runtimeMinutes)
+        ?.takeIf { it > 0 }
+        ?: details?.runtimeText?.let {
+            Regex("(\\d+)\\s*dk").find(it.lowercase())?.groupValues?.get(1)?.toIntOrNull()
+        }?.takeIf { it > 0 }
+    val meta = buildString {
+        append(ContentType.fromDb(type).label)
+        if (isSeries) {
+            val seasonCount = details?.seasonCount
+            if (seasonCount != null) {
+                append(" · $seasonCount\u00A0sezon")
+                val rest = buildList {
+                    episodes?.let { add("$it\u00A0bölüm") }
+                    durationMinutes?.let { add("$it\u00A0dakika") }
+                }
+                if (episodes != null) {
+                    append('\n')
+                    append(rest.joinToString(" · "))
+                } else if (durationMinutes != null) {
+                    // Bölüm yoksa süreyi ilk satırda tut — tek başına "dakika" satırı oluşmasın.
+                    append(" · $durationMinutes\u00A0dakika")
+                }
+            } else {
+                episodes?.let { append(" · $it\u00A0bölüm") }
+                durationMinutes?.let { append(" · $it\u00A0dakika") }
+            }
+        } else {
+            durationMinutes?.let { append(" · $it\u00A0dakika") }
+        }
+    }
+
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 16.dp)
-            // Alt navigasyon çubuğunun altında kalan içeriği (Düzenle butonu vb.) erişilebilir kılar
-            .padding(bottom = 96.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+            .padding(bottom = 120.dp),
     ) {
-        Spacer(Modifier.height(24.dp))
+        DetailHero(
+            titleText = titleText,
+            posterUrl = posterUrl,
+            meta = meta,
+            rating = details?.rating,
+            voteCount = details?.voteCount,
+            heroHeight = heroHeight,
+            genres = details?.genres.orEmpty(),
+            isFavorite = isFavorite,
+        )
 
+        DetailActionRow(
+            trailerUrl = details?.trailerUrl,
+            watchMode = watchMode,
+            myProfile = myProfile,
+            partnerProfile = partnerProfile,
+        )
+
+        // Afiş ile puan kartı arasında: durum + başlangıç/bitiş tarihlerimiz
+        DetailStatusCard(
+            status = status,
+            startDate = startDate,
+            finishDate = finishDate,
+            rewatches = rewatches,
+        )
+
+        Column(
+            Modifier.padding(start = 20.dp, end = 20.dp, top = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(28.dp),
+        ) {
+            CoupleScoreCard(
+                coupleScore = coupleScore,
+                myScore = myScoreRow,
+                partnerScore = partnerScoreRow,
+                myProfile = myProfile,
+                partnerProfile = partnerProfile,
+            )
+
+            if (story != null) {
+                Column {
+                    SerifHeading("Hikaye")
+                    Spacer(Modifier.height(8.dp))
+                    com.sinop.minimuv.ui.components.MarkdownText(
+                        markdown = story,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp, lineHeight = 21.sp),
+                        color = tk.textSoft,
+                    )
+                }
+            }
+
+            if (people.isNotEmpty()) {
+                Column {
+                    SerifHeading(if (type == "anime") "Karakterler" else "Kadro")
+                    Spacer(Modifier.height(12.dp))
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        items(people) { member ->
+                            CastAvatar(
+                                name = member.name,
+                                role = member.role,
+                                imageUrl = member.imageUrl,
+                                onClick = if (member.id != null) {
+                                    { onOpenPerson(personSource, member.id.toString()) }
+                                } else null,
+                            )
+                        }
+                    }
+                }
+            }
+
+            val hasInfo = productionStatus != null || yearText != null ||
+                directors.isNotEmpty() || producers.isNotEmpty() || creators.isNotEmpty() ||
+                studios.isNotEmpty()
+            if (hasInfo) {
+                Column {
+                    SerifHeading("Bilgi")
+                    Spacer(Modifier.height(12.dp))
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(22.dp))
+                            .background(tk.surface1)
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        if (productionStatus != null) {
+                            InfoRow("Yapım durumu") {
+                                Text(
+                                    productionStatus,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = tk.text,
+                                )
+                            }
+                        }
+                        if (yearText != null) {
+                            InfoRow("Yıl") {
+                                Text(
+                                    yearText,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = tk.text,
+                                )
+                            }
+                        }
+                        if (directors.isNotEmpty()) {
+                            InfoRow("Yönetmen") {
+                                PeopleLinks(
+                                    people = directors,
+                                    personSource = personSource,
+                                    onOpenPerson = onOpenPerson,
+                                )
+                            }
+                        }
+                        if (creators.isNotEmpty()) {
+                            InfoRow("Yaratıcı") {
+                                PeopleLinks(
+                                    people = creators,
+                                    personSource = personSource,
+                                    onOpenPerson = onOpenPerson,
+                                )
+                            }
+                        }
+                        if (producers.isNotEmpty()) {
+                            InfoRow("Yapımcı") {
+                                PeopleLinks(
+                                    people = producers,
+                                    personSource = personSource,
+                                    onOpenPerson = onOpenPerson,
+                                )
+                            }
+                        }
+                        if (studios.isNotEmpty()) {
+                            InfoRow(if (type == "anime") "Stüdyo" else "Yapım şirketi") {
+                                FlowRow(
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    studios.forEach { studio ->
+                                        StudioChip(
+                                            name = studio.name,
+                                            onClick = if (studio.id != null) {
+                                                { onOpenStudio(ContentType.fromDb(type), studio.id.toString()) }
+                                            } else null,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (notes.isNotEmpty()) {
+                Column {
+                    SerifHeading("Notlarımız")
+                    Spacer(Modifier.height(12.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        notes.forEach { note ->
+                            val author = profiles.firstOrNull { it.id == note.profileId }
+                            DetailNoteCardItem(
+                                author = author,
+                                noteText = note.noteText,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Bulanık afiş zemini + afiş kartı ve başlık bilgileri. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun DetailHero(
+    titleText: String,
+    posterUrl: String?,
+    meta: String,
+    rating: Double?,
+    voteCount: Int?,
+    heroHeight: Dp,
+    genres: List<String>,
+    isFavorite: Boolean,
+) {
+    val tk = tokens()
+
+    Box(Modifier.fillMaxWidth()) {
+        // Arka plan: bulanık afiş, alta doğru zemine eriyen gradyan
+        Box(Modifier.fillMaxWidth().height(heroHeight)) {
+            Box(Modifier.fillMaxSize().background(tk.surface1))
+            if (posterUrl != null) {
+                AsyncImage(
+                    model = posterUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(30.dp),
+                )
+            }
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to Color.Black.copy(alpha = 0.35f),
+                            0.35f to tk.bg.copy(alpha = 0.15f),
+                            0.72f to tk.bg.copy(alpha = 0.85f),
+                            1f to tk.bg,
+                        ),
+                    ),
+            )
+        }
+
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = heroHeight - 48.dp, start = 20.dp, end = 20.dp),
+            verticalAlignment = Alignment.Top,
+        ) {
+            PosterCard(posterUrl = posterUrl)
+            Spacer(Modifier.width(16.dp))
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(top = 4.dp),
+            ) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Text(
+                        meta,
+                        style = MaterialTheme.typography.labelMedium.copy(
+                            fontSize = 11.sp,
+                            letterSpacing = 0.2.sp,
+                        ),
+                        color = tk.textSoft,
+                        maxLines = 4,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (rating != null) {
+                        Spacer(Modifier.width(8.dp))
+                        Column(horizontalAlignment = Alignment.End) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "★",
+                                    fontSize = 11.sp,
+                                    color = tk.gold,
+                                )
+                                Spacer(Modifier.width(3.dp))
+                                Text(
+                                    String.format(java.util.Locale.US, "%.1f", rating),
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontSize = 11.sp,
+                                        letterSpacing = 0.2.sp,
+                                    ),
+                                    color = tk.textSoft,
+                                )
+                            }
+                            if (voteCount != null && voteCount > 0) {
+                                Text(
+                                    "${voteText(voteCount)} oy",
+                                    style = MaterialTheme.typography.labelMedium.copy(
+                                        fontSize = 9.sp,
+                                        letterSpacing = 0.2.sp,
+                                    ),
+                                    color = tk.textMuted,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    titleText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    lineHeight = 26.sp,
+                    color = Color.White,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(10.dp))
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    if (isFavorite) {
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(50))
+                                .background(tk.surface2.copy(alpha = 0.85f))
+                                .padding(horizontal = 9.dp, vertical = 4.dp),
+                        ) {
+                            Icon(
+                                MinimuvIcons.Heart,
+                                contentDescription = "Favori",
+                                tint = Color(0xFFEF476F),
+                                modifier = Modifier.size(13.dp),
+                            )
+                        }
+                    }
+                    genres.take(4).forEach { GenreChip(it) }
+                }
+            }
+        }
+    }
+}
+
+/** Afiş kartı — yuvarlatılmış poster. */
+@Composable
+private fun PosterCard(posterUrl: String?) {
+    val tk = tokens()
+    Box(
+        Modifier
+            .width(104.dp)
+            .height(152.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(tk.surface2)
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp)),
+    ) {
+        if (posterUrl != null) {
+            AsyncImage(
+                model = posterUrl,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+            )
+        }
+    }
+}
+
+// ── Durum kutusu: durum + bizim başlangıç/bitiş tarihlerimiz ────────────
+
+@Composable
+private fun DetailStatusCard(
+    status: String,
+    startDate: String?,
+    finishDate: String?,
+    rewatches: Int,
+    withTopPadding: Boolean = true,
+) {
+    val tk = tokens()
+    val hasDates = startDate != null || finishDate != null
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = if (withTopPadding) 16.dp else 0.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .background(tk.surface1)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+    ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             StatusChip(status)
-            if (rewatches > 0) {
-                Spacer(Modifier.width(8.dp))
-                com.sinop.minimuv.ui.components.RewatchBadge(rewatches)
-            }
-            if (isFavorite) {
-                Spacer(Modifier.width(8.dp))
-                Text("❤️", style = MaterialTheme.typography.titleMedium)
-            }
             Spacer(Modifier.weight(1f))
-            if (coupleScore != null) {
+            if (rewatches > 0) {
                 Text(
-                    String.format(java.util.Locale.US, "★ %.1f", coupleScore),
-                    style = MaterialTheme.typography.titleMedium,
-                    color = Color(0xFFFFD166),
-                    fontFamily = Baloo2,
+                    if (rewatches == 1) "1 kez izlendi" else "$rewatches kez izlendi",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tk.textMuted,
                 )
             }
         }
 
-        // ── API puanı + hızlı bilgiler ───────────────────────────────────
-        val ratingText = details?.rating?.let { r ->
-            buildString {
-                append(String.format(java.util.Locale.US, "%.1f", r))
-                details.voteCount?.let { append("  (${compactCount(it)} oy)") }
-            }
-        }
-        if (ratingText != null || details?.year != null || details?.runtimeText != null || details?.statusText != null) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MidnightCard)
-                    .padding(horizontal = 12.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (ratingText != null) {
-                    Text("🌟", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.width(4.dp))
-                    Text(
-                        ratingText,
-                        style = MaterialTheme.typography.titleSmall,
-                        color = Color(0xFFFFD166),
-                        fontFamily = Baloo2,
-                    )
-                    Spacer(Modifier.width(10.dp))
-                }
-                Text(
-                    listOfNotNull(details?.year, details?.runtimeText, details?.statusText)
-                        .joinToString("  •  "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
+        if (hasDates) {
+            Spacer(Modifier.height(12.dp))
+            Row(Modifier.fillMaxWidth()) {
+                DateCell(
+                    label = "Başlangıç",
+                    value = startDate?.let { formatDate(it) } ?: "—",
+                    modifier = Modifier.weight(1f),
+                )
+                DateCell(
+                    label = "Bitiş",
+                    value = finishDate?.let { formatDate(it) } ?: "—",
                     modifier = Modifier.weight(1f),
                 )
             }
         }
-
-        // ── Türler ───────────────────────────────────────────────────────
-        if (!details?.genres.isNullOrEmpty()) {
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                details!!.genres.take(8).forEach { g ->
-                    Text(
-                        g,
-                        style = MaterialTheme.typography.labelSmall,
-                        color = typeColor(type),
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(typeColor(type).copy(alpha = 0.12f))
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    )
-                }
-            }
-        }
-
-        // ── Bilgi kartı ──────────────────────────────────────────────────
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MidnightCard)
-                .padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            if (!details?.studios.isNullOrEmpty()) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        if (type == "anime") "🏢 Stüdyo" else "🏢 Yapımcı",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = TextSecondary,
-                    )
-                }
-                Spacer(Modifier.height(4.dp))
-                androidx.compose.foundation.layout.FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    details!!.studios.forEach { studio ->
-                        Box(
-                            Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(typeColor(type).copy(alpha = 0.12f))
-                                .clickable(enabled = studio.id != null) {
-                                    onOpenStudio(com.sinop.minimuv.data.ContentType.fromDb(type), studio.id!!.toString())
-                                }
-                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                        ) {
-                            Text(
-                                studio.name,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = typeColor(type),
-                            )
-                        }
-                    }
-                }
-            }
-            InfoLine("📅 Başlangıç", startDate?.let { formatDate(it) } ?: "—")
-            InfoLine("🏁 Bitiş", finishDate?.let { formatDate(it) } ?: "—")
-            if (isSeries) {
-                val total = totalEpisodes?.toString() ?: details?.runtimeText?.substringBefore(" bölüm")?.substringAfterLast(" ") ?: "?"
-                InfoLine(typeEmoji(type) + " Bölüm", "$episodeProgress / $total")
-            }
-            if (rewatches > 0) {
-                InfoLine("🔁 Yeniden izleme", "$rewatches kez")
-            }
-            val scores = buildString {
-                if (myScore != null) append("Senin: ${"%.1f".format(java.util.Locale.US, myScore)}")
-                if (partnerScore != null) {
-                    if (isNotEmpty()) append("  •  ")
-                    append("Partnerinin: ${"%.1f".format(java.util.Locale.US, partnerScore)}")
-                }
-            }
-            if (scores.isNotEmpty()) InfoLine("⭐ Puanlar", scores)
-        }
-
-        // ── Hikâye ───────────────────────────────────────────────────────
-        val story = when {
-            displayLang == "EN" -> (details?.overviewEn?.takeIf { it.isNotBlank() }
-                ?: details?.overview?.takeIf { it.isNotBlank() })
-            else -> (details?.overview?.takeIf { it.isNotBlank() }
-                ?: details?.overviewEn?.takeIf { it.isNotBlank() })
-        } ?: overview?.takeIf { it.isNotBlank() }
-        if (story != null) {
-            Text("Hikâye", style = MaterialTheme.typography.titleMedium, color = typeColor(type))
-            Text(
-                story,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.95f),
-            )
-        }
-
-        // ── Yönetmenler ──────────────────────────────────────────────────
-        if (!details?.directors.isNullOrEmpty()) {
-            Spacer(Modifier.height(4.dp))
-            Text("Yönetmen", style = MaterialTheme.typography.titleMedium, color = typeColor(type))
-            androidx.compose.foundation.lazy.LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(details!!.directors.size) { index ->
-                    val director = details.directors[index]
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .width(76.dp)
-                            .clickable(enabled = director.id != null) {
-                                onOpenPerson(com.sinop.minimuv.core.PersonSource.TMDB, director.id!!.toString())
-                            },
-                    ) {
-                        Box(
-                            Modifier
-                                .size(60.dp)
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .background(MidnightCard),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (director.imageUrl != null) {
-                                AsyncImage(
-                                    model = director.imageUrl,
-                                    contentDescription = director.name,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            } else {
-                                Text("🎬", style = MaterialTheme.typography.titleLarge)
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            director.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        Text(
-                            "Yönetmen",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-        }
-
-        // ── Oyuncular / Karakterler ──────────────────────────────────────
-        if (!details?.cast.isNullOrEmpty()) {
-            Text(
-                if (type == "anime") "Karakterler" else "Oyuncular",
-                style = MaterialTheme.typography.titleMedium,
-                color = typeColor(type),
-            )
-            androidx.compose.foundation.lazy.LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                items(details!!.cast.size) { index ->
-                    val member = details.cast[index]
-                    val personSource = if (type == "anime") com.sinop.minimuv.core.PersonSource.ANIME
-                        else com.sinop.minimuv.core.PersonSource.TMDB
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        modifier = Modifier
-                            .width(76.dp)
-                            .then(
-                                if (member.id != null) {
-                                    Modifier.clickable { onOpenPerson(personSource, member.id.toString()) }
-                                } else Modifier
-                            ),
-                    ) {
-                        Box(
-                            Modifier
-                                .size(60.dp)
-                                .clip(androidx.compose.foundation.shape.CircleShape)
-                                .background(MidnightCard),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (member.imageUrl != null) {
-                                AsyncImage(
-                                    model = member.imageUrl,
-                                    contentDescription = member.name,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            } else {
-                                Text("👤", style = MaterialTheme.typography.titleLarge)
-                            }
-                        }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            member.name,
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                        if (!member.role.isNullOrBlank()) {
-                            Text(
-                                member.role,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextSecondary,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // ── Notlarımız ───────────────────────────────────────────────────
-        if (notes.isNotEmpty()) {
-            Text("Notlarımız 🖊️", style = MaterialTheme.typography.titleMedium, color = typeColor(type))
-            notes.forEach { note ->
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(MidnightCard)
-                        .padding(horizontal = 12.dp, vertical = 10.dp),
-                ) {
-                    Text(
-                        "${profiles.firstOrNull { it.id == note.profileId }?.emoji ?: "👤"} ${
-                            profiles.firstOrNull { it.id == note.profileId }?.name ?: "?"
-                        }",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary,
-                    )
-                    Spacer(Modifier.height(2.dp))
-                    Text(note.noteText, style = MaterialTheme.typography.bodyMedium)
-                }
-            }
-        }
-
-        Spacer(Modifier.height(4.dp))
-
-        MinimuvButton(label = "Düzenle ✏️", onClick = onEdit, modifier = Modifier.fillMaxWidth())
-
-        Spacer(Modifier.height(24.dp))
     }
 }
 
-private fun compactCount(n: Int): String = when {
-    n >= 1_000_000 -> "%.1fM".format(java.util.Locale.US, n / 1_000_000.0)
-    n >= 1_000 -> "%.1fB".format(java.util.Locale.US, n / 1_000.0)
-    else -> n.toString()
+@Composable
+private fun DateCell(label: String, value: String, modifier: Modifier = Modifier) {
+    val tk = tokens()
+    Column(modifier) {
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 0.8.sp),
+            color = tk.textMuted,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            value,
+            style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp),
+            color = tk.text,
+        )
+    }
+}
+
+// ── Banner altındaki eylemler: fragman + "Birlikte" rozeti ──────────────
+
+@Composable
+private fun DetailActionRow(
+    trailerUrl: String?,
+    watchMode: String,
+    myProfile: Profile?,
+    partnerProfile: Profile?,
+) {
+    val context = LocalContext.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 20.dp, end = 20.dp, top = 16.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (trailerUrl != null) {
+            TrailerButton(
+                onClick = {
+                    runCatching {
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(trailerUrl))
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        context.startActivity(intent)
+                    }.onFailure {
+                        Toast.makeText(context, "Fragman açılamadı", Toast.LENGTH_SHORT).show()
+                    }
+                },
+                modifier = Modifier.weight(1f),
+            )
+        }
+        CoupleModePill(
+            watchMode = watchMode,
+            myProfile = myProfile,
+            partnerProfile = partnerProfile,
+            modifier = if (trailerUrl != null) Modifier.weight(1f) else Modifier.fillMaxWidth(),
+        )
+    }
 }
 
 @Composable
-private fun InfoLine(label: String, value: String) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(label, style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
-        Spacer(Modifier.weight(1f))
-        Text(value, style = MaterialTheme.typography.bodyMedium, fontFamily = Baloo2)
+private fun TrailerButton(onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val tk = tokens()
+    Row(
+        modifier
+            .height(44.dp)
+            .clip(RoundedCornerShape(14.dp))
+            .background(Brush.horizontalGradient(listOf(tk.gold, tk.goldLight)))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            MinimuvIcons.Play,
+            contentDescription = null,
+            tint = tk.ink,
+            modifier = Modifier.size(16.dp),
+        )
+        Spacer(Modifier.width(6.dp))
+        Text(
+            "Fragmanı izle",
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+            ),
+            color = tk.ink,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun CoupleModePill(
+    watchMode: String,
+    myProfile: Profile?,
+    partnerProfile: Profile?,
+    modifier: Modifier = Modifier,
+) {
+    val tk = tokens()
+    val mode = WatchMode.fromDb(watchMode)
+    val (myColor, partnerColor) = coupleColors(myProfile, partnerProfile, tk.van, tk.sinop)
+    val shape = RoundedCornerShape(14.dp)
+
+    Row(
+        modifier
+            .height(44.dp)
+            .clip(shape)
+            .background(
+                Brush.horizontalGradient(
+                    listOf(myColor.copy(alpha = 0.24f), partnerColor.copy(alpha = 0.24f)),
+                ),
+            )
+            .border(
+                width = 1.dp,
+                brush = Brush.horizontalGradient(
+                    listOf(myColor.copy(alpha = 0.85f), partnerColor.copy(alpha = 0.85f)),
+                ),
+                shape = shape,
+            )
+            .padding(horizontal = 10.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MiniProfileAvatar(profile = myProfile, color = myColor)
+        Spacer(Modifier.width(2.dp))
+        if (mode == WatchMode.BIRLIKTE) {
+            Icon(
+                MinimuvIcons.Heart,
+                contentDescription = null,
+                tint = Color(0xFFEF476F),
+                modifier = Modifier.size(12.dp),
+            )
+        } else {
+            Text("·", style = MaterialTheme.typography.labelMedium, color = tk.textMuted)
+        }
+        Spacer(Modifier.width(2.dp))
+        MiniProfileAvatar(profile = partnerProfile, color = partnerColor)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            mode.shortLabel,
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+                letterSpacing = 0.2.sp,
+            ),
+            color = tk.text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun MiniProfileAvatar(profile: Profile?, color: Color) {
+    Box(
+        Modifier
+            .size(26.dp)
+            .clip(CircleShape)
+            .border(1.5.dp, color, CircleShape)
+            .padding(2.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (profile != null) {
+            AvatarView(profile = profile, size = 22.dp)
+        } else {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .clip(CircleShape)
+                    .background(color.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("?", fontSize = 11.sp, color = color)
+            }
+        }
+    }
+}
+
+/**
+ * İki profilin kendi seçtiği renkleri döndürür. İkisi aynı renge ayarlanmışsa
+ * (örn. ikisi de mor) rozet tek renk görünmesin diye tema renklerine düşer.
+ */
+private fun coupleColors(
+    myProfile: Profile?,
+    partnerProfile: Profile?,
+    fallbackMine: Color,
+    fallbackPartner: Color,
+): Pair<Color, Color> {
+    val mine = myProfile?.avatarColor?.let { parseColorSafe(it) } ?: fallbackMine
+    val partner = partnerProfile?.avatarColor?.let { parseColorSafe(it) } ?: fallbackPartner
+    return mine to partner
+}
+
+private fun voteText(n: Int): String = when {
+    n >= 1_000_000 -> String.format(java.util.Locale.GERMANY, "%.1f Mn", n / 1_000_000.0)
+    else -> String.format(java.util.Locale.GERMANY, "%,d", n)
+}
+
+// ── Çift puan kartı: iki kişi + ortak puan + kriter çubukları ────────────
+
+@Composable
+private fun CoupleScoreCard(
+    coupleScore: Double?,
+    myScore: TitleScore?,
+    partnerScore: TitleScore?,
+    myProfile: Profile?,
+    partnerProfile: Profile?,
+) {
+    val tk = tokens()
+    val (myColor, partnerColor) = coupleColors(myProfile, partnerProfile, tk.van, tk.sinop)
+    val overall = coupleScore
+        ?: listOfNotNull(myScore?.score, partnerScore?.score)
+            .takeIf { it.isNotEmpty() }?.average()
+
+    val hasAnyScore = coupleScore != null ||
+        listOfNotNull(myScore?.score, partnerScore?.score).isNotEmpty()
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .background(tk.surface1)
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            PersonScore(
+                profile = myProfile,
+                name = myProfile?.displayName ?: "Sen",
+                score = myScore?.score,
+                color = myColor,
+                modifier = Modifier.weight(1f),
+            )
+            OverallRing(score = overall, colorA = myColor, colorB = partnerColor)
+            PersonScore(
+                profile = partnerProfile,
+                name = partnerProfile?.displayName ?: "Partnerin",
+                score = partnerScore?.score,
+                color = partnerColor,
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        if (!hasAnyScore) {
+            Spacer(Modifier.height(12.dp))
+            Text(
+                "Henüz puan verilmedi · kalemden puanlayın",
+                style = MaterialTheme.typography.labelMedium.copy(fontSize = 12.sp),
+                color = tk.textMuted,
+                modifier = Modifier.fillMaxWidth(),
+                textAlign = TextAlign.Center,
+            )
+        }
+
+        // Kriter çubukları yalnızca detaylı puanlama yapıldıysa görünür
+        val hasDetails = listOfNotNull(myScore, partnerScore).any { row ->
+            listOf(row.story, row.characters, row.visuals, row.audio, row.enjoyment)
+                .any { it != null }
+        }
+        if (hasDetails) {
+            Spacer(Modifier.height(20.dp))
+            ScoreCriterion("Hikaye", myScore?.story, partnerScore?.story, myColor, partnerColor)
+            ScoreCriterion("Karakterler", myScore?.characters, partnerScore?.characters, myColor, partnerColor)
+            ScoreCriterion("Görsellik", myScore?.visuals, partnerScore?.visuals, myColor, partnerColor)
+            ScoreCriterion("Ses", myScore?.audio, partnerScore?.audio, myColor, partnerColor)
+            ScoreCriterion("Keyif", myScore?.enjoyment, partnerScore?.enjoyment, myColor, partnerColor)
+        }
+    }
+}
+
+@Composable
+private fun PersonScore(
+    profile: Profile?,
+    name: String,
+    score: Double?,
+    color: Color,
+    modifier: Modifier = Modifier,
+) {
+    val tk = tokens()
+    Column(modifier, horizontalAlignment = Alignment.CenterHorizontally) {
+        if (profile != null) {
+            AvatarView(profile = profile, size = 42.dp)
+        } else {
+            Box(
+                Modifier
+                    .size(42.dp)
+                    .clip(CircleShape)
+                    .background(color),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    name.trim().take(1).uppercase().ifBlank { "?" },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = readableOn(color),
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            score?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "–",
+            fontWeight = FontWeight.Bold,
+            fontSize = 28.sp,
+            lineHeight = 30.sp,
+            color = tk.text,
+        )
+        Text(
+            name,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = tk.textMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
+private fun DetailNoteCardItem(
+    author: Profile?,
+    noteText: String,
+) {
+    val tk = tokens()
+    val isSpoiler = noteText.contains("[SPOILER]", ignoreCase = true)
+    val cleanText = noteText.replace("(?i)\\[SPOILER\\]".toRegex(), "").trim()
+    var revealed by remember { mutableStateOf(!isSpoiler) }
+
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .background(tk.surface1)
+            .clickable(enabled = isSpoiler && !revealed) { revealed = true }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (author != null) {
+                AvatarView(profile = author, size = 28.dp)
+                Spacer(Modifier.width(8.dp))
+            } else {
+                Text("👤", fontSize = 15.sp)
+                Spacer(Modifier.width(6.dp))
+            }
+            Text(
+                author?.displayName ?: "?",
+                style = MaterialTheme.typography.labelMedium,
+                color = tk.textMuted,
+            )
+            if (isSpoiler) {
+                Spacer(Modifier.weight(1f))
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(50))
+                        .background(if (revealed) Color(0xFFFFB74D).copy(alpha = 0.15f) else Color(0xFFFFB74D))
+                        .padding(horizontal = 8.dp, vertical = 3.dp),
+                ) {
+                    Text(
+                        if (revealed) "🙈 Spoiler" else "🙈 Spoiler (Aç)",
+                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
+                        color = if (revealed) Color(0xFFFFB74D) else Color.Black,
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(8.dp))
+        Box {
+            Text(
+                cleanText,
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp, lineHeight = 18.sp),
+                color = tk.textSoft,
+                modifier = if (isSpoiler && !revealed) Modifier.blur(12.dp) else Modifier,
+            )
+            if (isSpoiler && !revealed) {
+                Box(
+                    Modifier
+                        .matchParentSize()
+                        .background(tk.surface1.copy(alpha = 0.60f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "🙈 Spoiler içeriyor · Okumak için dokunun",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
+                        color = Color(0xFFFFB74D),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun OverallRing(score: Double?, colorA: Color, colorB: Color) {
+    val tk = tokens()
+    Box(Modifier.size(92.dp), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .border(
+                    width = 2.5.dp,
+                    brush = Brush.sweepGradient(listOf(colorA, colorB, colorA)),
+                    shape = CircleShape,
+                ),
+        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                score?.let { String.format(java.util.Locale.US, "%.1f", it) } ?: "–",
+                fontWeight = FontWeight.Bold,
+                fontSize = 26.sp,
+                lineHeight = 28.sp,
+                color = tk.text,
+            )
+            Text(
+                "ORTAK",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, letterSpacing = 1.5.sp),
+                color = tk.textMuted,
+            )
+        }
+    }
+}
+
+@Composable
+private fun ScoreCriterion(
+    label: String,
+    mine: Double?,
+    partner: Double?,
+    myColor: Color,
+    partnerColor: Color,
+) {
+    val tk = tokens()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+            color = tk.textMuted,
+            maxLines = 1,
+            modifier = Modifier.width(92.dp),
+        )
+        Column(
+            Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            ScoreBar(mine, myColor, tk.surface3)
+            ScoreBar(partner, partnerColor, tk.surface3)
+        }
+    }
+}
+
+@Composable
+private fun ScoreBar(value: Double?, color: Color, track: Color) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(RoundedCornerShape(4.dp))
+            .background(track),
+    ) {
+        val fraction = ((value ?: 0.0) / 10.0).toFloat().coerceIn(0f, 1f)
+        if (fraction > 0f) {
+            Box(
+                Modifier
+                    .fillMaxWidth(fraction)
+                    .fillMaxHeight()
+                    .background(color),
+            )
+        }
+    }
+}
+
+// ── Kadro / bilgi / not yardımcıları ────────────────────────────────────
+
+private val CastAvatarColors = listOf(
+    Color(0xFF4A2568), Color(0xFF1F5F63), Color(0xFF6B1F2A),
+    Color(0xFF1E2C63), Color(0xFF1F4A2E), Color(0xFF5B3B77),
+)
+
+private fun initialsOf(name: String): String {
+    val parts = name.trim().split(" ").filter { it.isNotBlank() }
+    return when {
+        parts.isEmpty() -> "?"
+        parts.size == 1 -> parts[0].take(1).uppercase()
+        else -> (parts[0].take(1) + parts[1].take(1)).uppercase()
+    }
+}
+
+private fun castAvatarColor(name: String): Color =
+    CastAvatarColors[(name.hashCode() and 0x7FFFFFFF) % CastAvatarColors.size]
+
+@Composable
+private fun CastAvatar(
+    name: String,
+    role: String?,
+    imageUrl: String?,
+    onClick: (() -> Unit)?,
+) {
+    val tk = tokens()
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .width(76.dp)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier),
+    ) {
+        Box(
+            Modifier
+                .size(58.dp)
+                .clip(CircleShape)
+                .background(castAvatarColor(name)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            } else {
+                Text(
+                    initialsOf(name),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp,
+                    color = Color.White,
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            name,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 15.sp),
+            color = tk.textSoft,
+            maxLines = 2,
+            textAlign = TextAlign.Center,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (!role.isNullOrBlank()) {
+            Text(
+                role,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, lineHeight = 13.sp),
+                color = tk.textMuted,
+                maxLines = 1,
+                textAlign = TextAlign.Center,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PeopleLinks(
+    people: List<CastMember>,
+    personSource: PersonSource,
+    onOpenPerson: (PersonSource, String) -> Unit,
+) {
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        people.forEach { person ->
+            val onClick = if (person.id != null) {
+                { onOpenPerson(personSource, person.id.toString()) }
+            } else null
+            PersonChip(
+                name = person.name,
+                onClick = onClick,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PersonChip(name: String, onClick: (() -> Unit)?) {
+    val tk = tokens()
+    Text(
+        name,
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
+        color = if (onClick != null) tk.gold else tk.textSoft,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(tk.surface2)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
+}
+
+@Composable
+private fun StudioChip(name: String, onClick: (() -> Unit)?) {
+    val tk = tokens()
+    Text(
+        name,
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
+        color = if (onClick != null) tk.gold else tk.textSoft,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(tk.surface2)
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 10.dp, vertical = 5.dp),
+    )
+}
+
+@Composable
+private fun InfoRow(
+    label: String,
+    content: @Composable () -> Unit,
+) {
+    val tk = tokens()
+    Row(verticalAlignment = Alignment.Top) {
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
+            color = tk.textMuted,
+            modifier = Modifier.width(96.dp),
+        )
+        Box(Modifier.weight(1f)) { content() }
+    }
+}
+
+@Composable
+private fun GenreChip(text: String) {
+    val tk = tokens()
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium.copy(fontSize = 11.sp),
+        color = tk.textSoft,
+        maxLines = 1,
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(tk.surface2.copy(alpha = 0.85f))
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+    )
+}
+
+@Composable
+private fun SerifHeading(text: String) {
+    val tk = tokens()
+    Text(
+        text,
+        fontWeight = FontWeight.Bold,
+        fontSize = 20.sp,
+        lineHeight = 24.sp,
+        color = tk.text,
+    )
+}
+
+/** Üst bardaki yarı saydam yuvarlak düğme. */
+@Composable
+internal fun GlassCircleButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(44.dp)
+            .clip(CircleShape)
+            .background(Color(0x9910141A))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }
 
@@ -1003,7 +1890,8 @@ internal fun SaveBar(
     error: String?,
     onSave: () -> Unit,
     onDelete: (() -> Unit)?,
-) {    Column(
+) {
+    Column(
         Modifier
             .fillMaxWidth()
             .background(MaterialTheme.colorScheme.background)
@@ -1032,13 +1920,27 @@ internal fun SaveBar(
                 }
                 Spacer(Modifier.width(10.dp))
             }
-            Box(Modifier.weight(1f)) {
-                MinimuvButton(
-                    label = if (isDraft) "Koleksiyona ekle 🎬" else "Kaydet 💾",
-                    onClick = onSave,
-                    modifier = Modifier.fillMaxWidth(),
-                    enabled = enabled,
-                )
+            Box(
+                Modifier
+                    .weight(1f)
+                    .height(52.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(if (enabled) Color(0xFF2962FF) else Color(0xFF2962FF).copy(alpha = 0.5f))
+                    .clickable(enabled = enabled, onClick = onSave),
+                contentAlignment = Alignment.Center,
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(MinimuvIcons.Save, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (isDraft) "Koleksiyona ekle 🎬" else "Kaydet",
+                        style = MaterialTheme.typography.labelLarge.copy(
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp,
+                        ),
+                        color = Color.White,
+                    )
+                }
             }
         }
     }

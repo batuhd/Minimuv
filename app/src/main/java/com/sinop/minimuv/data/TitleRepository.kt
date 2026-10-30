@@ -34,6 +34,8 @@ class TitleRepository {
                     "start_date",
                     "total_rewatches",
                     "priority_order",
+                    "watch_mode",
+                    "is_favorite",
                     "created_at",
                 )
             ) { order("created_at", Order.ASCENDING) }
@@ -146,6 +148,11 @@ class TitleRepository {
     suspend fun getEpisodeProgress(titleId: String): List<EpisodeProgress> =
         SupabaseProvider.client.postgrest.from("episode_progress_per_profile")
             .select { filter { eq("title_id", titleId) } }
+            .decodeList<EpisodeProgress>()
+
+    suspend fun getAllEpisodeProgress(): List<EpisodeProgress> =
+        SupabaseProvider.client.postgrest.from("episode_progress_per_profile")
+            .select()
             .decodeList<EpisodeProgress>()
 
     suspend fun setEpisodeProgress(titleId: String, profileId: String, episode: Int) {

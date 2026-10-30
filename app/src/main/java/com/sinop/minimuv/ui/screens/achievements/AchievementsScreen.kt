@@ -4,11 +4,13 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,6 +20,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -46,14 +52,17 @@ import com.sinop.minimuv.data.AchievementDef
 import com.sinop.minimuv.data.Achievements
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.ui.components.ConfettiOverlay
+import com.sinop.minimuv.ui.components.MinimuvSurface
 import com.sinop.minimuv.ui.theme.Gold
 import com.sinop.minimuv.ui.theme.GoldDeep
-import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.OutlineSoft
+import com.sinop.minimuv.ui.theme.TextPrimary
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
 
 @Composable
-fun AchievementsScreen() {
+fun AchievementsScreen(onBack: () -> Unit = {}) {
     val vm: AchievementsViewModel = viewModel()
     val unlocked by vm.unlocked.collectAsStateWithLifecycle()
     val stats by vm.stats.collectAsStateWithLifecycle()
@@ -71,22 +80,33 @@ fun AchievementsScreen() {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 20.dp, bottom = 96.dp,
+                top = 10.dp, bottom = 96.dp,
             ),
         ) {
+            item {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                    }
+                    Text("Rozetlerimiz", style = MaterialTheme.typography.titleLarge)
+                }
+            }
             item {
                 Column(
                     Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 8.dp),
+                        .padding(horizontal = 20.dp, vertical = 4.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    Text("Rozet Yolculuğumuz", style = MaterialTheme.typography.headlineMedium)
-                    Text(
+                    EmojiText(
                         "Birlikte başardıklarımız. 💕",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary,
-                        textAlign = TextAlign.Center,
                     )
                     Spacer(Modifier.height(14.dp))
                     StatsBar(stats)
@@ -114,25 +134,25 @@ fun AchievementsScreen() {
 
 @Composable
 private fun StatsBar(stats: CoupleStats) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .background(MidnightCard)
-            .padding(vertical = 14.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
-        StatCell("🎬", "${stats.totalCompleted}", "Tamamlanan")
-        StatCell("🔥", "${stats.streakDays}", "Günlük Streak")
-        StatCell("📺", "${stats.animeEpisodes}", "Anime Bölümü")
-        StatCell("🏅", "${Achievements.ALL.count { def -> def.progress(stats) >= def.target }}", "Rozet")
+    MinimuvSurface(shape = RoundedCornerShape(16.dp)) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 14.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+        ) {
+            StatCell("🎬", "${stats.totalCompleted}", "Tamamlanan")
+            StatCell("🔥", "${stats.streakDays}", "Günlük Streak")
+            StatCell("📺", "${stats.animeEpisodes}", "Anime Bölümü")
+            StatCell("🏅", "${Achievements.ALL.count { def -> def.progress(stats) >= def.target }}", "Rozet")
+        }
     }
 }
 
 @Composable
 private fun StatCell(emoji: String, value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(emoji, style = MaterialTheme.typography.titleMedium)
+        MinimuvEmojiIcon(emoji, size = 20.dp)
         Text(value, style = MaterialTheme.typography.titleLarge)
         Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
     }
@@ -187,6 +207,19 @@ private fun JourneyRow(
                     scaleY = scale
                 },
             ) {
+                // Dış parlama: blur'suz, üst üste radial gradient katmanı (ucuz)
+                if (isUnlocked) {
+                    Box(
+                        Modifier
+                            .size(92.dp)
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(Gold.copy(alpha = 0.30f), Color(0x00FFD166)),
+                                )
+                            ),
+                    )
+                }
                 Box(
                     Modifier
                         .size(66.dp)
@@ -195,15 +228,31 @@ private fun JourneyRow(
                             if (isUnlocked) {
                                 Brush.radialGradient(listOf(Gold, GoldDeep))
                             } else {
-                                Brush.radialGradient(listOf(Color(0xFF2A313C), Color(0xFF1A1F26)))
+                                // Kilitli: frosted cam hissi
+                                Brush.radialGradient(
+                                    listOf(Color(0x8C2A313C), Color(0x8C1A1F26)),
+                                )
                             },
+                        )
+                        .border(
+                            width = 1.dp,
+                            brush = if (isUnlocked) {
+                                Brush.radialGradient(
+                                    listOf(Color.White.copy(alpha = 0.55f), GoldDeep.copy(alpha = 0.25f)),
+                                )
+                            } else {
+                                Brush.radialGradient(
+                                    listOf(TextPrimary.copy(alpha = 0.18f), Color.Transparent),
+                                )
+                            },
+                            shape = CircleShape,
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (isUnlocked) {
                         Text(def.emoji, style = MaterialTheme.typography.headlineSmall)
                     } else {
-                        Text("🔒", style = MaterialTheme.typography.headlineSmall)
+                        MinimuvEmojiIcon("🔒", size = 24.dp)
                     }
                 }
             }
@@ -223,20 +272,28 @@ private fun JourneyRow(
                 if (!isUnlocked) {
                     Spacer(Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        val fraction = (progress.toFloat() / def.target.toFloat()).coerceIn(0f, 1f)
+                        val fillFraction by animateFloatAsState(
+                            targetValue = fraction,
+                            animationSpec = spring(dampingRatio = 0.9f, stiffness = 400f),
+                            label = "badgeProgress",
+                        )
                         Box(
                             Modifier
                                 .width(120.dp)
                                 .height(8.dp)
                                 .clip(CircleShape)
-                                .background(OutlineSoft),
+                                .background(OutlineSoft.copy(alpha = 0.6f)),
                         ) {
-                            Box(
-                                Modifier
-                                    .fillMaxWidth(progress.toFloat() / def.target.toFloat())
-                                    .height(8.dp)
-                                    .clip(CircleShape)
-                                    .background(GoldDeep),
-                            )
+                            if (fillFraction > 0.01f) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(fillFraction)
+                                        .fillMaxHeight()
+                                        .clip(CircleShape)
+                                        .background(Brush.horizontalGradient(listOf(GoldDeep, Gold))),
+                                )
+                            }
                         }
                         Spacer(Modifier.width(8.dp))
                         Text(

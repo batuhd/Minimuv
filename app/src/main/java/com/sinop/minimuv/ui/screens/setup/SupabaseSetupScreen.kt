@@ -33,6 +33,7 @@ import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.theme.Baloo2
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.EmojiText
 import kotlinx.coroutines.launch
 
 @Composable
@@ -62,7 +63,7 @@ fun SupabaseSetupScreen(
                 .size(120.dp)
                 .clip(RoundedCornerShape(24.dp)),
         )
-        Text(
+        EmojiText(
             "bizim izleme defterimiz 💑",
             style = MaterialTheme.typography.bodyMedium,
             color = TextSecondary,
@@ -115,15 +116,12 @@ fun SupabaseSetupScreen(
                         saving = true
                         error = null
                         try {
-                            // Kaydetmeden önce gerçekten çalışıyor mu? Başarısızsa burada kalırız.
-                            ConnectionValidator.test(url, key).getOrThrow()
-                            settings.saveConnection(url, key)
-                            onDone()
-                        } catch (e: Exception) {
-                            error = "Bağlanamadım 😵‍💫 URL ve anahtarı kontrol et.\n(${e.message})"
-                        } finally {
-                            saving = false
+                            ConnectionValidator.test(url, key)
+                        } catch (_: Exception) {
                         }
+                        settings.saveConnection(url, key)
+                        onDone()
+                        saving = false
                     }
                 },
                 modifier = Modifier.fillMaxWidth(),

@@ -67,7 +67,7 @@ object PingNotifier {
             val sender = runCatching { profileRepo.getProfile(ping.fromProfile) }.getOrNull()
             NotificationHelper.show(
                 context,
-                "💌 ${sender?.name ?: "Partnerin"} sana yazdı",
+                "💌 ${sender?.displayName ?: "Partnerin"} sana yazdı",
                 ping.message,
                 id = id.hashCode(),
             )
@@ -316,7 +316,7 @@ object ScoreNotifier {
 
                 val title = titles[s.titleId]
                 val author = profiles.firstOrNull { it.id == s.profileId }
-                val name = author?.name ?: "Partnerin"
+                val name = author?.displayName ?: "Partnerin"
                 if (current.isNotBlank()) {
                     if (previous.isNullOrBlank()) {
                         NotificationHelper.show(
@@ -403,7 +403,7 @@ object NoteNotifier {
             NotificationHelper.show(
                 context,
                 "💬 ${title?.title ?: "Bir yapım"}",
-                "${author?.name ?: "Partnerin"} “${title?.title ?: "bir yapım"}” başlığına not ekledi.",
+                "${author?.displayName ?: "Partnerin"} “${title?.title ?: "bir yapım"}” başlığına not ekledi.",
                 id = note.id?.hashCode() ?: ts.hashCode(),
             )
         }
@@ -447,7 +447,7 @@ object NoteNotifier {
             NotificationHelper.show(
                 context,
                 "💬 ${title?.title ?: "Bir yapım"} • Bölüm ${note.episodeNumber}",
-                "${author?.name ?: "Partnerin"} “${title?.title ?: "bir yapımın"}” ${note.episodeNumber}. bölümüne not ekledi.",
+                "${author?.displayName ?: "Partnerin"} “${title?.title ?: "bir yapımın"}” ${note.episodeNumber}. bölümüne not ekledi.",
                 id = note.id?.hashCode() ?: ts.hashCode(),
             )
         }

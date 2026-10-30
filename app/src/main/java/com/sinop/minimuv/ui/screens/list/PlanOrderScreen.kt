@@ -43,6 +43,7 @@ import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.OutlineSoft
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.EmojiText
 import com.sinop.minimuv.ui.theme.typeColor
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyColumnState
@@ -167,7 +168,7 @@ fun PlanOrderScreen(onBack: () -> Unit) {
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
                                 )
-                                Text(
+                                EmojiText(
                                     "👥 İkimiz de istiyoruz",
                                     style = MaterialTheme.typography.labelSmall,
                                     color = MaterialTheme.colorScheme.secondary,

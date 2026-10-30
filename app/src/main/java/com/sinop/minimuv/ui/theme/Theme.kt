@@ -1,78 +1,96 @@
 package com.sinop.minimuv.ui.theme
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.WatchStatus
 
-// Tema vurgu renkleri — ayarlardan seçilir
+// Tema vurgu renkleri — tasarımdaki 15 renklik liste. Ayarlardan Van ve Sinop
+// için ayrı seçilir; varsayılan Van=0. indeks, Sinop=7. indeks.
 enum class ThemeAccent(val label: String, val hex: String) {
     BLUE("Mavi", "#3D8BFF"),
-    PURPLE("Mor", "#9B5DE5"),
-    GREEN("Yeşil", "#2ED573"),
-    PINK("Pembe", "#FF6FA5"),
-    AMBER("Turuncu", "#F5A623"),
-    RED("Kırmızı", "#FF5A5A"),
-    ROSE("Gül", "#E85D9E"),
-    CYAN("Camgöbeği", "#22C8E6"),
-    TEAL("Turkuaz", "#1ABC9C"),
-    INDIGO("Indigo", "#6C7BFF"),
-    LAVENDER("Lavanta", "#B39DDB"),
-    LIME("Limon", "#A8D93B"),
-    CORAL("Mercan", "#FF7F66"),
-    MINT("Nane", "#5EEAD4"),
-    GOLDEN("Altın", "#E0B341");
+    PURPLE("Mandalina", "#FF9A3C"),
+    GREEN("Altın", "#E8B84A"),
+    PINK("Zeytin", "#A8D95F"),
+    AMBER("Nane", "#4FD18B"),
+    RED("Turkuaz", "#2EC4B6"),
+    CYAN("Gök", "#4FC3F7"),
+    TEAL("İndigo", "#7C8CFF"),
+    INDIGO("Mor", "#A07CFF"),
+    LAVENDER("Lila", "#D17CFF"),
+    LIME("Pembe", "#FF7CC4"),
+    CORAL("Gül", "#FF6B8B"),
+    MINT("Kum", "#C9A27C"),
+    GOLDEN("Kaya", "#9AA5B1"),
+    AUBERGINE("Mürdüm", "#5C6BC0");
 
     val primary: Color get() = Color(android.graphics.Color.parseColor(hex))
-    val dark: Color get() = Color(android.graphics.Color.parseColor(shift(hex, -0.25f)))
 }
 
-private fun shift(hex: String, factor: Float): String {
-    val c = android.graphics.Color.parseColor(hex)
-    fun ch(v: Int) = ((v * (1 + factor)).toInt().coerceIn(0, 255))
-    return String.format(
-        java.util.Locale.US, "#%02X%02X%02X",
-        ch((c shr 16) and 0xFF), ch((c shr 8) and 0xFF), ch(c and 0xFF),
-    )
-}
-
-private fun buildScheme(accent: ThemeAccent) = darkColorScheme(
-    primary = accent.primary,
-    onPrimary = onColorFor(accent.primary),
-    primaryContainer = accent.dark,
-    onPrimaryContainer = onColorFor(accent.dark),
-    secondary = Gold,
-    onSecondary = Color(0xFF2B2110),
-    secondaryContainer = Color(0xFF3A2F14),
-    onSecondaryContainer = Gold,
-    tertiary = AnimeColor,
-    onTertiary = BrandCream,
-    background = Midnight,
+private fun buildDarkScheme(van: Color, sinop: Color) = darkColorScheme(
+    primary = van,
+    onPrimary = readableOn(van),
+    secondary = sinop,
+    onSecondary = readableOn(sinop),
+    tertiary = Gold,
+    background = Bg,
     onBackground = TextPrimary,
-    surface = Midnight,
+    surface = Bg,
     onSurface = TextPrimary,
-    surfaceVariant = MidnightCard,
-    onSurfaceVariant = TextSecondary,
-    surfaceContainer = MidnightCard,
-    surfaceContainerHigh = MidnightElevated,
-    surfaceContainerHighest = OutlineSoft,
-    surfaceContainerLow = MidnightCard,
-    surfaceContainerLowest = Midnight,
-    surfaceBright = MidnightElevated,
-    surfaceDim = Midnight,
-    outline = OutlineSoft,
-    outlineVariant = OutlineSoft,
+    surfaceVariant = Surface1,
+    onSurfaceVariant = TextMuted,
+    surfaceContainer = Surface1,
+    surfaceContainerHigh = Surface2,
+    surfaceContainerHighest = Surface3,
+    surfaceContainerLow = Surface1,
+    surfaceContainerLowest = Bg,
+    surfaceBright = Surface2,
+    surfaceDim = Bg,
+    outline = Surface3,
+    outlineVariant = Surface3,
     error = StatusDropped,
-    onError = BrandCream,
+    onError = InkDark,
     inverseSurface = TextPrimary,
-    inverseOnSurface = Midnight,
-    inversePrimary = accent.dark,
+    inverseOnSurface = Bg,
+    inversePrimary = sinop,
     scrim = Color(0xCC0A0C0F),
+)
+
+private fun buildLightScheme(van: Color, sinop: Color) = lightColorScheme(
+    primary = van,
+    onPrimary = readableOn(van),
+    secondary = sinop,
+    onSecondary = readableOn(sinop),
+    tertiary = Gold,
+    background = lightTokens(van, sinop).bg,
+    onBackground = lightTokens(van, sinop).text,
+    surface = lightTokens(van, sinop).bg,
+    onSurface = lightTokens(van, sinop).text,
+    surfaceVariant = lightTokens(van, sinop).surface1,
+    onSurfaceVariant = lightTokens(van, sinop).textMuted,
+    surfaceContainer = lightTokens(van, sinop).surface1,
+    surfaceContainerHigh = lightTokens(van, sinop).surface2,
+    surfaceContainerHighest = lightTokens(van, sinop).surface3,
+    surfaceContainerLow = lightTokens(van, sinop).surface1,
+    surfaceContainerLowest = lightTokens(van, sinop).bg,
+    surfaceBright = lightTokens(van, sinop).surface1,
+    surfaceDim = lightTokens(van, sinop).bg,
+    outline = lightTokens(van, sinop).surface3,
+    outlineVariant = lightTokens(van, sinop).surface3,
+    error = Color(0xFFB3436B),
+    onError = Color(0xFFF2F2F5),
+    inverseSurface = lightTokens(van, sinop).text,
+    inverseOnSurface = lightTokens(van, sinop).bg,
+    inversePrimary = sinop,
+    scrim = Color(0x66101420),
 )
 
 private val MinimuvShapes = Shapes(
@@ -80,39 +98,43 @@ private val MinimuvShapes = Shapes(
     small = RoundedCornerShape(10.dp),
     medium = RoundedCornerShape(14.dp),
     large = RoundedCornerShape(20.dp),
-    extraLarge = RoundedCornerShape(28.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
+enum class ThemeMode { DARK, LIGHT, SYSTEM }
+
 @Composable
-fun MinimuvTheme(accent: ThemeAccent = ThemeAccent.BLUE, content: @Composable () -> Unit) {
-    MaterialTheme(
-        colorScheme = buildScheme(accent),
-        typography = MinimuvTypography,
-        shapes = MinimuvShapes,
-        content = content,
-    )
+fun MinimuvTheme(
+    van: Color = VanColor,
+    sinop: Color = SinopColor,
+    mode: ThemeMode = ThemeMode.DARK,
+    content: @Composable () -> Unit,
+) {
+    val useDark = when (mode) {
+        ThemeMode.DARK -> true
+        ThemeMode.LIGHT -> false
+        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+    }
+    val tk = if (useDark) darkTokens(van, sinop) else lightTokens(van, sinop)
+    CompositionLocalProvider(LocalMinimuvTokens provides tk) {
+        MaterialTheme(
+            colorScheme = if (useDark) buildDarkScheme(van, sinop) else buildLightScheme(van, sinop),
+            typography = MinimuvTypography,
+            shapes = MinimuvShapes,
+            content = content,
+        )
+    }
 }
 
 // ── Tutarlı renk kodlaması yardımcıları ──────────────────────────────────
 
-/** Verilen zemin rengi üzerinde okunabilir yazı rengi döndürür.
- *  Açık renkler (limon, nane, altın…) üzerine beyaz yazı silik kalır;
- *  parlaklık eşiğine göre koyu yazıya geçilir. */
-fun onColorFor(background: Color): Color {
-    val luminance = 0.299 * background.red + 0.587 * background.green + 0.114 * background.blue
-    return if (luminance > 0.6f) Color(0xFF10131A) else Color.White
-}
+/** Verilen zemin rengi üzerinde okunabilir yazı rengi döndürür (4.5:1). */
+fun onColorFor(background: Color): Color = readableOn(background)
 
 fun typeColor(type: String): Color = when (ContentType.fromDb(type)) {
     ContentType.FILM -> FilmColor
     ContentType.DIZI -> DiziColor
     ContentType.ANIME -> AnimeColor
-}
-
-fun typeEmoji(type: String): String = when (ContentType.fromDb(type)) {
-    ContentType.FILM -> "🎬"
-    ContentType.DIZI -> "📺"
-    ContentType.ANIME -> "🌸"
 }
 
 fun statusColor(status: String): Color = when (WatchStatus.fromDb(status)) {
@@ -122,6 +144,13 @@ fun statusColor(status: String): Color = when (WatchStatus.fromDb(status)) {
     WatchStatus.REWATCHING -> StatusRewatching
     WatchStatus.PAUSED -> StatusPaused
     WatchStatus.DROPPED -> StatusDropped
+}
+
+// Eski ekranların emoji yardımcıları — ekranlar yenilenince silinir
+fun typeEmoji(type: String): String = when (ContentType.fromDb(type)) {
+    ContentType.FILM -> "🎬"
+    ContentType.DIZI -> "📺"
+    ContentType.ANIME -> "🌸"
 }
 
 fun statusEmoji(status: String): String = when (WatchStatus.fromDb(status)) {

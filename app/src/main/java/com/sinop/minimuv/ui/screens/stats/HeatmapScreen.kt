@@ -37,6 +37,8 @@ import com.sinop.minimuv.data.WatchLog
 import com.sinop.minimuv.ui.components.MinimuvButton
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
 import com.sinop.minimuv.ui.theme.typeColor
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -76,7 +78,7 @@ fun HeatmapScreen(onBack: () -> Unit) {
             loadError != null -> {
                 Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("📡", style = MaterialTheme.typography.headlineLarge)
+                        MinimuvEmojiIcon("📡", size = 30.dp)
                         Spacer(Modifier.height(8.dp))
                         Text(
                             "Günlük yüklenemedi",
@@ -96,7 +98,7 @@ fun HeatmapScreen(onBack: () -> Unit) {
                 val entries = log.orEmpty()
                 if (entries.isEmpty()) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
+                        EmojiText(
                             "Henüz izleme günlüğü yok. Bir şeyler izlemeye başlayın! 🍿",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
@@ -174,7 +176,7 @@ private fun heatColor(count: Int, max: Int): Color =
 @Composable
 private fun Stat(emoji: String, value: String, label: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(emoji, style = MaterialTheme.typography.titleMedium)
+        MinimuvEmojiIcon(emoji, size = 20.dp)
         Text(value, style = MaterialTheme.typography.titleLarge)
         Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
     }

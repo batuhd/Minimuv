@@ -8,24 +8,27 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -41,9 +44,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -52,18 +59,22 @@ import com.canhub.cropper.CropImageContract
 import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.sinop.minimuv.core.RealtimeManager
+import com.sinop.minimuv.data.AchievementDef
 import com.sinop.minimuv.data.Achievements
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
-import com.sinop.minimuv.ui.theme.Gold
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
+import com.sinop.minimuv.ui.theme.tokens
 import java.io.ByteArrayOutputStream
+import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
@@ -78,11 +89,14 @@ fun ProfileScreen(
     onSwitchProfile: () -> Unit,
     onOpenHeatmap: () -> Unit = {},
     onOpenWrapped: () -> Unit = {},
+    onOpenBadges: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     onOpenTitle: (String) -> Unit = {},
     onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
     onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
+    val tk = tokens()
     val profileId by settings.profileId.collectAsState(initial = null)
     val scope = rememberCoroutineScope()
     val repo = remember { ProfileRepository() }
@@ -92,9 +106,9 @@ fun ProfileScreen(
     var profiles by remember { mutableStateOf<List<Profile>>(emptyList()) }
     var stats by remember { mutableStateOf<CoupleStats?>(null) }
     var titles by remember { mutableStateOf<List<com.sinop.minimuv.data.Title>>(emptyList()) }
+    var watchLogs by remember { mutableStateOf<List<com.sinop.minimuv.data.WatchLog>>(emptyList()) }
     var savedFavorites by remember { mutableStateOf<List<com.sinop.minimuv.data.Favorite>>(emptyList()) }
     var editing by remember { mutableStateOf<Profile?>(null) }
-    // Kırpılacak fotoğrafın kaynak Uri'si (seçim → kırpma zinciri)
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
 
     fun reload() {
@@ -109,290 +123,226 @@ fun ProfileScreen(
             }.onSuccess { (bundle, favs) ->
                 profiles = bundle.profiles
                 titles = bundle.titles
+                watchLogs = bundle.log
                 stats = Achievements.computeStats(bundle.titles, bundle.log, bundle.scores)
                 savedFavorites = favs
             }
         }
     }
+
     LaunchedEffect(Unit) {
         reload()
-        // Partnerin profil değişiklikleri (fotoğraf/emoji/isim) canlı yansısın
         RealtimeManager.events
             .filter { it == "profiles" || it == "titles" }
             .debounce(500)
             .collect { reload() }
     }
 
-    // Seçilen/kırpılan görüntüyü IO'da küçültüp yükler — ana iş parçacığında
-    // tam boy okuma yapılmaz (OOM/ANR çökmesi önlenir). Her adım loglanır;
-    // beklenmedik hata uygulamayı düşürmez, sessizce geri döner.
     fun handlePickedImage(uri: android.net.Uri) {
-        val target = editing
-        if (target == null) return
+        val target = editing ?: return
         scope.launch {
             try {
-                val bytes = decodeScaledJpeg(context, uri)
-                if (bytes == null) {
-                    android.util.Log.e("MinimuvPhoto", "decode başarısız: $uri")
-                    return@launch
-                }
-                android.util.Log.d("MinimuvPhoto", "decode ok: ${bytes.size} bayt")
+                val bytes = decodeScaledJpeg(context, uri) ?: return@launch
                 runCatching {
                     val url = repo.uploadAvatar(target.id, bytes)
-                    android.util.Log.d("MinimuvPhoto", "upload ok: $url")
                     repo.updateProfile(target.id, avatarUrl = url)
-                    android.util.Log.d("MinimuvPhoto", "profil güncellendi")
-                }.onFailure { e ->
-                    android.util.Log.e("MinimuvPhoto", "upload/update hatası", e)
                 }
                 reload()
-            } catch (t: Throwable) {
-                android.util.Log.e("MinimuvPhoto", "beklenmedik hata", t)
+            } catch (_: Throwable) {
             } finally {
                 editing = null
             }
         }
     }
 
-    // 1. adım: sistem galerisinden seç
     val pickMedia = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
-        android.util.Log.d("MinimuvPhoto", "galeri seçimi: $uri")
         if (uri != null) pendingCropUri = uri
     }
-    // 2. adım: kare kırpma — başlatılamazsa kırpmasız devam edilir
     val cropImage = rememberLauncherForActivityResult(CropImageContract()) { result ->
         pendingCropUri = null
         if (result.isSuccessful) {
-            val croppedUri = result.uriContent
-            android.util.Log.d("MinimuvPhoto", "kırpma ok: $croppedUri")
-            if (croppedUri != null) handlePickedImage(croppedUri) else editing = null
+            result.uriContent?.let { handlePickedImage(it) } ?: run { editing = null }
         } else {
-            android.util.Log.e("MinimuvPhoto", "kırpma iptal/hata: ${result.error}")
             editing = null
         }
+    }
+
+    val myProfile = profiles.firstOrNull { it.id == profileId } ?: profiles.firstOrNull()
+    val partnerProfile = profiles.firstOrNull { it.id != myProfile?.id }
+
+    val myColor = myProfile?.avatarColor?.let { parseColorSafe(it) } ?: tk.van
+    val partnerColor = partnerProfile?.avatarColor?.let { parseColorSafe(it) } ?: tk.sinop
+    val currentThemeMode by settings.themeMode.collectAsState(initial = "dark")
+
+    // İstatistik Hesaplamaları
+    val currentYear = LocalDate.now().year
+    val titlesThisYearCount = titles.count { t ->
+        t.finishDate?.startsWith("$currentYear") == true || t.startDate?.startsWith("$currentYear") == true
+    }.coerceAtLeast(0)
+
+    val totalUnlockedBadges = stats?.let { s -> Achievements.ALL.count { it.progress(s) >= it.target } } ?: 0
+
+    val watchedTitlesCount = remember(titles) {
+        titles.count { t ->
+            t.status != com.sinop.minimuv.data.WatchStatus.PLAN.db || t.episodeProgress > 0
+        }
+    }
+
+    val totalWatchHours = remember(titles, watchLogs) {
+        val totalEps = titles.sumOf { t ->
+            when (t.type) {
+                com.sinop.minimuv.data.ContentType.FILM.db -> 0
+                else -> if (t.status == com.sinop.minimuv.data.WatchStatus.COMPLETED.db) (t.totalEpisodes ?: t.episodeProgress) else t.episodeProgress
+            }
+        }
+        val filmsCount = titles.count { t ->
+            t.type == com.sinop.minimuv.data.ContentType.FILM.db &&
+                (t.status != com.sinop.minimuv.data.WatchStatus.PLAN.db || t.episodeProgress > 0)
+        }
+        val minutes = totalEps * 35 + filmsCount * 110
+        (minutes / 60)
     }
 
     Column(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(20.dp),
+            .statusBarsPadding()
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        Text("Profilimiz", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.padding(top = 16.dp))
-
-        SectionCard("Kişilerimiz") {
-            profiles.forEach { profile ->
-                val isCurrent = profile.id == profileId
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(14.dp))
-                        .clickable {
-                            if (isCurrent) {
-                                editing = profile
-                            } else {
-                                scope.launch {
-                                    settings.saveProfile(profile.id)
-                                    onSwitchProfile()
-                                }
-                            }
-                        }
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    AvatarView(profile = profile, size = 52.dp)
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(profile.name, style = MaterialTheme.typography.titleSmall)
-                        Text(
-                            if (isCurrent) "Düzenlemek için dokun" else "Bu profille geç 🔄",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
-                        )
+        // Üst Bar: "Aşk" + Tema Değiştirme + Ayarlar Button
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Aşk",
+                fontWeight = FontWeight.Bold,
+                fontSize = 28.sp,
+                color = Color.White,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                GlassCircleButton(onClick = {
+                    scope.launch {
+                        val nextMode = if (currentThemeMode == "light") "dark" else "light"
+                        settings.setThemeMode(nextMode)
                     }
-                    Box(
-                        Modifier
-                            .clip(RoundedCornerShape(50))
-                            .background(
-                                if (isCurrent) MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
-                                else OutlineColorProfile,
-                            )
-                            .padding(horizontal = 10.dp, vertical = 4.dp),
-                    ) {
-                        Text(
-                            if (isCurrent) "Aktif" else "Seç",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = if (isCurrent) MaterialTheme.colorScheme.primary else TextSecondary,
-                        )
-                    }
+                }) {
+                    Icon(
+                        MinimuvIcons.Dusk,
+                        contentDescription = "Tema",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
-            }
-
-            // Duolingo tarzı istatistikler
-            stats?.let { s ->
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(16.dp))
-                        .background(MaterialTheme.colorScheme.background)
-                        .padding(vertical = 12.dp),
-                    horizontalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    StatCell("🔥", "${s.streakDays}", "Seri")
-                    StatCell("🎬", "${s.totalCompleted}", "Bitirdik")
-                    StatCell("📺", "${s.totalEpisodesLogged}", "Bölüm")
-                    StatCell("🏅", "${Achievements.ALL.count { it.progress(s) >= it.target }}", "Rozet")
+                GlassCircleButton(onClick = onOpenSettings) {
+                    Icon(
+                        MinimuvIcons.SettingsIcon,
+                        contentDescription = "Ayarlar",
+                        tint = Color.White,
+                        modifier = Modifier.size(20.dp),
+                    )
                 }
             }
         }
 
-        Spacer(Modifier.height(14.dp))
-
-        SectionCard("İstatistikler") {
-            SettingsRow("📅 İzleme Takvimi") { onOpenHeatmap() }
-            SettingsRow("🎁 Yıl Özeti (Wrapped)") { onOpenWrapped() }
-        }
-
-        val favorites = titles.filter { it.isFavorite }
-        if (favorites.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            SectionCard("❤️ Favorilerimiz") {
-                favorites.chunked(3).forEach { rowItems ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        rowItems.forEach { title ->
-                            Column(
-                                Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { onOpenTitle(title.id) },
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                            ) {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth()
-                                        .aspectRatio(2f / 3f)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .background(MidnightCard),
-                                ) {
-                                    if (title.posterUrl != null) {
-                                        coil3.compose.AsyncImage(
-                                            model = title.posterUrl,
-                                            contentDescription = title.title,
-                                            modifier = Modifier.fillMaxSize(),
-                                            contentScale = ContentScale.Crop,
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.height(4.dp))
-                                Text(
-                                    title.title,
-                                    style = MaterialTheme.typography.labelSmall,
-                                    maxLines = 1,
-                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                                )
-                            }
-                        }
-                        repeat(3 - rowItems.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                }
-            }
-        }
-
-        if (savedFavorites.isNotEmpty()) {
-            Spacer(Modifier.height(14.dp))
-            SectionCard("⭐ Kişiler & Stüdyolar") {
-                savedFavorites.forEach { fav ->
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable {
-                                when (fav.favType) {
-                                    "character" -> onOpenPerson(com.sinop.minimuv.core.PersonSource.ANIME, fav.externalId)
-                                    "studio" -> onOpenStudio(
-                                        if (fav.source == "anime") com.sinop.minimuv.data.ContentType.ANIME
-                                        else com.sinop.minimuv.data.ContentType.FILM,
-                                        fav.externalId,
-                                    )
-                                    else -> onOpenPerson(com.sinop.minimuv.core.PersonSource.TMDB, fav.externalId)
-                                }
-                            }
-                            .padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Box(
-                            Modifier
-                                .size(40.dp)
-                                .clip(CircleShape)
-                                .background(MidnightCard),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (fav.imageUrl != null) {
-                                coil3.compose.AsyncImage(
-                                    model = fav.imageUrl,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            } else {
-                                Text(
-                                    when (fav.favType) {
-                                        "character" -> "🎭"
-                                        "studio" -> "🏢"
-                                        else -> "🎬"
-                                    },
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(12.dp))
-                        Column(Modifier.weight(1f)) {
-                            Text(fav.name, style = MaterialTheme.typography.titleSmall, maxLines = 1)
-                            Text(
-                                when (fav.favType) {
-                                    "character" -> "Karakter"
-                                    "studio" -> "Stüdyo / Yapımcı"
-                                    else -> "Oyuncu / Yönetmen"
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = TextSecondary,
-                            )
-                        }
-                        Text(
-                            "❤️",
-                            modifier = Modifier
-                                .clip(CircleShape)
-                                .clickable {
-                                    scope.launch {
-                                        runCatching { favRepo.removeFavorite(fav.profileId, fav.favType, fav.source, fav.externalId) }
-                                        savedFavorites = savedFavorites.filterNot { it.id == fav.id }
-                                    }
-                                }
-                                .padding(8.dp),
-                        )
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(14.dp))
-        Text(
-            "Profiline dokunarak ismini, emojini, rengini ve fotoğrafını değiştirebilirsin.",
-            style = MaterialTheme.typography.bodySmall,
-            color = TextSecondary,
+        // 1. Çift Avatarları ve Seri Bitişi
+        CoupleHeaderBanner(
+            myProfile = myProfile,
+            partnerProfile = partnerProfile,
+            myColor = myColor,
+            partnerColor = partnerColor,
+            streakDays = stats?.streakDays ?: 0,
+            onEditMyProfile = { editing = myProfile },
+            onEditPartnerProfile = { editing = partnerProfile },
+            onSwitchProfile = onSwitchProfile,
         )
-        Spacer(Modifier.padding(top = 24.dp))
+
+        // 2. 3'lü İstatistik Kutuları: İzlenen Başlık | İzleme Süresi | Aktif Streak
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+        ) {
+            StatBox(
+                value = "$watchedTitlesCount",
+                label = "İzlenen Başlık",
+                modifier = Modifier.weight(1f),
+            )
+            StatBox(
+                value = "${totalWatchHours} saat",
+                label = "İzleme Süresi",
+                modifier = Modifier.weight(1f),
+            )
+            StatBox(
+                value = "${stats?.streakDays ?: 0} gün",
+                label = "Aktif Streak",
+                modifier = Modifier.weight(1f),
+            )
+        }
+
+        // 3. Rozetlerimiz (Üst Satır: 2 Rastgele Kazanılan | Alt Satırlar: Tamamlanmaya Yakın Olanlar)
+        Column {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "Rozetlerimiz",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = Color.White,
+                )
+                Text(
+                    "Tümünü gör ($totalUnlockedBadges / ${Achievements.ALL.size}) ›",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
+                    color = Color(0xFFFFC107),
+                    modifier = Modifier.clickable(onClick = onOpenBadges),
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            BadgesOverviewCard(
+                stats = stats,
+                onOpenBadges = onOpenBadges,
+            )
+        }
+
+        // 4. İzleme Takvimi (Aylık Görünüm)
+        Column {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    "İzleme takvimi",
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    color = Color.White,
+                )
+                Text(
+                    "Son 4 ay",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                    color = tk.textMuted,
+                )
+            }
+            Spacer(Modifier.height(10.dp))
+            HeatmapCard(logs = watchLogs)
+        }
+
+        // 5. Yıl Özeti (Wrapped Banner)
+        WrappedSummaryBanner(
+            year = currentYear,
+            titlesCount = if (titlesThisYearCount > 0) titlesThisYearCount else titles.size,
+            hoursCount = totalWatchHours,
+            onOpenWrapped = onOpenWrapped,
+        )
+
+        Spacer(Modifier.height(16.dp))
     }
 
-    // Kırpma başlatıcı: seçim yapılınca kare kırpma ekranı açılır;
-    // kırpma etkinliği başlatılamazsa (bozuk URI vb.) doğrudan orijinal görüntü işlenir.
     LaunchedEffect(pendingCropUri) {
         val uri = pendingCropUri ?: return@LaunchedEffect
         val launched = runCatching {
@@ -410,16 +360,13 @@ fun ProfileScreen(
                     ),
                 ),
             )
-        }
-            .onFailure { e -> android.util.Log.e("MinimuvPhoto", "kırpma başlatılamadı", e) }
-            .isSuccess
+        }.isSuccess
         if (!launched) {
             pendingCropUri = null
             handlePickedImage(uri)
         }
     }
 
-    // Profil düzenleme diyaloğu
     editing?.let { target ->
         ProfileEditDialog(
             profile = target,
@@ -445,7 +392,525 @@ fun ProfileScreen(
     }
 }
 
-private val OutlineColorProfile = Color(0xFF2B333F)
+// ── 1. Çift Başlığı & Avatarlar ────────────────────────────────────────────
+
+@Composable
+private fun CoupleHeaderBanner(
+    myProfile: Profile?,
+    partnerProfile: Profile?,
+    myColor: Color,
+    partnerColor: Color,
+    streakDays: Int,
+    onEditMyProfile: () -> Unit,
+    onEditPartnerProfile: () -> Unit,
+    onSwitchProfile: () -> Unit,
+) {
+    val tk = tokens()
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // Sol Profil
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .border(3.dp, myColor, CircleShape)
+                    .clickable(onClick = onEditMyProfile),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (myProfile != null) {
+                    AvatarView(profile = myProfile, size = 80.dp)
+                } else {
+                    Text("V", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                myProfile?.displayName ?: "Van",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = Color.White,
+            )
+        }
+
+        // Ortadaki Bağlantı ve Ateşli Kalp Seri Rozeti
+        Box(contentAlignment = Alignment.Center) {
+            Box(
+                Modifier
+                    .width(100.dp)
+                    .height(2.dp)
+                    .background(Color.White.copy(alpha = 0.18f)),
+            )
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(tk.surface1)
+                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(50))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("❤️‍🔥", fontSize = 13.sp)
+                    Spacer(Modifier.width(4.dp))
+                    Text(
+                        "$streakDays gün",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                        color = Color.White,
+                    )
+                }
+            }
+        }
+
+        // Sağ Profil
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Box(
+                Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .border(3.dp, partnerColor, CircleShape)
+                    .clickable(onClick = onEditPartnerProfile),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (partnerProfile != null) {
+                    AvatarView(profile = partnerProfile, size = 80.dp)
+                } else {
+                    Text("S", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                partnerProfile?.displayName ?: "Sinop",
+                fontWeight = FontWeight.Bold,
+                fontSize = 15.sp,
+                color = Color.White,
+            )
+        }
+    }
+}
+
+// ── 2. İstatistik Kutusu ──────────────────────────────────────────────────
+
+@Composable
+private fun StatBox(value: String, label: String, modifier: Modifier = Modifier) {
+    val tk = tokens()
+    Box(
+        modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(tk.surface1)
+            .padding(vertical = 14.dp, horizontal = 12.dp),
+    ) {
+        Column {
+            Text(
+                value,
+                fontFamily = FontFamily.Serif,
+                fontWeight = FontWeight.Bold,
+                fontSize = 22.sp,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(4.dp))
+            Text(
+                label,
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                color = tk.textMuted,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+// ── 3. Rozetlerimiz Genel Bakış Kartı ──────────────────────────────────────
+
+@Composable
+private fun BadgesOverviewCard(
+    stats: CoupleStats?,
+    onOpenBadges: () -> Unit,
+) {
+    val tk = tokens()
+    val allDefs = Achievements.ALL
+
+    // Üst satır (Row 1): 2 rastgele tamamlanmış rozet
+    // Orta ve Alt satır (Row 2 & 3): Tamamlanmaya en yakın 4 kilitli rozet
+    val displayDefs = remember(stats) {
+        if (stats == null) allDefs.take(6)
+        else {
+            val (unlocked, locked) = allDefs.partition { it.progress(stats) >= it.target }
+            val row1 = unlocked.shuffled().take(2)
+            val row1Keys = row1.map { it.key }.toSet()
+
+            val remainingLocked = locked
+                .filterNot { it.key in row1Keys }
+                .sortedByDescending { it.progress(stats).toFloat() / it.target.coerceAtLeast(1) }
+
+            val row2and3 = remainingLocked.take(4)
+            val currentList = row1 + row2and3
+
+            if (currentList.size < 6) {
+                val currentKeys = currentList.map { it.key }.toSet()
+                val extra = allDefs.filterNot { it.key in currentKeys }.take(6 - currentList.size)
+                currentList + extra
+            } else {
+                currentList
+            }
+        }
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(tk.surface1)
+            .clickable(onClick = onOpenBadges)
+            .padding(16.dp),
+    ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            val rows = displayDefs.chunked(2)
+            rows.forEach { pair ->
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    pair.forEach { def ->
+                        val currentProgress = stats?.let { def.progress(it) } ?: 0
+                        val isUnlocked = currentProgress >= def.target
+                        BadgeTile(
+                            def = def,
+                            isUnlocked = isUnlocked,
+                            currentProgress = currentProgress,
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
+                    if (pair.size < 2) {
+                        Spacer(Modifier.weight(1f))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun BadgeTile(
+    def: AchievementDef,
+    isUnlocked: Boolean,
+    currentProgress: Int,
+    modifier: Modifier = Modifier,
+) {
+    val tk = tokens()
+    val bg = if (isUnlocked) Color(0xFF2A2415) else tk.surface2
+    val borderCol = if (isUnlocked) Color(0xFFFFC107).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.08f)
+
+    Row(
+        modifier
+            .clip(RoundedCornerShape(14.dp))
+            .background(bg)
+            .border(1.dp, borderCol, RoundedCornerShape(14.dp))
+            .padding(10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(CircleShape)
+                .background(if (isUnlocked) Color(0xFFFFC107).copy(alpha = 0.2f) else tk.surface3),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(def.emoji, fontSize = 18.sp)
+        }
+        Spacer(Modifier.width(8.dp))
+        Column(Modifier.weight(1f)) {
+            Text(
+                def.title,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                color = Color.White,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Spacer(Modifier.height(2.dp))
+            if (isUnlocked) {
+                Text(
+                    "Kazanıldı",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = Color(0xFFFFC107),
+                )
+            } else {
+                Text(
+                    "$currentProgress / ${def.target}",
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                    color = tk.textMuted,
+                )
+            }
+        }
+    }
+}
+
+// ── 4. İzleme Takvimi Kartı (Aylık Takvim Görünümü) ──────────────────────────
+
+@Composable
+private fun HeatmapCard(logs: List<com.sinop.minimuv.data.WatchLog>) {
+    val tk = tokens()
+    val byDate = remember(logs) { logs.groupBy { it.date }.mapValues { e -> e.value.sumOf { it.episodesWatched } } }
+    val maxCount = remember(byDate) { (byDate.values.maxOrNull() ?: 1).coerceAtLeast(1) }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(tk.surface1)
+            .padding(16.dp),
+    ) {
+        Column {
+            HeatmapMonthGrid(byDate = byDate, maxCount = maxCount)
+            Spacer(Modifier.height(12.dp))
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("Az", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = tk.textMuted)
+                Spacer(Modifier.width(6.dp))
+                listOf(0.15f, 0.40f, 0.70f, 1.0f).forEach { frac ->
+                    Box(
+                        Modifier
+                            .size(10.dp)
+                            .clip(RoundedCornerShape(2.dp))
+                            .background(Color(0xFF26A69A).copy(alpha = frac)),
+                    )
+                    Spacer(Modifier.width(3.dp))
+                }
+                Spacer(Modifier.width(3.dp))
+                Text("Çok", style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp), color = tk.textMuted)
+            }
+        }
+    }
+}
+
+private fun fullMonthNameTr(month: Int): String = when (month) {
+    1 -> "Ocak"
+    2 -> "Şubat"
+    3 -> "Mart"
+    4 -> "Nisan"
+    5 -> "Mayıs"
+    6 -> "Haziran"
+    7 -> "Temmuz"
+    8 -> "Ağustos"
+    9 -> "Eylül"
+    10 -> "Ekim"
+    11 -> "Kasım"
+    12 -> "Aralık"
+    else -> ""
+}
+
+private val DAY_HEADERS_TR = listOf("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
+
+@Composable
+private fun HeatmapMonthGrid(byDate: Map<String, Int>, maxCount: Int) {
+    val today = LocalDate.now()
+
+    // Son 4 ayın takvim kartları
+    val yearMonths = remember(today) {
+        (3 downTo 0).map { i ->
+            java.time.YearMonth.from(today.minusMonths(i.toLong()))
+        }
+    }
+
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        yearMonths.forEach { ym ->
+            MonthCalendarCard(ym = ym, byDate = byDate, maxCount = maxCount)
+        }
+    }
+}
+
+@Composable
+private fun MonthCalendarCard(
+    ym: java.time.YearMonth,
+    byDate: Map<String, Int>,
+    maxCount: Int,
+) {
+    val tk = tokens()
+    val monthName = fullMonthNameTr(ym.monthValue)
+    val year = ym.year
+
+    val firstDay = ym.atDay(1)
+    val lastDay = ym.atEndOfMonth()
+
+    val mondayOfFirstWeek = firstDay.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val sundayOfLastWeek = lastDay.with(TemporalAdjusters.nextOrSame(DayOfWeek.SUNDAY))
+
+    val totalDays = java.time.temporal.ChronoUnit.DAYS.between(mondayOfFirstWeek, sundayOfLastWeek.plusDays(1)).toInt()
+    val weeksCount = (totalDays / 7).coerceAtLeast(1)
+
+    val cellSize = 28.dp
+    val gap = 3.dp
+
+    Box(
+        Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(tk.surface2.copy(alpha = 0.5f))
+            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+            .padding(12.dp),
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            // Başlık: örn. "Şubat 2025"
+            Text(
+                "$monthName $year",
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                color = Color.White,
+            )
+            Spacer(Modifier.height(10.dp))
+
+            // Gün İsimleri Satırı: Pzt Sal Çar Per Cum Cmt Paz
+            Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                DAY_HEADERS_TR.forEach { dayHeader ->
+                    Box(
+                        Modifier.size(cellSize),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            dayHeader,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 10.sp,
+                            color = Color.White.copy(alpha = 0.6f),
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+
+            // Haftalar ve Gün Numaraları Izgarası
+            Column(verticalArrangement = Arrangement.spacedBy(gap)) {
+                repeat(weeksCount) { w ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(gap)) {
+                        repeat(7) { d ->
+                            val dayDate = mondayOfFirstWeek.plusWeeks(w.toLong()).plusDays(d.toLong())
+                            val inThisMonth = dayDate.monthValue == ym.monthValue
+
+                            if (inThisMonth) {
+                                val count = byDate[dayDate.toString()] ?: 0
+                                val hasWatched = count > 0
+
+                                val alpha = if (hasWatched) (count.toFloat() / maxCount).coerceIn(0.40f, 1.0f) else 0.08f
+                                val bgCol = if (hasWatched) Color(0xFF26A69A).copy(alpha = alpha) else tk.surface3.copy(alpha = 0.4f)
+                                val borderCol = if (hasWatched) Color(0xFF80CBC4).copy(alpha = 0.6f) else Color.Transparent
+
+                                Box(
+                                    Modifier
+                                        .size(cellSize)
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .background(bgCol)
+                                        .then(
+                                            if (hasWatched) Modifier.border(1.dp, borderCol, RoundedCornerShape(6.dp))
+                                            else Modifier,
+                                        ),
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    Text(
+                                        "${dayDate.dayOfMonth}",
+                                        fontSize = 11.sp,
+                                        fontWeight = if (hasWatched) FontWeight.Bold else FontWeight.Normal,
+                                        color = if (hasWatched) Color.White else Color.White.copy(alpha = 0.35f),
+                                    )
+                                }
+                            } else {
+                                Box(Modifier.size(cellSize))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ── 5. Yıl Özeti (Wrapped Banner) ──────────────────────────────────────────
+
+@Composable
+private fun WrappedSummaryBanner(
+    year: Int,
+    titlesCount: Int,
+    hoursCount: Int,
+    onOpenWrapped: () -> Unit,
+) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .background(
+                Brush.horizontalGradient(
+                    listOf(
+                        Color(0xFF8A2387),
+                        Color(0xFFE94057),
+                        Color(0xFFF27121),
+                    ),
+                ),
+            )
+            .clickable(onClick = onOpenWrapped)
+            .padding(20.dp),
+    ) {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "YIL ÖZETİ",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 11.sp,
+                        letterSpacing = 1.2.sp,
+                    ),
+                    color = Color.White.copy(alpha = 0.90f),
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    "$year",
+                    fontFamily = FontFamily.Serif,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 40.sp,
+                    color = Color.White,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "$titlesCount yapım • $hoursCount saat birlikte",
+                    style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
+                    color = Color.White,
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Box(
+                Modifier
+                    .clip(RoundedCornerShape(50))
+                    .background(Color.Black.copy(alpha = 0.65f))
+                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+            ) {
+                Text(
+                    "Hikayeyi aç",
+                    style = MaterialTheme.typography.labelMedium.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp,
+                    ),
+                    color = Color.White,
+                )
+            }
+        }
+    }
+}
+
+// ── Yardımcılar ve Modallar ────────────────────────────────────────────────
 
 private data class StatsBundle(
     val profiles: List<Profile>,
@@ -453,6 +918,21 @@ private data class StatsBundle(
     val log: List<com.sinop.minimuv.data.WatchLog>,
     val scores: List<com.sinop.minimuv.data.TitleScore>,
 )
+
+@Composable
+internal fun GlassCircleButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    Box(
+        Modifier
+            .size(40.dp)
+            .clip(CircleShape)
+            .background(Color(0x9910141A))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
+    }
+}
 
 @Composable
 internal fun AvatarView(profile: Profile, size: Dp, onClick: (() -> Unit)? = null) {
@@ -484,15 +964,6 @@ internal fun parseColorSafe(hex: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrElse { Color(0xFF3D8BFF) }
 
 @Composable
-private fun StatCell(emoji: String, value: String, label: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(emoji, style = MaterialTheme.typography.titleSmall)
-        Text(value, style = MaterialTheme.typography.titleLarge)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
-    }
-}
-
-@Composable
 private fun ProfileEditDialog(
     profile: Profile,
     onDismiss: () -> Unit,
@@ -500,24 +971,26 @@ private fun ProfileEditDialog(
     onPickPhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(profile.name) }
+    var name by remember { mutableStateOf(profile.displayName) }
     var emoji by remember { mutableStateOf(profile.emoji ?: "😊") }
     var color by remember { mutableStateOf(profile.avatarColor ?: COLOR_CHOICES[0]) }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Profili düzenle") },
+        title = { Text("Profili düzenle", fontWeight = FontWeight.Bold) },
         text = {
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Box(contentAlignment = Alignment.BottomEnd) {
                     AvatarView(profile.copy(emoji = emoji), size = 72.dp)
-                    Text(
-                        "📷",
-                        style = MaterialTheme.typography.titleSmall,
+                    Icon(
+                        MinimuvIcons.Camera,
+                        contentDescription = "Fotoğraf seç",
+                        tint = MaterialTheme.colorScheme.onPrimary,
                         modifier = Modifier
                             .clip(CircleShape)
                             .background(MaterialTheme.colorScheme.primary)
                             .padding(6.dp)
+                            .size(16.dp)
                             .clickable(onClick = onPickPhoto),
                     )
                 }
@@ -557,11 +1030,11 @@ private fun ProfileEditDialog(
         confirmButton = {
             TextButton(onClick = { onSave(name.trim(), emoji, color) }) { Text("Kaydet") }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Vazgeç") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("İptal") } },
     )
 }
 
-@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FlowRowOfEmojis(selected: String, onSelect: (String) -> Unit) {
     FlowRow(
@@ -573,7 +1046,7 @@ private fun FlowRowOfEmojis(selected: String, onSelect: (String) -> Unit) {
                 Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(if (selected == e) OutlineColorProfile else MidnightCard)
+                    .background(if (selected == e) Color(0xFF2B333F) else MidnightCard)
                     .clickable { onSelect(e) },
                 contentAlignment = Alignment.Center,
             ) {
@@ -583,41 +1056,9 @@ private fun FlowRowOfEmojis(selected: String, onSelect: (String) -> Unit) {
     }
 }
 
-@Composable
-internal fun SectionCard(title: String, content: @Composable () -> Unit) {
-    Column {
-        Text(title, style = MaterialTheme.typography.labelLarge, color = TextSecondary, modifier = Modifier.padding(bottom = 8.dp))
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(16.dp))
-                .background(MidnightCard)
-                .padding(horizontal = 16.dp, vertical = 8.dp),
-        ) {
-            content()
-        }
-    }
-}
-
-@Composable
-private fun SettingsRow(label: String, color: Color = MaterialTheme.colorScheme.onBackground, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .padding(vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(label, style = MaterialTheme.typography.titleSmall, color = color, modifier = Modifier.weight(1f))
-        Text("›", color = TextSecondary, style = MaterialTheme.typography.titleLarge)
-    }
-}
-
 private suspend fun decodeScaledJpeg(context: android.content.Context, uri: android.net.Uri, maxSize: Int = 512): ByteArray? =
     withContext(Dispatchers.IO) {
         try {
-            // Önce sadece boyutları öğren — tam boy bitmap belleğe alınmaz (OOM koruması)
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             context.contentResolver.openInputStream(uri)?.use { input ->
                 BitmapFactory.decodeStream(input, null, bounds)
@@ -636,7 +1077,6 @@ private suspend fun decodeScaledJpeg(context: android.content.Context, uri: andr
             bmp.recycle()
             out.toByteArray()
         } catch (t: Throwable) {
-            // OOM dahil her hata: fotoğraf akışı uygulamayı düşürmesin
             android.util.Log.e("MinimuvPhoto", "decode exception", t)
             null
         }

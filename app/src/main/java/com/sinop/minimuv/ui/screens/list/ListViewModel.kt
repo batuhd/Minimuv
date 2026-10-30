@@ -3,6 +3,7 @@ package com.sinop.minimuv.ui.screens.list
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sinop.minimuv.core.RealtimeManager
+import com.sinop.minimuv.data.EpisodeProgress
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.Title
@@ -23,6 +24,7 @@ class ListViewModel : ViewModel() {
     val loading = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
     val profiles = MutableStateFlow<List<Profile>>(emptyList())
+    val perProfileProgress = MutableStateFlow<List<EpisodeProgress>>(emptyList())
 
     init {
         refresh()
@@ -38,11 +40,13 @@ class ListViewModel : ViewModel() {
                     // Liste ve profiller paralel çekilir — sıralı iki ağ turu yerine bir tur
                     val titlesDeferred = async { repo.getTitlesLite() }
                     val profilesDeferred = async { profileRepo.getProfiles() }
-                    titlesDeferred.await() to profilesDeferred.await()
+                    val progressDeferred = async { runCatching { repo.getAllEpisodeProgress() }.getOrDefault(emptyList()) }
+                    Triple(titlesDeferred.await(), profilesDeferred.await(), progressDeferred.await())
                 }
-                result.onSuccess { (titlesList, profilesList) ->
+                result.onSuccess { (titlesList, profilesList, progressList) ->
                     titles.value = titlesList
                     profiles.value = profilesList
+                    perProfileProgress.value = progressList
                     error.value = null
                     loading.value = false
                     return@launch
@@ -64,6 +68,8 @@ class ListViewModel : ViewModel() {
                 .collect {
                     runCatching { repo.getTitlesLite() }
                         .onSuccess { titles.value = it }
+                    runCatching { repo.getAllEpisodeProgress() }
+                        .onSuccess { perProfileProgress.value = it }
                 }
         }
     }
@@ -82,12 +88,21 @@ class ListViewModel : ViewModel() {
 
     fun reorderPlanList(orderedIds: List<String>) {
         val current = titles.value.orEmpty()
+        android.util.Log.d("MinimuvOrder", "reorderPlanList -> ${orderedIds.joinToString()}")
         viewModelScope.launch {
             orderedIds.forEachIndexed { index, id ->
                 val title = current.firstOrNull { it.id == id } ?: return@forEachIndexed
                 val currentPriority = title.priorityOrder
                 if (currentPriority == null || currentPriority != index + 1) {
                     runCatching { repo.updatePriority(id, index + 1) }
+                        .onSuccess {
+                            android.util.Log.d("MinimuvOrder", "priority OK $id -> ${index + 1}")
+                            val updated = title.copy(priorityOrder = index + 1)
+                            titles.value = titles.value.orEmpty().map { if (it.id == id) updated else it }
+                        }
+                        .onFailure {
+                            android.util.Log.e("MinimuvOrder", "priority FAILED $id -> ${index + 1}", it)
+                        }
                 }
             }
         }

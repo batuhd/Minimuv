@@ -5,43 +5,34 @@ import android.os.Build
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FloatingActionButton
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.app.ActivityCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -55,41 +46,35 @@ import com.sinop.minimuv.core.PartnerEventsRuntime
 import com.sinop.minimuv.core.SupabaseProvider
 import com.sinop.minimuv.core.PersonSource
 import com.sinop.minimuv.data.SettingsStore
-import com.sinop.minimuv.data.ContentType
-import com.sinop.minimuv.ui.components.MinimuvButton
+import com.sinop.minimuv.ui.components.BottomPillItem
+import com.sinop.minimuv.ui.components.BottomPillNav
 import com.sinop.minimuv.ui.components.InAppUpdateHost
-import com.sinop.minimuv.ui.screens.achievements.AchievementsScreen
 import com.sinop.minimuv.ui.screens.add.AddScreen
 import com.sinop.minimuv.ui.screens.detail.DetailScreen
 import com.sinop.minimuv.ui.screens.detail.DetailViewModel
-import com.sinop.minimuv.ui.screens.list.ListScreen
+import com.sinop.minimuv.ui.screens.list.LibraryScreen
 import com.sinop.minimuv.ui.screens.list.ListViewModel
 import com.sinop.minimuv.ui.screens.person.PersonScreen
 import com.sinop.minimuv.ui.screens.settings.SettingsScreen
-import com.sinop.minimuv.ui.screens.studio.StudioScreen
 import com.sinop.minimuv.ui.screens.setup.ProfileSelectScreen
 import com.sinop.minimuv.ui.screens.setup.SupabaseSetupScreen
 import com.sinop.minimuv.ui.screens.stats.HeatmapScreen
 import com.sinop.minimuv.ui.screens.stats.WrappedScreen
+import com.sinop.minimuv.ui.screens.studio.StudioScreen
 import com.sinop.minimuv.ui.screens.wheel.WheelScreen
-import com.sinop.minimuv.ui.theme.MinimuvTheme
 import com.sinop.minimuv.ui.theme.ThemeAccent
-import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
+import com.sinop.minimuv.ui.theme.ThemeMode
+import com.sinop.minimuv.ui.theme.MinimuvTheme
 import kotlinx.coroutines.launch
 
-sealed class BottomTab(
-    val route: String,
-    val label: String,
-    val icon: ImageVector,
-) {
-    data object List : BottomTab("list", "Liste", MinimuvIcons.ListIcon)
-    data object Wheel : BottomTab("wheel", "Çark", MinimuvIcons.WheelIcon)
-    data object Badges : BottomTab("badges", "Rozetler", MinimuvIcons.BadgeIcon)
-    data object Profile : BottomTab("profile", "Profil", MinimuvIcons.ProfileIcon)
-    data object Settings : BottomTab("settings", "Ayarlar", MinimuvIcons.SettingsIcon)
-}
-
-private val TABS = listOf(BottomTab.List, BottomTab.Wheel, BottomTab.Badges, BottomTab.Profile, BottomTab.Settings)
+// Yeni alt sekmeler: Kütüphane / Ara / Çark / Aşk
+private val TAB_ROUTES = listOf("list", "search", "wheel", "us")
+private val PILLS = listOf(
+    BottomPillItem("Kütüphane", com.sinop.minimuv.ui.components.DcPaths.LIBRARY),
+    BottomPillItem("Ara", com.sinop.minimuv.ui.components.DcPaths.SEARCH),
+    BottomPillItem("Çark", com.sinop.minimuv.ui.components.DcPaths.WHEEL),
+    BottomPillItem("Aşk", com.sinop.minimuv.ui.components.DcPaths.HEART),
+)
 
 @Composable
 fun MinimuvApp() {
@@ -99,10 +84,20 @@ fun MinimuvApp() {
     val url = settings.urlFrom(prefs)
     val key = settings.keyFrom(prefs)
     val profileId = settings.profileFrom(prefs)
-    val accentName = prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT)
-    val accent = ThemeAccent.entries.firstOrNull { it.name == accentName } ?: ThemeAccent.BLUE
+    val accentVanName = prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT_VAN)
+        ?: prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT)
+    val accentSinopName = prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT_SINOP)
+        ?: prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT)
+    val van = ThemeAccent.entries.firstOrNull { it.name == accentVanName } ?: ThemeAccent.BLUE
+    val sinop = ThemeAccent.entries.firstOrNull { it.name == accentSinopName } ?: ThemeAccent.TEAL
+    val modeName = prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_MODE)
+    val mode = when (modeName) {
+        "light" -> ThemeMode.LIGHT
+        "system" -> ThemeMode.SYSTEM
+        else -> ThemeMode.DARK
+    }
 
-    MinimuvTheme(accent = accent) {
+    MinimuvTheme(van = van.primary, sinop = sinop.primary, mode = mode) {
         when {
             // DataStore'un İLK emisyonunu bekliyoruz — boş veri ile karışmasın
             prefs == null -> Splash()
@@ -111,7 +106,8 @@ fun MinimuvApp() {
             }
             else -> {
                 remember(url, key) {
-                    SupabaseProvider.configure(url!!, key!!)
+                    SupabaseProvider.configure(url, key)
+                    true
                 }
                 if (profileId.isNullOrBlank()) {
                     ProfileSelectScreen(settings = settings, onDone = {})
@@ -148,15 +144,15 @@ private fun Splash() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainApp(settings: SettingsStore, profileId: String) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
-    val currentDestination = backStackEntry?.destination
+    val currentRoute = backStackEntry?.destination?.route
     val context = LocalContext.current
     val savedListView by settings.listView.collectAsState(initial = null)
     val savedDisplayLang by settings.displayLang.collectAsState(initial = null)
+    val showNav = currentRoute in TAB_ROUTES
 
     LaunchedEffect(profileId) {
         NotificationHelper.ensureChannels(context)
@@ -180,168 +176,85 @@ fun MainApp(settings: SettingsStore, profileId: String) {
 
     val onboardingDone by settings.onboardingDone.collectAsState(initial = false)
     if (!onboardingDone) {
-        val scope = rememberCoroutineScope()
-        ModalBottomSheet(
-            onDismissRequest = { scope.launch { settings.setOnboardingDone() } },
-            containerColor = MaterialTheme.colorScheme.surfaceVariant,
-        ) {
-            Column(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Text("🎬", style = MaterialTheme.typography.displayLarge)
-                Spacer(Modifier.height(6.dp))
-                Text("Minimuv'a hoş geldiniz!", style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(10.dp))
-                Text(
-                    "📋 Liste: izlediklerimiz, puanlarımız, notlarımız.\n" +
-                        "🎡 Çark: kararsız kaldığımızda karar versin.\n" +
-                        "🔒 Ayrı ayrı izlerken bölüm notları, diğeri o bölüme gelene kadar kilitli kalır.\n" +
-                        "🏅 Rozetler: sizin değil, ikinizin birlikte kazandığı başarılar.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(18.dp))
-                MinimuvButton(
-                    label = "Başlayalım 🎬",
-                    onClick = { scope.launch { settings.setOnboardingDone() } },
-                )
-                Spacer(Modifier.height(24.dp))
-            }
-        }
+        // Tasarımda onboarding yok; mevcut mantığı sadeleştirilmiş kutu korur
+        PendingOnboarding(settings = settings)
     }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        bottomBar = {
-            val isMainTab = TABS.any { tab ->
-                currentDestination?.hierarchy?.any { it.route == tab.route } == true
-            }
-            if (isMainTab) {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.surfaceVariant) {
-                    TABS.forEach { tab ->
-                        val selected = currentDestination?.hierarchy
-                            ?.any { it.route == tab.route } == true
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                if (!selected) {
-                                    navController.navigate(tab.route) {
-                                        popUpTo(navController.graph.findStartDestination().id) {
-                                            saveState = true
-                                        }
-                                        launchSingleTop = true
-                                        restoreState = true
-                                    }
-                                }
-                            },
-                            icon = {
-                                Icon(
-                                    tab.icon,
-                                    contentDescription = tab.label,
-                                    modifier = Modifier.padding(bottom = 2.dp),
-                                )
-                            },
-                            label = { Text(tab.label, fontSize = 11.sp) },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = com.sinop.minimuv.ui.theme.onColorFor(MaterialTheme.colorScheme.primary),
-                                selectedTextColor = MaterialTheme.colorScheme.primary,
-                                indicatorColor = MaterialTheme.colorScheme.primary,
-                                unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                                unselectedTextColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                        )
-                    }
-                }
-            }
-        },
-        floatingActionButton = {
-            if (currentDestination?.hierarchy?.any { it.route == BottomTab.List.route } == true) {
-                FloatingActionButton(
-                    onClick = { navController.navigate("add") },
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = com.sinop.minimuv.ui.theme.onColorFor(MaterialTheme.colorScheme.primary),
-                ) {
-                    Icon(
-                        androidx.compose.material.icons.Icons.Filled.Search,
-                        contentDescription = "Ara",
-                    )
-                }
-            }
-        },
-    ) { innerPadding ->
+    // Tam ekran ekranların alt menüye binmesine izin ver, sekmelerde içermin altını boş bırak
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+    ) {
         NavHost(
             navController = navController,
-            startDestination = BottomTab.List.route,
-            modifier = Modifier.padding(innerPadding),
+            startDestination = "list",
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (showNav) Modifier.padding(bottom = 96.dp) else Modifier),
         ) {
-            composable(BottomTab.List.route) {
+            composable("list") {
                 val vm: ListViewModel = viewModel()
-                ListScreen(
+                val listScope = androidx.compose.runtime.rememberCoroutineScope()
+                LibraryScreen(
                     vm = vm,
                     viewMode = com.sinop.minimuv.ui.screens.list.ViewMode.fromDb(savedListView),
                     displayLang = savedDisplayLang,
                     onOpenTitle = { navController.navigate("detail/${it}") },
                     onEditTitle = { navController.navigate("detail/${it}?edit=true") },
-                    onOpenPlanOrder = { navController.navigate("plan_order") },
+                    onViewModeChange = { m ->
+                        listScope.launch { settings.saveListView(m.name) }
+                    },
                 )
             }
             composable("plan_order") {
                 com.sinop.minimuv.ui.screens.list.PlanOrderScreen(onBack = { navController.popBackStack() })
             }
-            composable(BottomTab.Wheel.route) {
-                WheelScreen(onOpenTitle = { navController.navigate("detail/${it}") })
-            }
-            composable(BottomTab.Badges.route) {
-                AchievementsScreen()
-            }
-            composable(BottomTab.Profile.route) {
-                com.sinop.minimuv.ui.screens.profile.ProfileScreen(
-                    settings = settings,
-                    onSwitchProfile = {
-                        navController.navigate(BottomTab.List.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                        }
-                    },
-                    onOpenHeatmap = { navController.navigate("heatmap") },
-                    onOpenWrapped = { navController.navigate("wrapped") },
-                    onOpenTitle = { navController.navigate("detail/${it}") },
-                    onOpenPerson = { source, id ->
-                        navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
-                    },
-                    onOpenStudio = { type, id ->
-                        navController.navigate("studio/${type.db}/$id")
-                    },
-                )
-            }
-            composable(BottomTab.Settings.route) {
-                SettingsScreen(
-                    settings = settings,
-                    onSwitchProfile = {
-                        navController.navigate(BottomTab.List.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                        }
-                    },
-                )
-            }
-            composable("add") {
+            composable("search") {
                 AddScreen(
                     settings = settings,
-                    onBack = { navController.popBackStack() },
                     onPicked = { navController.navigate("detail/draft") },
                     onOpenPerson = { source, id ->
                         navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
                     },
                     onOpenStudio = { type, id ->
                         navController.navigate("studio/${type.db}/$id")
+                    },
+                )
+            }
+            composable("wheel") {
+                WheelScreen(onOpenTitle = { navController.navigate("detail/${it}") })
+            }
+            composable("us") {
+                com.sinop.minimuv.ui.screens.profile.ProfileScreen(
+                    settings = settings,
+                    onSwitchProfile = {
+                        navController.navigate("list") {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                        }
+                    },
+                    onOpenHeatmap = { navController.navigate("heatmap") },
+                    onOpenWrapped = { navController.navigate("wrapped") },
+                    onOpenBadges = { navController.navigate("achievements") },
+                    onOpenSettings = { navController.navigate("settings") },
+                    onOpenTitle = { navController.navigate("detail/${it}") },
+                    onOpenPerson = { source, id ->
+                        navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
+                    },
+                    onOpenStudio = { type, id ->
+                        navController.navigate("studio/${type.db}/$id")
+                    },
+                )
+            }
+            composable("settings") {
+                SettingsScreen(
+                    settings = settings,
+                    onSwitchProfile = {
+                        navController.navigate("list") {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                        }
                     },
                 )
             }
@@ -371,7 +284,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     },
                     onBack = { navController.popBackStack() },
                     onSaved = {
-                        navController.popBackStack(BottomTab.List.route, inclusive = false)
+                        navController.popBackStack("list", inclusive = false)
                     },
                     onDeleted = { navController.popBackStack() },
                 )
@@ -382,32 +295,133 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             composable("wrapped") {
                 WrappedScreen(onBack = { navController.popBackStack() })
             }
+            composable("achievements") {
+                com.sinop.minimuv.ui.screens.achievements.AchievementsScreen(onBack = { navController.popBackStack() })
+            }
             composable("person/{source}/{externalId}") { entry ->
                 val sourceName = entry.arguments?.getString("source") ?: return@composable
                 val externalId = entry.arguments?.getString("externalId") ?: return@composable
+                val appScope = androidx.compose.runtime.rememberCoroutineScope()
                 PersonScreen(
                     source = if (sourceName == "anime") PersonSource.ANIME else PersonSource.TMDB,
                     externalId = externalId,
                     profileId = profileId,
                     displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },
-                    onAddTitle = { navController.navigate("detail/draft") },
+                    onOpenWork = { work ->
+                        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            val existing = runCatching {
+                                com.sinop.minimuv.data.TitleRepository().getTitles().firstOrNull { t ->
+                                    t.externalId == work.externalId || t.title.equals(work.title, ignoreCase = true)
+                                }
+                            }.getOrNull()
+
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                if (existing != null) {
+                                    navController.navigate("detail/${existing.id}")
+                                } else {
+                                    com.sinop.minimuv.ui.screens.add.DraftHolder.draft = com.sinop.minimuv.data.TitleDraft(
+                                        type = work.type,
+                                        externalId = work.externalId,
+                                        title = work.title,
+                                        titleEn = work.titleEn,
+                                        posterUrl = work.posterUrl,
+                                    )
+                                    navController.navigate("detail/draft") { launchSingleTop = true }
+                                }
+                            }
+                        }
+                    },
                 )
             }
             composable("studio/{type}/{externalId}") { entry ->
                 val typeName = entry.arguments?.getString("type") ?: return@composable
                 val externalId = entry.arguments?.getString("externalId") ?: return@composable
+                val appScope = androidx.compose.runtime.rememberCoroutineScope()
                 StudioScreen(
-                    type = ContentType.fromDb(typeName),
+                    type = com.sinop.minimuv.data.ContentType.fromDb(typeName),
                     externalId = externalId,
                     profileId = profileId,
                     displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },
-                    onAddTitle = { navController.navigate("detail/draft") },
+                    onOpenWork = { work ->
+                        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                            val existing = runCatching {
+                                com.sinop.minimuv.data.TitleRepository().getTitles().firstOrNull { t ->
+                                    t.externalId == work.externalId || t.title.equals(work.title, ignoreCase = true)
+                                }
+                            }.getOrNull()
+
+                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                if (existing != null) {
+                                    navController.navigate("detail/${existing.id}")
+                                } else {
+                                    com.sinop.minimuv.ui.screens.add.DraftHolder.draft = com.sinop.minimuv.data.TitleDraft(
+                                        type = work.type,
+                                        externalId = work.externalId,
+                                        title = work.title,
+                                        titleEn = work.titleEn,
+                                        posterUrl = work.posterUrl,
+                                    )
+                                    navController.navigate("detail/draft") { launchSingleTop = true }
+                                }
+                            }
+                        }
+                    },
                 )
             }
+        }
+
+        if (showNav) {
+            val selected = TAB_ROUTES.indexOfFirst { it == currentRoute }.coerceAtLeast(0)
+            BottomPillNav(
+                items = PILLS,
+                selected = selected,
+                onSelect = { idx ->
+                    val route = TAB_ROUTES[idx]
+                    if (route != currentRoute) {
+                        navController.navigate(route) {
+                            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    }
+                },
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, end = 16.dp, bottom = 20.dp),
+            )
         }
     }
 
     InAppUpdateHost()
 }
+
+/** Mevcut onboarding mantığı: ilk açılışta karşılama — tam tasarımı sonra. */
+@Composable
+private fun PendingOnboarding(settings: SettingsStore) {
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(Color(0xCC000000)),
+    ) {
+        Column(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
+                .padding(24.dp),
+        ) {
+            Text("Minimuv'a hoş geldiniz!", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(18.dp))
+            com.sinop.minimuv.ui.components.DcButton(
+                label = "Başlayalım",
+                onClick = { scope.launch { settings.setOnboardingDone() } },
+            )
+        }
+    }
+}
+
+

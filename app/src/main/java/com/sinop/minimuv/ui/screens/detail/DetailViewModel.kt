@@ -47,10 +47,19 @@ class DetailViewModel : ViewModel() {
         if (loadedId == id) return
         loadedId = id
         if (id == "draft") {
-            draft.value = DraftHolder.draft
+            details.value = null
+            val d = DraftHolder.draft
+            draft.value = d
             viewModelScope.launch {
                 runCatching { profileRepo.getProfiles() }
                     .onSuccess { profiles.value = it }
+            }
+            if (d?.externalId != null) {
+                viewModelScope.launch {
+                    details.value = runCatching {
+                        SearchApi.details(ContentType.fromDb(d.type), d.externalId)
+                    }.getOrNull()
+                }
             }
             return
         }
@@ -78,9 +87,9 @@ class DetailViewModel : ViewModel() {
             titleNotes.value = runCatching { repo.getTitleNotes(id) }.getOrDefault(emptyList())
             // Eski kayıtlardan kalan bozuk ortalamaları kendiliğinden düzelt
             runCatching { repo.refreshCoupleScore(id) }
-            // MAL tarzı zengin detay (puan, tür, oyuncular) — arka planda, hata olursa sessiz
+            // MAL / TMDB zengin detay (puan, tür, oyuncular, stüdyolar, fragman)
             val t = title.value
-            if (t?.externalId != null && details.value == null) {
+            if (t?.externalId != null) {
                 viewModelScope.launch {
                     details.value = runCatching {
                         SearchApi.details(ContentType.fromDb(t.type), t.externalId)

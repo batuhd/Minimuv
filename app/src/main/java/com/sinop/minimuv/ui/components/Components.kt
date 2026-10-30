@@ -2,11 +2,17 @@ package com.sinop.minimuv.ui.components
 
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,18 +25,38 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
 import com.sinop.minimuv.data.Title
@@ -38,9 +64,88 @@ import com.sinop.minimuv.ui.theme.Baloo2
 import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.TextSecondary
 import com.sinop.minimuv.ui.theme.onColorFor
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import com.sinop.minimuv.ui.theme.statusColor
 import com.sinop.minimuv.ui.theme.typeColor
 import java.util.Locale
+
+// ── Dokunma hissi: basılıyken hafifçe küçülür, bırakınca geri sıçrar ─────
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun Modifier.bounceClick(
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)? = null,
+    enabled: Boolean = true,
+    scaleDown: Float = 0.96f,
+): Modifier {
+    val source = remember { MutableInteractionSource() }
+    val pressed by source.collectIsPressedAsState()
+    val scale by animateFloatAsState(
+        targetValue = if (pressed) scaleDown else 1f,
+        animationSpec = spring(dampingRatio = 0.45f, stiffness = 600f),
+        label = "bounceClick",
+    )
+    return this
+        .graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+        }
+        .then(
+            if (onLongClick != null) {
+                Modifier.combinedClickable(
+                    interactionSource = source,
+                    indication = ripple(),
+                    enabled = enabled,
+                    onClick = onClick,
+                    onLongClick = onLongClick,
+                )
+            } else {
+                Modifier.clickable(
+                    interactionSource = source,
+                    indication = ripple(),
+                    enabled = enabled,
+                    onClick = onClick,
+                )
+            }
+        )
+}
+
+// ── Kart yüzeyi: elevation 0, ince gradyan stroke, opsiyonel cam ─────────
+
+@Composable
+fun MinimuvSurface(
+    modifier: Modifier = Modifier,
+    shape: Shape = RoundedCornerShape(20.dp),
+    containerColor: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    glass: Boolean = false,
+    stroke: Boolean = true,
+    content: @Composable BoxScope.() -> Unit,
+) {
+    Box(
+        modifier
+            .clip(shape)
+            .background(if (glass) containerColor.copy(alpha = 0.55f) else containerColor)
+            .then(
+                if (stroke) {
+                    Modifier.border(
+                        width = Dp.Hairline,
+                        brush = Brush.verticalGradient(
+                            listOf(
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                MaterialTheme.colorScheme.outline.copy(alpha = 0.10f),
+                            )
+                        ),
+                        shape = shape,
+                    )
+                } else {
+                    Modifier
+                }
+            ),
+    ) { content() }
+}
 
 // ── Tür rozeti: küçük renkli nokta + etiket ──────────────────────────────
 
@@ -94,20 +199,26 @@ fun StatusChip(status: String, modifier: Modifier = Modifier) {
     )
 }
 
-// ── Yeniden izleme rozeti: poster köşesindeki 🔁 sayacı ───────────────────
+// ── Yeniden izleme rozeti: poster köşesindeki tekrar sayacı ──────────────
 
 @Composable
 fun RewatchBadge(count: Int, modifier: Modifier = Modifier) {
-    Text(
-        "🔁 $count",
+    Row(
         modifier = modifier
             .clip(RoundedCornerShape(50))
             .background(Color(0xCC0A0C0F))
             .padding(horizontal = 7.dp, vertical = 3.dp),
-        style = MaterialTheme.typography.labelMedium,
-        color = Color(0xFFFFF3EC),
-        fontFamily = Baloo2,
-    )
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        MinimuvEmojiIcon("🔁", size = 12.dp, tint = Color(0xFFFFF3EC))
+        Spacer(Modifier.width(3.dp))
+        Text(
+            "$count",
+            style = MaterialTheme.typography.labelMedium,
+            color = Color(0xFFFFF3EC),
+            fontFamily = Baloo2,
+        )
+    }
 }
 
 // ── Puan rozeti: poster köşesindeki yıldızlı skor ────────────────────────
@@ -123,7 +234,12 @@ fun ScoreBadge(score: Double?, modifier: Modifier = Modifier) {
             .padding(horizontal = 7.dp, vertical = 3.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text("★", color = Color(0xFFFFD166), style = MaterialTheme.typography.labelMedium)
+        Icon(
+            MinimuvIcons.Star,
+            contentDescription = null,
+            modifier = Modifier.size(12.dp),
+            tint = Color(0xFFFFD166),
+        )
         Spacer(Modifier.width(3.dp))
         Text(
             formatted,
@@ -136,7 +252,6 @@ fun ScoreBadge(score: Double?, modifier: Modifier = Modifier) {
 
 // ── Poster kartı: Letterboxd etkisi, minimal metin ───────────────────────
 
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun PosterCard(
     item: Title,
@@ -153,11 +268,12 @@ fun PosterCard(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(16.dp))
                 .background(MidnightElevated)
-                .combinedClickable(
+                .bounceClick(
                     onClick = onClick,
                     onLongClick = onLongClick,
+                    scaleDown = 0.95f,
                 )
         ) {
             if (item.posterUrl != null) {
@@ -176,6 +292,19 @@ fun PosterCard(
                         fontFamily = Baloo2,
                     )
                 }
+            }
+            // Alt scrim: durum rozetleri açıkposter üstünde de okunur
+            if (showStatus) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                0.6f to Color.Transparent,
+                                1f to Color(0xB30A0C0F),
+                            )
+                        ),
+                )
             }
             if (item.score != null) {
                 ScoreBadge(
@@ -197,9 +326,9 @@ fun PosterCard(
                 ) {
                     Text(
                         if (item.totalEpisodes != null) {
-                            "${item.episodeProgress}/${item.totalEpisodes}"
+                            "Bölüm ${item.episodeProgress}/${item.totalEpisodes}"
                         } else {
-                            "${item.episodeProgress}"
+                            "Bölüm ${item.episodeProgress}"
                         },
                         style = MaterialTheme.typography.labelMedium,
                         color = Color(0xFFFFF3EC),
@@ -242,19 +371,17 @@ fun PosterCard(
         Text(
             item.displayTitle(lang),
             style = MaterialTheme.typography.titleSmall,
-            fontWeight = FontWeight.SemiBold,
+            fontWeight = FontWeight.Normal,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             color = MaterialTheme.colorScheme.onBackground,
         )
         if (priorityLabel != null) {
-            Text(
+            EmojiText(
                 priorityLabel,
                 style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
                 maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
     }
@@ -297,7 +424,11 @@ fun EmptyState(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {
-        Text(emoji, style = MaterialTheme.typography.displayLarge)
+        MinimuvEmojiIcon(
+            emoji,
+            size = 44.dp,
+            tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.85f),
+        )
         Spacer(Modifier.height(14.dp))
         Text(
             title,
@@ -317,6 +448,79 @@ fun EmptyState(
     }
 }
 
+// ── Asılı (floating) alt menü: ince kenarlı frosted cam hap ──────────────
+
+data class FloatingNavItem(
+    val route: String,
+    val label: String,
+    val icon: ImageVector,
+)
+
+@Composable
+fun FloatingBottomBar(
+    items: List<FloatingNavItem>,
+    selectedRoute: String?,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val shape = RoundedCornerShape(50)
+    Row(
+        modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(Color(0xD9141822))
+            .border(0.5.dp, Color.White.copy(alpha = 0.10f), shape)
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        items.forEach { item ->
+            val selected = item.route == selectedRoute
+            val tint by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
+                label = "navTint",
+            )
+            val pill by animateColorAsState(
+                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
+                label = "navPill",
+            )
+            val scale by animateFloatAsState(
+                targetValue = if (selected) 1.06f else 1f,
+                animationSpec = spring(dampingRatio = 0.5f, stiffness = 500f),
+                label = "navScale",
+            )
+            Column(
+                Modifier
+                    .weight(1f)
+                    .clip(RoundedCornerShape(50))
+                    .background(pill)
+                    .bounceClick(onClick = { onSelect(item.route) })
+                    .padding(vertical = 7.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Icon(
+                    item.icon,
+                    contentDescription = item.label,
+                    tint = tint,
+                    modifier = Modifier
+                        .size(21.dp)
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                        },
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    item.label,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = tint,
+                    maxLines = 1,
+                )
+            }
+        }
+    }
+}
+
 // ── Marka butonu ─────────────────────────────────────────────────────────
 
 @Composable
@@ -332,11 +536,11 @@ fun MinimuvButton(
         modifier
             .clip(RoundedCornerShape(50))
             .background(bg)
-            .clickable(enabled = enabled, onClick = onClick)
+            .bounceClick(onClick = onClick, enabled = enabled)
             .padding(horizontal = 22.dp, vertical = 12.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.titleMedium, color = fg)
+        EmojiText(label, style = MaterialTheme.typography.titleMedium, color = fg, tint = fg)
     }
 }
 
@@ -363,19 +567,19 @@ fun SoftChip(
         modifier
             .clip(RoundedCornerShape(50))
             .background(bg)
-            .clickable(onClick = onClick)
+            .bounceClick(onClick = onClick)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         if (emoji != null) {
-            Text(emoji, style = MaterialTheme.typography.labelMedium)
+            MinimuvEmojiIcon(emoji, size = 15.dp, tint = fg)
             Spacer(Modifier.width(5.dp))
         }
-        Text(
+        EmojiText(
             label,
-            style = MaterialTheme.typography.labelMedium,
+            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
             color = fg,
-            fontWeight = FontWeight.Bold,
+            tint = fg,
         )
     }
 }
@@ -384,10 +588,130 @@ fun SoftChip(
 
 @Composable
 fun SectionTitle(title: String, modifier: Modifier = Modifier) {
-    Text(
+    EmojiText(
         title,
         modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onBackground,
     )
+}
+
+// ── Markdown Metin Bileşeni (Açıklama / Biyografi Temizleyici) ─────────────
+
+@Composable
+fun MarkdownText(
+    markdown: String,
+    modifier: Modifier = Modifier,
+    style: TextStyle = MaterialTheme.typography.bodyMedium,
+    color: Color = Color.Unspecified,
+    linkColor: Color = Color(0xFF4EA8DE),
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+) {
+    val uriHandler = LocalUriHandler.current
+    val annotatedString = remember(markdown, linkColor) {
+        parseMarkdownToAnnotatedString(markdown, linkColor)
+    }
+    var layoutResult by remember { mutableStateOf<TextLayoutResult?>(null) }
+
+    Text(
+        text = annotatedString,
+        modifier = modifier.pointerInput(annotatedString) {
+            detectTapGestures { offset ->
+                layoutResult?.let { layout ->
+                    val position = layout.getOffsetForPosition(offset)
+                    annotatedString.getStringAnnotations("URL", position, position)
+                        .firstOrNull()?.let { annotation ->
+                            runCatching { uriHandler.openUri(annotation.item) }
+                        }
+                }
+            }
+        },
+        style = style,
+        color = color,
+        maxLines = maxLines,
+        overflow = overflow,
+        onTextLayout = { layoutResult = it },
+    )
+}
+
+fun parseMarkdownToAnnotatedString(
+    raw: String,
+    linkColor: Color = Color(0xFF4EA8DE),
+): AnnotatedString {
+    val clean = raw
+        .replace("<br\\s*/?>".toRegex(RegexOption.IGNORE_CASE), "\n")
+        .replace("</?p>".toRegex(RegexOption.IGNORE_CASE), "\n")
+        .replace(Regex("<[^>]*>"), "")
+        .replace(Regex("~!|!~"), "")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&#039;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+
+    return buildAnnotatedString {
+        val linkRegex = Regex("\\[([^\\]]+)\\]\\(([^\\)]+)\\)")
+        val boldRegex = Regex("(__|\\*\\*)(.*?)\\1")
+        val italicRegex = Regex("(_|\\*)(.*?)\\1")
+
+        val lines = clean.lines()
+        lines.forEachIndexed { lineIdx, line ->
+            var remaining = line.trim()
+            while (remaining.isNotEmpty()) {
+                val linkMatch = linkRegex.find(remaining)
+                val boldMatch = boldRegex.find(remaining)
+                val italicMatch = italicRegex.find(remaining)
+
+                val firstMatch = listOfNotNull(linkMatch, boldMatch, italicMatch)
+                    .minByOrNull { it.range.first }
+
+                if (firstMatch == null) {
+                    append(remaining)
+                    break
+                }
+
+                val matchRange = firstMatch.range
+                if (matchRange.first > 0) {
+                    append(remaining.substring(0, matchRange.first))
+                }
+
+                when (firstMatch) {
+                    linkMatch -> {
+                        val label = linkMatch.groupValues[1]
+                        val url = linkMatch.groupValues[2]
+                        pushStringAnnotation(tag = "URL", annotation = url)
+                        withStyle(
+                            SpanStyle(
+                                color = linkColor,
+                                textDecoration = TextDecoration.Underline,
+                                fontWeight = FontWeight.Medium,
+                            ),
+                        ) {
+                            append(label)
+                        }
+                        pop()
+                    }
+                    boldMatch -> {
+                        val boldContent = boldMatch.groupValues[2]
+                        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                            append(boldContent)
+                        }
+                    }
+                    italicMatch -> {
+                        val italicContent = italicMatch.groupValues[2]
+                        withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                            append(italicContent)
+                        }
+                    }
+                }
+
+                remaining = remaining.substring(matchRange.last + 1)
+            }
+
+            if (lineIdx < lines.lastIndex) {
+                append("\n")
+            }
+        }
+    }
 }

@@ -15,6 +15,8 @@ import io.ktor.client.request.setBody
 import io.ktor.http.ContentType as KtorContentType
 import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -31,6 +33,7 @@ data class SearchResult(
     val overview: String?,
     val overviewEn: String? = null,
     val totalEpisodes: Int?,
+    val rating: Double? = null,
 )
 
 /** Arama başlık dili: TR → Türkçe (anime için romaji), EN → İngilizce. */
@@ -124,10 +127,24 @@ data class TitleDetails(
     val voteCount: Int? = null,
     val year: String? = null,
     val runtimeText: String? = null,
+    /** Film süresi (dk). */
+    val runtimeMinutes: Int? = null,
+    /** Dizi sezon sayısı. */
+    val seasonCount: Int? = null,
+    /** Dizi/anime bölüm süresi (dk). */
+    val episodeRuntimeMinutes: Int? = null,
+    /** API'den gelen bölüm sayısı (özellikle anime). */
+    val episodeCount: Int? = null,
     val statusText: String? = null,
     val directors: List<CastMember> = emptyList(),
+    /** Gerçek yapımcılar (TMDB crew / AniList staff). */
+    val producers: List<CastMember> = emptyList(),
+    /** Dizi yaratıcıları (TMDB created_by / AniList Original Creator). */
+    val creators: List<CastMember> = emptyList(),
     val studios: List<StudioMember> = emptyList(),
     val cast: List<CastMember> = emptyList(),
+    /** YouTube / Dailymotion fragman adresi. */
+    val trailerUrl: String? = null,
 )
 
 /** Kişi sayfasının kaynağı: TMDB oyuncu/yönetmen ya da AniList karakter. */
@@ -199,6 +216,13 @@ object SearchApi {
     private val detailsCache = object : LinkedHashMap<String, TitleDetails>(16, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, TitleDetails>?): Boolean =
             size > DETAILS_CACHE_MAX
+    }
+
+    // ── Film süresi önbelleği ────────────────────────────────────────────
+    private const val RUNTIME_CACHE_MAX = 80
+    private val runtimeCache = object : LinkedHashMap<String, Int>(16, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Int>?): Boolean =
+            size > RUNTIME_CACHE_MAX
     }
 
     /** Detay sayfası için zengin bilgi. Hata olursa null döner —
@@ -273,6 +297,35 @@ object SearchApi {
         val ranked = rankResults(merged, normalized)
         synchronized(cache) { cache[key] = ranked }
         return ranked
+    }
+
+    /** "Hepsi": film + dizi + anime paralel aranır, tek listede benzerliğe göre sıralanır. */
+    suspend fun searchAll(query: String, lang: TitleLanguage = TitleLanguage.TR): List<SearchResult> {
+        if (query.isBlank()) return emptyList()
+        val key = "all|${lang.name}|${query.trim().lowercase()}"
+        synchronized(cache) { cache[key] }?.let { return it }
+        val results = coroutineScope {
+            val film = async { runCatching { search(ContentType.FILM, query, lang) }.getOrDefault(emptyList()) }
+            val dizi = async { runCatching { search(ContentType.DIZI, query, lang) }.getOrDefault(emptyList()) }
+            val anime = async { runCatching { search(ContentType.ANIME, query, lang) }.getOrDefault(emptyList()) }
+            film.await() + dizi.await() + anime.await()
+        }.distinctBy { it.type.db to it.externalId }
+        val ranked = rankResults(results, TextNormalizer.fold(query.trim())).take(30)
+        synchronized(cache) { cache[key] = ranked }
+        return ranked
+    }
+
+    /** Film süresi (dk) — arama yanıtında yok; tek hafif istek, önbelleklenir. */
+    suspend fun movieRuntime(externalId: String): Int? {
+        synchronized(runtimeCache) { runtimeCache[externalId] }?.let { return it }
+        val minutes = runCatching {
+            client.get("https://api.themoviedb.org/3/movie/$externalId") {
+                parameter("api_key", TMDB_API_KEY)
+                parameter("language", "tr-TR")
+            }.body<TmdbRuntimeResponse>().runtime?.takeIf { it > 0 }
+        }.getOrNull() ?: return null
+        synchronized(runtimeCache) { runtimeCache[externalId] = minutes }
+        return minutes
     }
 
     /** Stüdyo ara: TMDB şirket + AniList stüdyo birleştirilir. */
@@ -435,6 +488,7 @@ object SearchApi {
                   coverImage { extraLarge }
                   seasonYear
                   episodes
+                  averageScore
                   description(asHtml: false)
                 }
               }
@@ -474,6 +528,7 @@ object SearchApi {
                 overview = cleanOverview(media.description),
                 overviewEn = cleanOverview(media.description),
                 totalEpisodes = media.episodes,
+                rating = media.averageScore?.let { it / 10.0 },
             )
         }
     }
@@ -502,57 +557,117 @@ object SearchApi {
                 overview = cleanOverview(item.overview),
                 overviewEn = cleanOverview(item.overview),
                 totalEpisodes = null,
+                rating = item.voteAverage?.takeIf { it > 0 },
             )
         }
     }
 
     // ── Detay çekimleri ──────────────────────────────────────────────────
 
-    private suspend fun tmdbDetails(type: ContentType, externalId: String): TitleDetails {
+    private suspend fun tmdbDetails(type: ContentType, externalId: String): TitleDetails = coroutineScope {
         val endpoint = if (type == ContentType.FILM) "movie" else "tv"
 
-        // Türkçe + İngilizce ayrı ayrı istenir: Türkçe açıklaması olmayan yapımlarda
-        // İngilizce metin yedek olarak saklanır ve gösterimde kullanılabilir.
         suspend fun fetch(lang: String, withCredits: Boolean): TmdbDetailsResponse =
             client.get("https://api.themoviedb.org/3/$endpoint/$externalId") {
                 parameter("api_key", TMDB_API_KEY)
                 parameter("language", lang)
-                if (withCredits) parameter("append_to_response", "credits")
+                if (withCredits) parameter("append_to_response", "credits,videos")
             }.body<TmdbDetailsResponse>()
 
-        val tr = fetch("tr-TR", withCredits = true)
-        val en = fetch("en-US", withCredits = false)
+        val trDef = async { fetch("tr-TR", withCredits = true) }
+        val enDef = async { runCatching { fetch("en-US", withCredits = false) }.getOrNull() }
 
+        val tr = trDef.await()
+        val en = enDef.await()
+
+        val runtimeMinutes = tr.runtime?.takeIf { it > 0 }
+        val episodeRuntimeMinutes = tr.episodeRunTime?.firstOrNull()?.takeIf { it > 0 }
+            ?: tr.lastEpisodeToAir?.runtime?.takeIf { it > 0 }
+        val seasonCount = tr.numberOfSeasons?.takeIf { it > 0 }
         val runtimeText = if (type == ContentType.FILM) {
-            tr.runtime?.takeIf { it > 0 }?.let { "$it dk" }
+            runtimeMinutes?.let { "$it dk" }
         } else {
-            val rt = tr.episodeRunTime?.firstOrNull()
-            val seasons = tr.numberOfSeasons?.takeIf { it > 0 }?.let { "$it sezon" }
-            listOfNotNull(seasons, rt?.let { "$it dk" }).joinToString(" • ").ifBlank { null }
+            listOfNotNull(seasonCount?.let { "$it sezon" }, episodeRuntimeMinutes?.let { "$it dk" })
+                .joinToString(" • ").ifBlank { null }
         }
+        val trailerUrl = tr.videos?.results.orEmpty()
+            .filter {
+                it.site?.equals("YouTube", ignoreCase = true) == true &&
+                    !it.key.isNullOrBlank() &&
+                    (it.type == "Trailer" || it.type == "Teaser")
+            }
+            .sortedWith(
+                compareByDescending<TmdbVideo> { it.iso6391?.equals("tr", ignoreCase = true) == true }
+                    .thenByDescending { it.official == true }
+                    .thenByDescending { it.type == "Trailer" }
+                    .thenByDescending { it.type == "Teaser" },
+            )
+            .firstOrNull()
+            ?.key
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
+            ?.let { "https://www.youtube.com/watch?v=$it" }
 
-        return TitleDetails(
-            title = tr.title ?: tr.name ?: en.title ?: en.name,
-            titleEn = en.title ?: en.name,
+        TitleDetails(
+            title = tr.title ?: tr.name ?: en?.title ?: en?.name ?: "?",
+            titleEn = en?.title ?: en?.name ?: tr.title ?: tr.name,
             tagline = tr.tagline?.takeIf { it.isNotBlank() },
-            overview = cleanOverview(tr.overview) ?: cleanOverview(en.overview),
-            overviewEn = cleanOverview(en.overview) ?: cleanOverview(tr.overview),
+            overview = cleanOverview(tr.overview) ?: cleanOverview(en?.overview),
+            overviewEn = cleanOverview(en?.overview) ?: cleanOverview(tr.overview),
             genres = tr.genres.orEmpty().mapNotNull { it.name },
             rating = tr.voteAverage?.takeIf { it > 0 },
             voteCount = tr.voteCount,
             year = (tr.releaseDate ?: tr.firstAirDate)?.take(4),
             runtimeText = runtimeText,
+            runtimeMinutes = runtimeMinutes,
+            seasonCount = seasonCount,
+            episodeRuntimeMinutes = episodeRuntimeMinutes,
+            episodeCount = tr.numberOfEpisodes?.takeIf { it > 0 },
             statusText = tmdbStatusTr(tr.status),
             directors = tr.credits?.crew.orEmpty()
                 .filter { it.job == "Director" }
-                .filter { !it.profilePath.isNullOrBlank() }
+                .distinctBy { it.id ?: it.name }
                 .take(3)
                 .map { c ->
                     CastMember(
                         id = c.id,
                         name = c.name ?: "?",
                         role = "Yönetmen",
-                        imageUrl = "https://image.tmdb.org/t/p/w185${c.profilePath}",
+                        imageUrl = c.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" },
+                    )
+                },
+            producers = tr.credits?.crew.orEmpty()
+                .filter { c ->
+                    val job = c.job.orEmpty()
+                    job.contains("Producer", ignoreCase = true) &&
+                        !job.contains("Music", ignoreCase = true)
+                }
+                .sortedBy { c ->
+                    when {
+                        c.job.equals("Producer", ignoreCase = true) -> 0
+                        c.job.equals("Executive Producer", ignoreCase = true) -> 1
+                        else -> 2
+                    }
+                }
+                .distinctBy { it.id ?: it.name }
+                .take(3)
+                .map { c ->
+                    CastMember(
+                        id = c.id,
+                        name = c.name ?: "?",
+                        role = c.job,
+                        imageUrl = c.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" },
+                    )
+                },
+            creators = tr.createdBy.orEmpty()
+                .distinctBy { it.id ?: it.name }
+                .take(3)
+                .map { c ->
+                    CastMember(
+                        id = c.id,
+                        name = c.name ?: "?",
+                        role = "Yaratıcı",
+                        imageUrl = c.profilePath?.let { "https://image.tmdb.org/t/p/w185$it" },
                     )
                 },
             studios = (tr.productionCompanies.orEmpty() + tr.networks.orEmpty())
@@ -576,6 +691,7 @@ object SearchApi {
                         imageUrl = "https://image.tmdb.org/t/p/w185${c.profilePath}",
                     )
                 },
+            trailerUrl = trailerUrl,
         )
     }
 
@@ -602,8 +718,12 @@ object SearchApi {
                 status
                 seasonYear
                 duration
+                trailer { id site }
                 studios(isMain: true) { nodes { id name } }
                 characters(sort: [ROLE, RELEVANCE], perPage: 8) {
+                  edges { role node { id name { full } image { large } } }
+                }
+                staff(perPage: 25, sort: [RELEVANCE]) {
                   edges { role node { id name { full } image { large } } }
                 }
               }
@@ -641,6 +761,14 @@ object SearchApi {
             media.duration?.takeIf { it > 0 }?.let { "$it dk" },
             formatTr,
         ).joinToString(" • ").ifBlank { null }
+        val trailerUrl = media.trailer?.let { trailer ->
+            val id = trailer.id?.trim()?.takeIf { it.isNotBlank() } ?: return@let null
+            when (trailer.site?.lowercase()) {
+                "youtube" -> "https://www.youtube.com/watch?v=$id"
+                "dailymotion" -> "https://www.dailymotion.com/video/$id"
+                else -> null
+            }
+        }
 
         return TitleDetails(
             title = media.title?.romaji ?: media.title?.english,
@@ -651,7 +779,54 @@ object SearchApi {
             rating = media.averageScore?.let { it / 10.0 },
             year = media.seasonYear?.toString(),
             runtimeText = runtimeText,
+            episodeRuntimeMinutes = media.duration?.takeIf { it > 0 },
+            episodeCount = media.episodes?.takeIf { it > 0 },
             statusText = statusTr,
+            directors = media.staff?.edges.orEmpty()
+                .filter { it.role == "Director" || it.role == "Chief Director" }
+                .distinctBy { it.node?.id ?: it.node?.name?.full }
+                .take(3)
+                .mapNotNull { edge ->
+                    val node = edge.node ?: return@mapNotNull null
+                    CastMember(
+                        // AniList staff id'leri karakter sayfasına ait değil; tıklanabilir yapmıyoruz.
+                        id = null,
+                        name = node.name?.full ?: "?",
+                        role = "Yönetmen",
+                        imageUrl = node.image?.large,
+                    )
+                },
+            producers = media.staff?.edges.orEmpty()
+                .filter { edge ->
+                    val role = edge.role.orEmpty()
+                    role.contains("Producer", ignoreCase = true) &&
+                        !role.contains("Music", ignoreCase = true) &&
+                        !role.contains("Assistant", ignoreCase = true)
+                }
+                .distinctBy { it.node?.id ?: it.node?.name?.full }
+                .take(3)
+                .mapNotNull { edge ->
+                    val node = edge.node ?: return@mapNotNull null
+                    CastMember(
+                        id = null,
+                        name = node.name?.full ?: "?",
+                        role = edge.role,
+                        imageUrl = node.image?.large,
+                    )
+                },
+            creators = media.staff?.edges.orEmpty()
+                .filter { it.role == "Original Creator" }
+                .distinctBy { it.node?.id ?: it.node?.name?.full }
+                .take(3)
+                .mapNotNull { edge ->
+                    val node = edge.node ?: return@mapNotNull null
+                    CastMember(
+                        id = null,
+                        name = node.name?.full ?: "?",
+                        role = "Yaratıcı",
+                        imageUrl = node.image?.large,
+                    )
+                },
             studios = media.studios?.nodes.orEmpty().take(3).map { StudioMember(id = it.id, name = it.name ?: "?") },
             cast = media.characters?.edges.orEmpty().mapNotNull { edge ->
                 val node = edge.node ?: return@mapNotNull null
@@ -662,6 +837,7 @@ object SearchApi {
                     imageUrl = node.image?.large,
                 )
             },
+            trailerUrl = trailerUrl,
         )
     }
 
@@ -795,14 +971,20 @@ object SearchApi {
             }
         }
 
-    private suspend fun tmdbStudioDetails(companyId: String, lang: TitleLanguage): StudioDetails {
-        val info = client.get("https://api.themoviedb.org/3/company/$companyId") {
-            parameter("api_key", TMDB_API_KEY)
-        }.body<TmdbCompanyResponse>()
-        val movies = client.get("https://api.themoviedb.org/3/company/$companyId/movies") {
-            parameter("api_key", TMDB_API_KEY)
-            parameter("language", lang.tmdb)
-        }.body<TmdbCompanyMoviesResponse>()
+    private suspend fun tmdbStudioDetails(companyId: String, lang: TitleLanguage): StudioDetails = coroutineScope {
+        val infoDef = async {
+            client.get("https://api.themoviedb.org/3/company/$companyId") {
+                parameter("api_key", TMDB_API_KEY)
+            }.body<TmdbCompanyResponse>()
+        }
+        val moviesDef = async {
+            client.get("https://api.themoviedb.org/3/company/$companyId/movies") {
+                parameter("api_key", TMDB_API_KEY)
+                parameter("language", lang.tmdb)
+            }.body<TmdbCompanyMoviesResponse>()
+        }
+        val info = infoDef.await()
+        val movies = moviesDef.await()
         val works = movies.results.orEmpty().mapNotNull { item ->
             if (item.posterPath == null) return@mapNotNull null
             PersonWork(
@@ -814,7 +996,7 @@ object SearchApi {
                 posterUrl = "https://image.tmdb.org/t/p/w185${item.posterPath}",
             )
         }
-        return StudioDetails(
+        StudioDetails(
             name = info.name ?: "?",
             logoUrl = info.logoPath?.let { "https://image.tmdb.org/t/p/w185$it" },
             works = works,
@@ -896,6 +1078,7 @@ private data class AniListMedia(
     val coverImage: AniListCover? = null,
     val seasonYear: Int? = null,
     val episodes: Int? = null,
+    val averageScore: Int? = null,
     val description: String? = null,
 )
 
@@ -919,7 +1102,11 @@ private data class TmdbItem(
     @SerialName("release_date") val releaseDate: String? = null,
     @SerialName("first_air_date") val firstAirDate: String? = null,
     val overview: String? = null,
+    @SerialName("vote_average") val voteAverage: Double? = null,
 )
+
+@Serializable
+private data class TmdbRuntimeResponse(val runtime: Int? = null)
 
 @Serializable
 private data class TmdbDetailsResponse(
@@ -935,10 +1122,36 @@ private data class TmdbDetailsResponse(
     val runtime: Int? = null,
     @SerialName("episode_run_time") val episodeRunTime: List<Int>? = null,
     @SerialName("number_of_seasons") val numberOfSeasons: Int? = null,
+    @SerialName("number_of_episodes") val numberOfEpisodes: Int? = null,
+    @SerialName("last_episode_to_air") val lastEpisodeToAir: TmdbEpisode? = null,
     val status: String? = null,
     @SerialName("production_companies") val productionCompanies: List<TmdbCompany>? = null,
     val networks: List<TmdbCompany>? = null,
+    @SerialName("created_by") val createdBy: List<TmdbCreatedBy>? = null,
     val credits: TmdbCredits? = null,
+    val videos: TmdbVideos? = null,
+)
+
+@Serializable
+private data class TmdbCreatedBy(
+    val id: Int? = null,
+    val name: String? = null,
+    @SerialName("profile_path") val profilePath: String? = null,
+)
+
+@Serializable
+private data class TmdbVideos(val results: List<TmdbVideo>? = null)
+
+@Serializable
+private data class TmdbEpisode(val runtime: Int? = null)
+
+@Serializable
+private data class TmdbVideo(
+    val key: String? = null,
+    val site: String? = null,
+    val type: String? = null,
+    val official: Boolean? = null,
+    @SerialName("iso_639_1") val iso6391: String? = null,
 )
 
 @Serializable
@@ -987,9 +1200,14 @@ private data class AniListDetailsMedia(
     val status: String? = null,
     @SerialName("seasonYear") val seasonYear: Int? = null,
     val duration: Int? = null,
+    val trailer: AniListTrailer? = null,
     val studios: AniListStudios? = null,
     val characters: AniListCharacters? = null,
+    val staff: AniListCharacters? = null,
 )
+
+@Serializable
+private data class AniListTrailer(val id: String? = null, val site: String? = null)
 
 @Serializable
 private data class AniListStudios(val nodes: List<AniListStudioNode>? = null)

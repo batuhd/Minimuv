@@ -38,6 +38,7 @@ import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.OutlineSoft
 import com.sinop.minimuv.ui.theme.SinopColor
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.EmojiText
 import com.sinop.minimuv.ui.theme.VanColor
 import kotlinx.coroutines.launch
 
@@ -54,8 +55,22 @@ fun ProfileSelectScreen(
 
     LaunchedEffect(Unit) {
         runCatching { repo.getProfiles() }
-            .onSuccess { profiles = it }
-            .onFailure { error = "Profiller yüklenemedi: ${it.message}" }
+            .onSuccess {
+                if (it.isNullOrEmpty()) {
+                    profiles = listOf(
+                        Profile(id = "van-id", name = "Van", emoji = "🌊", avatarColor = "#4EA8DE"),
+                        Profile(id = "sinop-id", name = "Sinop", emoji = "🦜", avatarColor = "#FF8FA3"),
+                    )
+                } else {
+                    profiles = it
+                }
+            }
+            .onFailure {
+                profiles = listOf(
+                    Profile(id = "van-id", name = "Van", emoji = "🌊", avatarColor = "#4EA8DE"),
+                    Profile(id = "sinop-id", name = "Sinop", emoji = "🦜", avatarColor = "#FF8FA3"),
+                )
+            }
     }
 
     Column(
@@ -67,7 +82,7 @@ fun ProfileSelectScreen(
     ) {
         Text("Minimuv", style = MaterialTheme.typography.headlineLarge, fontFamily = Baloo2)
         Spacer(Modifier.height(4.dp))
-        Text(
+        EmojiText(
             "Bu akşam kimsin? 🌙",
             style = MaterialTheme.typography.titleMedium,
             color = TextSecondary,
@@ -76,7 +91,7 @@ fun ProfileSelectScreen(
 
         when {
             error != null -> {
-                Text(
+                EmojiText(
                     "Bağlanamadık 😵‍💫",
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onBackground,
@@ -131,7 +146,7 @@ fun ProfileSelectScreen(
                     }
                     Spacer(Modifier.size(16.dp))
                     Column {
-                        Text(profile.name, style = MaterialTheme.typography.titleLarge)
+                        Text(profile.displayName, style = MaterialTheme.typography.titleLarge)
                         Text(
                             if (profile.name.lowercase() == "sinop") "Memleketim" else "Memleketim",
                             style = MaterialTheme.typography.bodySmall,

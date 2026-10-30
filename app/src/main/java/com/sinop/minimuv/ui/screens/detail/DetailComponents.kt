@@ -34,59 +34,14 @@ import androidx.compose.ui.unit.dp
 import com.sinop.minimuv.data.EpisodeNote
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.ui.components.MinimuvButton
+import com.sinop.minimuv.ui.components.MinimuvSurface
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.OutlineSoft
 import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 
 private val QUICK_EMOJIS = listOf("😭", "🔥", "😱", "🤯", "😍", "😂", "🤢", "🤩")
-
-@Composable
-internal fun CollapsibleSection(
-    title: String,
-    initiallyOpen: Boolean = false,
-    badge: String? = null,
-    content: @Composable () -> Unit,
-) {
-    var open by remember { mutableStateOf(initiallyOpen) }
-    Column(Modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp))
-                .background(MidnightCard)
-                .clickable { open = !open }
-                .padding(horizontal = 14.dp, vertical = 11.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                title,
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.weight(1f),
-            )
-            if (!badge.isNullOrBlank()) {
-                Text(
-                    badge,
-                    style = MaterialTheme.typography.labelMedium,
-                    color = TextSecondary,
-                    modifier = Modifier.padding(end = 8.dp),
-                )
-            }
-            Text(
-                if (open) "▾" else "▸",
-                style = MaterialTheme.typography.titleMedium,
-                color = TextSecondary,
-            )
-        }
-        if (open) {
-            Column(
-                Modifier.padding(top = 12.dp, start = 4.dp, end = 4.dp),
-            ) {
-                content()
-            }
-        }
-        Spacer(Modifier.padding(top = 12.dp))
-    }
-}
 
 @Composable
 fun PerProfileProgress(
@@ -97,33 +52,37 @@ fun PerProfileProgress(
     color: Color,
     onChange: (Int) -> Unit,
 ) {
-    Row(
+    MinimuvSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(MidnightCard)
-            .padding(horizontal = 14.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(vertical = 4.dp),
+        shape = RoundedCornerShape(14.dp),
     ) {
-        Text(emoji, style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.width(8.dp))
-        Text(name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-        if (editable) {
-            StepperButton("−") { onChange((value - 1).coerceAtLeast(0)) }
-            Text(
-                "$value",
-                style = MaterialTheme.typography.titleMedium,
-                color = color,
-                modifier = Modifier.padding(horizontal = 12.dp),
-            )
-            StepperButton("+") { onChange(value + 1) }
-        } else {
-            Text(
-                "Bölüm $value",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary,
-            )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(emoji, style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.width(8.dp))
+            Text(name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            if (editable) {
+                StepperButton("−") { onChange((value - 1).coerceAtLeast(0)) }
+                Text(
+                    "$value",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = color,
+                    modifier = Modifier.padding(horizontal = 12.dp),
+                )
+                StepperButton("+") { onChange(value + 1) }
+            } else {
+                Text(
+                    "Bölüm $value",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary,
+                )
+            }
         }
     }
 }
@@ -142,7 +101,7 @@ fun EpisodeNotesSection(
 
     Column(Modifier.fillMaxWidth()) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text(
+            EmojiText(
                 "Bölüm Notlarımız 🕵️‍♂️",
                 style = MaterialTheme.typography.titleSmall,
                 color = TextSecondary,
@@ -191,64 +150,72 @@ private fun NoteRow(
     mine: Boolean,
     onDelete: () -> Unit,
 ) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 5.dp)
-            .clip(RoundedCornerShape(14.dp))
-            .background(if (mine) MidnightCard else OutlineSoft.copy(alpha = 0.35f))
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically,
+    MinimuvSurface(
+        shape = RoundedCornerShape(14.dp),
+        containerColor = if (mine) {
+            MaterialTheme.colorScheme.surfaceContainerLow
+        } else {
+            OutlineSoft.copy(alpha = 0.35f)
+        },
+        glass = !mine,
     ) {
-        Text(
-            author?.emoji ?: "👤",
-            style = MaterialTheme.typography.titleMedium,
+        Row(
             modifier = Modifier
-                .size(34.dp)
-                .clip(CircleShape)
-                .background(MidnightCard),
-            textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-        )
-        Spacer(Modifier.width(10.dp))
-        Column(Modifier.weight(1f)) {
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
             Text(
-                "Bölüm ${note.episodeNumber} • ${author?.name ?: "?"}",
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary,
+                author?.emoji ?: "👤",
+                style = MaterialTheme.typography.titleMedium,
+                modifier = Modifier
+                    .size(34.dp)
+                    .clip(CircleShape)
+                    .background(MidnightCard),
+                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             )
-            Spacer(Modifier.size(2.dp))
-            if (locked) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Filled.Lock, null, tint = TextSecondary, modifier = Modifier.size(14.dp))
-                    Spacer(Modifier.width(5.dp))
-                    Text(
-                        "${note.episodeNumber}. bölüme geldiğinde görebilirsin 🔒",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
-                    )
-                }
-            } else {
-                if (!note.emojiReaction.isNullOrBlank()) {
-                    Text(
-                        note.emojiReaction!!,
-                        style = MaterialTheme.typography.titleLarge,
-                    )
-                }
-                if (!note.noteText.isNullOrBlank()) {
-                    Text(note.noteText!!, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "Bölüm ${note.episodeNumber} • ${author?.displayName ?: "?"}",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary,
+                )
+                Spacer(Modifier.size(2.dp))
+                if (locked) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.Lock, null, tint = TextSecondary, modifier = Modifier.size(14.dp))
+                        Spacer(Modifier.width(5.dp))
+                        Text(
+                            "${note.episodeNumber}. bölüme geldiğinde görebilirsin",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary,
+                        )
+                    }
+                } else {
+                    if (!note.emojiReaction.isNullOrBlank()) {
+                        Text(
+                            note.emojiReaction!!,
+                            style = MaterialTheme.typography.titleLarge,
+                        )
+                    }
+                    if (!note.noteText.isNullOrBlank()) {
+                        Text(note.noteText!!, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
-        }
-        if (mine && note.id != null) {
-            Text(
-                "✕",
-                color = TextSecondary,
-                style = MaterialTheme.typography.labelMedium,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onDelete)
-                    .padding(8.dp),
-            )
+            if (mine && note.id != null) {
+                Icon(
+                    MinimuvIcons.Close,
+                    contentDescription = "Sil",
+                    tint = TextSecondary,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onDelete)
+                        .padding(8.dp)
+                        .size(14.dp),
+                )
+            }
         }
     }
 }
@@ -264,7 +231,7 @@ private fun AddNoteDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Bölüm notu bırak ✍️") },
+        title = { EmojiText("Bölüm notu bırak ✍️", style = MaterialTheme.typography.headlineSmall) },
         text = {
             Column {
                 OutlinedTextField(

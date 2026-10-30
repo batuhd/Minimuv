@@ -61,8 +61,8 @@ cp app/build/outputs/apk/release/app-release.apk  ~/Masaüstü/minimuv-vX.Y.Z.ap
 ## Çark sesi (v2.5.11+)
 
 - `core/WheelSound.kt` (SoundPool) + `res/raw/wheel_tick.wav`, `res/raw/wheel_win.wav` (bu dosyalar bir defa Python ile üretildi; silme).
-- `WheelScreen.kt`: dönüşte her dilim geçişinde tik, kazanan belirlenince marş; `🔊 Ses açık/🔇` anahtarı.
-- **Düzen notu:** Kazanan kartı lejantın ÜSTÜNDE gösterilir (lejant onu ekran dışına itmesin); "Dilimler" lejantı max 60dp kompakt. Bu düzeni bozma.
+- `WheelScreen.kt`: dönüşte her dilim geçişinde tik, kazanan belirlenince marş; ses/titreşim anahtarları.
+- **Düzen notu:** Kazanan, çark durunca sayfa akışında DEĞİL, ekranın ortasında popup olarak gösterilir (`WinnerPopup` → `Dialog` + konfeti + karartma). Sayfa akışına kazanan kartı eklemeyin.
 
 ## Mimari
 

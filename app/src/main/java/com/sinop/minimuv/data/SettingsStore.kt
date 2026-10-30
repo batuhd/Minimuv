@@ -18,6 +18,9 @@ class SettingsStore(private val context: Context) {
         val KEY_PROFILE_ID = stringPreferencesKey("profile_id")
         val KEY_ONBOARDING_DONE = stringPreferencesKey("onboarding_done")
         val KEY_THEME_ACCENT = stringPreferencesKey("theme_accent")
+        val KEY_THEME_ACCENT_VAN = stringPreferencesKey("theme_accent_van")
+        val KEY_THEME_ACCENT_SINOP = stringPreferencesKey("theme_accent_sinop")
+        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_LAST_PING_AT = stringPreferencesKey("last_ping_at")
         val KEY_TITLES_SNAPSHOT = stringPreferencesKey("titles_snapshot")
         val KEY_LAST_ANNIV_DATE = stringPreferencesKey("last_anniv_date")
@@ -35,6 +38,14 @@ class SettingsStore(private val context: Context) {
     val profileId: Flow<String?> = context.dataStore.data.map { it[KEY_PROFILE_ID] }
     val onboardingDone: Flow<Boolean> = context.dataStore.data.map { it[KEY_ONBOARDING_DONE] == "true" }
     val themeAccent: Flow<String?> = context.dataStore.data.map { it[KEY_THEME_ACCENT] }
+    // Eski tek accent anahtarından geçiş: yeni anahtar yoksa eski değer kullanılır.
+    val themeAccentVan: Flow<String?> = context.dataStore.data.map {
+        it[KEY_THEME_ACCENT_VAN] ?: it[KEY_THEME_ACCENT]
+    }
+    val themeAccentSinop: Flow<String?> = context.dataStore.data.map {
+        it[KEY_THEME_ACCENT_SINOP] ?: it[KEY_THEME_ACCENT]
+    }
+    val themeMode: Flow<String?> = context.dataStore.data.map { it[KEY_THEME_MODE] }
     val listView: Flow<String?> = context.dataStore.data.map { it[KEY_LIST_VIEW] }
     val searchLang: Flow<String?> = context.dataStore.data.map { it[KEY_SEARCH_LANG] }
     val displayLang: Flow<String?> = context.dataStore.data.map { it[KEY_DISPLAY_LANG] }
@@ -72,6 +83,18 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setThemeAccent(value: String) {
         context.dataStore.edit { it[KEY_THEME_ACCENT] = value }
+    }
+
+    suspend fun setThemeAccentVan(value: String) {
+        context.dataStore.edit { it[KEY_THEME_ACCENT_VAN] = value }
+    }
+
+    suspend fun setThemeAccentSinop(value: String) {
+        context.dataStore.edit { it[KEY_THEME_ACCENT_SINOP] = value }
+    }
+
+    suspend fun setThemeMode(value: String) {
+        context.dataStore.edit { it[KEY_THEME_MODE] = value }
     }
 
     suspend fun saveListView(value: String) {

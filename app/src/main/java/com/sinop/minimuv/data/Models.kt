@@ -2,6 +2,7 @@ package com.sinop.minimuv.data
 
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import java.util.Locale
 
 enum class ContentType(val db: String, val label: String) {
     FILM("film", "Film"),
@@ -28,9 +29,9 @@ enum class WatchStatus(val db: String, val label: String) {
     }
 }
 
-enum class WatchMode(val db: String, val label: String) {
-    BIRLIKTE("birlikte", "Birlikte izliyoruz"),
-    AYRI("ayri", "Ayrı ayrı izliyoruz");
+enum class WatchMode(val db: String, val label: String, val shortLabel: String) {
+    BIRLIKTE("birlikte", "Birlikte izliyoruz", "Birlikte"),
+    AYRI("ayri", "Ayrı ayrı izliyoruz", "Ayrı ayrı");
 
     companion object {
         fun fromDb(value: String): WatchMode =
@@ -45,7 +46,15 @@ data class Profile(
     val emoji: String? = null,
     @SerialName("avatar_color") val avatarColor: String? = null,
     @SerialName("avatar_url") val avatarUrl: String? = null,
-)
+) {
+    /** Görünen ad — veritabanındaki küçük harfli adları (örn. "vann") düzeltir. */
+    val displayName: String
+        get() = name.trim()
+            .replaceFirstChar { ch ->
+                if (ch.isLowerCase()) ch.titlecase(Locale.getDefault()) else ch.toString()
+            }
+            .ifBlank { "?" }
+}
 
 @Serializable
 data class Title(

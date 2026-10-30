@@ -1,32 +1,42 @@
 package com.sinop.minimuv.ui.screens.wheel
 
+import android.content.Context
+import android.os.VibrationEffect
+import android.os.Vibrator
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -43,18 +53,28 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil3.ImageLoader
@@ -63,22 +83,24 @@ import coil3.toBitmap
 import com.sinop.minimuv.core.WheelSound
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.Title
-import com.sinop.minimuv.data.WatchStatus
+import com.sinop.minimuv.ui.components.ConfettiOverlay
+import com.sinop.minimuv.ui.components.DcButton
+import com.sinop.minimuv.ui.components.DcIconButton
 import com.sinop.minimuv.ui.components.EmptyState
-import com.sinop.minimuv.ui.components.MinimuvButton
-import com.sinop.minimuv.ui.components.SoftChip
-import com.sinop.minimuv.ui.theme.MidnightCard
-import com.sinop.minimuv.ui.theme.MidnightElevated
-import com.sinop.minimuv.ui.theme.TextSecondary
-import com.sinop.minimuv.ui.theme.typeColor
-import com.sinop.minimuv.ui.theme.typeEmoji
+import com.sinop.minimuv.ui.components.FilterPill
+import com.sinop.minimuv.ui.components.bounceClick
+import com.sinop.minimuv.ui.components.screenGlow
+import com.sinop.minimuv.ui.theme.Fraunces
+import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
+import com.sinop.minimuv.ui.theme.tokens
+import com.sinop.minimuv.ui.theme.together
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import kotlin.math.PI
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -86,38 +108,48 @@ import kotlin.random.Random
 
 // Dilim renkleri — canvas ve lejant aynı listeyi kullanır
 private val sliceColors = listOf(
-    Color(0xFF2A313C), MidnightElevated, Color(0xFF232B36), MidnightCard,
+    Color(0xFF2E5245), Color(0xFF5B3B77), Color(0xFF1E2C63),
+    Color(0xFF1F5F63), Color(0xFF96601A), Color(0xFF7B2436),
 )
 
 @Composable
 fun WheelScreen(onOpenTitle: (String) -> Unit) {
     val vm: WheelViewModel = viewModel()
     val titles by vm.planTitles.collectAsStateWithLifecycle()
+    val tk = tokens()
 
-    var typeFilter by remember { mutableStateOf<ContentType?>(null) }
-    var topFilter by remember { mutableStateOf<Int?>(null) }
-    var angle by remember { mutableStateOf(0f) }
     var spinning by remember { mutableStateOf(false) }
     var winner by remember { mutableStateOf<Title?>(null) }
+    var showWinner by remember { mutableStateOf(false) }
+    var confettiTrigger by remember { mutableIntStateOf(0) }
     var soundOn by rememberSaveable { mutableStateOf(true) }
+    var vibrationOn by rememberSaveable { mutableStateOf(true) }
+    var typeFilter by remember { mutableStateOf<ContentType?>(null) }
     val rotation = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
-    val haptic = LocalHapticFeedback.current
 
     val appContext = LocalContext.current.applicationContext
+    val vibrator = remember(appContext) {
+        appContext.getSystemService(Context.VIBRATOR_SERVICE) as? Vibrator
+    }
     DisposableEffect(appContext) {
         WheelSound.init(appContext)
         onDispose { }
     }
 
-    val pool = remember(titles, typeFilter, topFilter) {
-        var list = titles.filter { typeFilter == null || it.type == typeFilter!!.db }
-        if (topFilter != null) list = list.sortedBy { it.priorityOrder ?: Int.MAX_VALUE }.take(topFilter!!)
-        list
+    val pool = remember(titles, typeFilter) {
+        titles.filter { typeFilter == null || it.type == typeFilter!!.db }
     }
 
-    LaunchedEffect(pool.size) {
+    LaunchedEffect(pool) {
         winner = null
+        showWinner = false
+    }
+
+    fun vibrate(ms: Long, amplitude: Int) {
+        if (vibrationOn && vibrator?.hasVibrator() == true) {
+            vibrator.vibrate(VibrationEffect.createOneShot(ms, amplitude))
+        }
     }
 
     // Dönerken gösterge her dilimi geçtiğinde "tik" sesi
@@ -134,14 +166,15 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
             val now = sliceIndex()
             if (now != last) {
                 if (soundOn) WheelSound.playTick()
+                vibrate(10, 120)
                 last = now
             }
         }
     }
 
-    // Kazanan belirlenince kısa marş
-    LaunchedEffect(winner) {
-        if (winner != null && soundOn) WheelSound.playWin()
+    // Kazanan popup'ı açılınca kısa marş
+    LaunchedEffect(showWinner) {
+        if (showWinner && soundOn) WheelSound.playWin()
     }
 
     // Dilimlerde gösterilecek afişler (poster yoksa numara gösterilir)
@@ -151,246 +184,409 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
         if (spinning || pool.isEmpty()) return
         spinning = true
         winner = null
-        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        showWinner = false
+        vibrate(20, 180)
         scope.launch {
             val target = rotation.value + 3600f + Random.nextFloat() * 1080f
             rotation.animateTo(
                 target,
                 tween(5200, easing = CubicBezierEasing(0.12f, 0.0f, 0.1f, 1f)),
             )
-            angle = target
             // Gösterge tepede (canvas koordinatlarında 270°). Dilimler +rot ile ileri kayar,
             // bu yüzden göstergeye düşen dilim: (işaretçi - rotasyon) mod 360.
             val slice = 360f / pool.size
             val pointerRelative = ((270f - (target % 360f)) % 360f + 360f) % 360f
             val index = (pointerRelative / slice).toInt().coerceIn(0, pool.size - 1)
             winner = pool[index]
-            haptic.performHapticFeedback(HapticFeedbackType.Confirm)
+            confettiTrigger += 1
+            showWinner = true
+            if (vibrationOn && vibrator?.hasVibrator() == true) {
+                vibrator.vibrate(
+                    VibrationEffect.createWaveform(
+                        longArrayOf(0, 50, 60, 50, 60, 150),
+                        -1,
+                    ),
+                )
+            }
             spinning = false
         }
     }
 
-    Column(
+    Box(
         Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+            .background(tk.bg)
+            .screenGlow(vanAlpha = 0.28f, sinopAlpha = 0.30f),
     ) {
-        Text(
-            "Randevu Gecesi Çarkı",
-            style = MaterialTheme.typography.headlineMedium,
-        )
-        Text(
-            "Kararsızsanız çark karar versin. 🎡",
-            style = MaterialTheme.typography.bodyMedium,
-            color = TextSecondary,
-        )
-        Spacer(Modifier.height(14.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SoftChip(
-                label = "Hepsi",
-                selected = typeFilter == null,
-                color = MaterialTheme.colorScheme.primary,
-                onClick = { typeFilter = null },
-            )
-            ContentType.entries.forEach { type ->
-                SoftChip(
-                    label = type.label,
-                    emoji = typeEmoji(type.db),
-                    selected = typeFilter == type,
-                    color = typeColor(type.db),
-                    onClick = { typeFilter = if (typeFilter == type) null else type },
-                )
-            }
-        }
-        Spacer(Modifier.height(8.dp))
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            SoftChip(
-                label = "Hepsi",
-                selected = topFilter == null,
-                color = MaterialTheme.colorScheme.secondary,
-                onClick = { topFilter = null },
-            )
-            SoftChip(
-                label = "İlk 3",
-                selected = topFilter == 3,
-                color = MaterialTheme.colorScheme.secondary,
-                onClick = { topFilter = 3 },
-            )
-            SoftChip(
-                label = "İlk 5",
-                selected = topFilter == 5,
-                color = MaterialTheme.colorScheme.secondary,
-                onClick = { topFilter = 5 },
-            )
-            SoftChip(
-                label = "İlk 10",
-                selected = topFilter == 10,
-                color = MaterialTheme.colorScheme.secondary,
-                onClick = { topFilter = 10 },
-            )
-        }
-
-        Row(
+        Column(
             Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp),
-            horizontalArrangement = Arrangement.End,
+                .fillMaxSize()
+                .statusBarsPadding()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            SoftChip(
-                label = if (soundOn) "🔊 Ses açık" else "🔇 Ses kapalı",
-                selected = soundOn,
-                color = MaterialTheme.colorScheme.primary,
-                onClick = { soundOn = !soundOn },
-            )
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        if (pool.isEmpty()) {
-            EmptyState(
-                emoji = "🗓️",
-                title = "Çark boş!",
-                subtitle = "Önce Sırada listesine birkaç başlık ekleyin, sonra gelin döndürelim.",
-                modifier = Modifier.fillMaxSize(),
-            )
-        } else {
-            Box(contentAlignment = Alignment.Center) {
-                WheelCanvas(
-                    titles = pool,
-                    angle = rotation.value,
-                    posters = posters,
-                    modifier = Modifier.size(320.dp),
-                )
-                // Merkezde çevir butonu
-                val hubColor = MaterialTheme.colorScheme.primary
-                Box(
-                    modifier = Modifier
-                        .size(104.dp)
-                        .clip(CircleShape)
-                        .background(Color(0xFF0E1116))
-                        .clickable(enabled = !spinning) {
-                            spinWheel()
-                        }
-                        .drawWithContent {
-                            drawContent()
-                            drawCircle(
-                                color = hubColor,
-                                style = Stroke(width = 4.dp.toPx()),
-                            )
-                        },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Text(
-                        if (spinning) "🎲" else "ÇEVİR",
-                        style = MaterialTheme.typography.titleLarge,
-                        color = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                // Gösterge
-                val pointerColor = MaterialTheme.colorScheme.primary
-                Canvas(Modifier.size(340.dp)) {
-                    val center = Offset(size.width / 2f, size.height / 2f)
-                    val tip = center - Offset(0f, size.height / 2f - 12.dp.toPx())
-                    val path = androidx.compose.ui.graphics.Path().apply {
-                        moveTo(tip.x, tip.y)
-                        lineTo(tip.x - 14.dp.toPx(), tip.y + 20.dp.toPx())
-                        lineTo(tip.x + 14.dp.toPx(), tip.y + 20.dp.toPx())
-                        close()
-                    }
-                    drawPath(path, color = pointerColor)
-                }
-            }
-
             Spacer(Modifier.height(12.dp))
+            Text(
+                "RANDEVU GECESİ",
+                style = MaterialTheme.typography.labelMedium,
+                letterSpacing = 2.5.sp,
+                color = tk.textMuted,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "Bu akşam ne izliyoruz?",
+                fontFamily = Fraunces,
+                fontWeight = FontWeight.Bold,
+                fontSize = 30.sp,
+                letterSpacing = (-0.5).sp,
+                lineHeight = 34.sp,
+                color = tk.text,
+                textAlign = TextAlign.Center,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                if (pool.isEmpty()) "Sırada listesine birkaç yapım ekle"
+                else "Sırada listesinden ${pool.size} yapım",
+                style = MaterialTheme.typography.bodyMedium,
+                color = tk.textSoft,
+                textAlign = TextAlign.Center,
+            )
 
-            // Kazanan önce gösterilir — lejant onu ekran dışına itmesin
-            if (winner != null) {
+            Spacer(Modifier.height(10.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                FilterPill("Hepsi", typeFilter == null, onClick = { typeFilter = null })
+                ContentType.entries.forEach { type ->
+                    FilterPill(
+                        type.label,
+                        typeFilter == type,
+                        onClick = { typeFilter = if (typeFilter == type) null else type },
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            if (pool.isEmpty()) {
+                EmptyState(
+                    emoji = if (titles.isEmpty()) "🗓️" else "🎬",
+                    title = if (titles.isEmpty()) "Çark boş!" else "Bu türde yapım yok",
+                    subtitle = if (titles.isEmpty()) {
+                        "Önce Sırada listesine birkaç başlık ekleyin, sonra gelin döndürelim."
+                    } else {
+                        "Sırada listesinde bu türde yapım yok; başka bir tür seç."
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 48.dp),
+                )
+            } else {
+                Box(
+                    Modifier
+                        .fillMaxWidth(0.88f)
+                        .aspectRatio(1f),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    WheelCanvas(
+                        titles = pool,
+                        angle = rotation.value,
+                        posters = posters,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                    // Merkez: altın halkalı oynat düğmesi
+                    Box(
+                        modifier = Modifier
+                            .size(92.dp)
+                            .clip(CircleShape)
+                            .background(Color(0xFF0E1116))
+                            .clickable(enabled = !spinning) { spinWheel() }
+                            .drawWithContent {
+                                drawContent()
+                                drawCircle(
+                                    color = tk.gold,
+                                    style = Stroke(width = 4.dp.toPx()),
+                                )
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Icon(
+                            MinimuvIcons.Play,
+                            contentDescription = "Çevir",
+                            tint = tk.gold,
+                            modifier = Modifier.size(36.dp),
+                        )
+                    }
+                    // Gösterge: altın damla
+                    Canvas(Modifier.fillMaxSize()) {
+                        val cx = size.width / 2f
+                        val headR = 9.dp.toPx()
+                        val headCy = headR + 1.dp.toPx()
+                        drawCircle(tk.gold, radius = headR, center = Offset(cx, headCy))
+                        val tipY = headCy + 18.dp.toPx()
+                        val path = Path().apply {
+                            moveTo(cx - headR, headCy + 3.dp.toPx())
+                            lineTo(cx, tipY)
+                            lineTo(cx + headR, headCy + 3.dp.toPx())
+                            close()
+                        }
+                        drawPath(path, color = tk.gold)
+                    }
+                }
+
+                Spacer(Modifier.height(20.dp))
+
+                // Çevir — ortak gradyan hap
                 Box(
                     Modifier
                         .fillMaxWidth()
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(MidnightCard)
-                        .padding(16.dp),
+                        .height(54.dp)
+                        .clip(RoundedCornerShape(27.dp))
+                        .background(if (spinning) SolidColor(tk.surface2) else tk.together)
+                        .bounceClick(onClick = { spinWheel() }, enabled = !spinning),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text("Bu gece izliyoruz:", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            winner!!.title,
-                            style = MaterialTheme.typography.titleLarge,
-                            textAlign = TextAlign.Center,
+                    Text(
+                        "Çevir",
+                        fontFamily = Fraunces,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 17.sp,
+                        color = if (spinning) tk.textMuted else tk.ink,
+                    )
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(24.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ToggleLabel(
+                        label = if (soundOn) "Ses açık" else "Ses kapalı",
+                        active = soundOn,
+                        onClick = { soundOn = !soundOn },
+                    ) {
+                        Icon(
+                            if (soundOn) MinimuvIcons.SoundOn else MinimuvIcons.SoundOff,
+                            contentDescription = null,
+                            tint = if (soundOn) tk.text else tk.textMuted,
+                            modifier = Modifier.size(16.dp),
                         )
-                        Spacer(Modifier.height(10.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            MinimuvButton(
-                                label = "Detaya git 🍿",
-                                onClick = { onOpenTitle(winner!!.id) },
-                            )
-                            MinimuvButton(
-                                label = "Tekrar 🎲",
-                                onClick = { spinWheel() },
-                                enabled = !spinning,
-                            )
-                        }
+                    }
+                    ToggleLabel(
+                        label = if (vibrationOn) "Titreşim açık" else "Titreşim kapalı",
+                        active = vibrationOn,
+                        onClick = { vibrationOn = !vibrationOn },
+                    ) {
+                        MinimuvEmojiIcon(
+                            "📳",
+                            size = 16.dp,
+                            tint = if (vibrationOn) tk.text else tk.textMuted,
+                        )
                     }
                 }
-            } else {
-                Text(
-                    "Ortadaki butona bas, çark karar versin!",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary,
-                )
+
+                // Kazanan artık burada değil — çark durunca ortada popup olarak açılır
             }
 
-            // Kompakt lejant — hangi yapımın hangi dilimde olduğunu gösterir
-            if (pool.size > 6) {
+            Spacer(Modifier.height(120.dp))
+        }
+
+        // Kazanan popup'ı — çark durunca ekranın ortasında belirir
+        val win = winner
+        if (showWinner && win != null) {
+            WinnerPopup(
+                winner = win,
+                poster = win.posterUrl?.let { posters[it] },
+                confettiTrigger = confettiTrigger,
+                onClose = { showWinner = false },
+                onOpen = {
+                    showWinner = false
+                    onOpenTitle(win.id)
+                },
+                onSpinAgain = {
+                    showWinner = false
+                    spinWheel()
+                },
+            )
+        }
+    }
+}
+
+/** Çark durunca kazananı ekranın ortasında gösteren popup. */
+@Composable
+private fun WinnerPopup(
+    winner: Title,
+    poster: ImageBitmap?,
+    confettiTrigger: Int,
+    onClose: () -> Unit,
+    onOpen: () -> Unit,
+    onSpinAgain: () -> Unit,
+) {
+    val tk = tokens()
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(
+            dismissOnBackPress = true,
+            dismissOnClickOutside = true,
+            usePlatformDefaultWidth = false,
+            decorFitsSystemWindows = false,
+        ),
+    ) {
+        // Dialog penceresinin kendi karartmasını kapat — scrim'i biz çiziyoruz
+        val view = LocalView.current
+        SideEffect { (view.parent as? DialogWindowProvider)?.window?.setDimAmount(0f) }
+
+        val appear = remember { Animatable(0f) }
+        LaunchedEffect(Unit) {
+            appear.animateTo(1f, tween(240, easing = CubicBezierEasing(0.2f, 0f, 0.1f, 1f)))
+        }
+
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            // Karartma — dokununca kapanır
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { alpha = appear.value }
+                    .background(Color.Black.copy(alpha = 0.68f))
+                    .clickable(MutableInteractionSource(), null, onClick = onClose),
+            )
+            ConfettiOverlay(trigger = confettiTrigger, modifier = Modifier.fillMaxSize())
+
+            Column(
+                Modifier
+                    .fillMaxWidth(0.84f)
+                    .graphicsLayer {
+                        alpha = appear.value
+                        val s = 0.88f + 0.12f * appear.value
+                        scaleX = s
+                        scaleY = s
+                    }
+                    .clip(RoundedCornerShape(26.dp))
+                    .background(tk.surface1)
+                    .border(1.dp, tk.gold.copy(alpha = 0.45f), RoundedCornerShape(26.dp))
+                    .pointerInput(Unit) { detectTapGestures { } }
+                    .padding(horizontal = 20.dp, vertical = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        "ÇARK KARAR VERDİ",
+                        style = MaterialTheme.typography.labelSmall,
+                        letterSpacing = 2.sp,
+                        color = tk.gold,
+                    )
+                    Spacer(Modifier.weight(1f))
+                    DcIconButton(
+                        onClick = onClose,
+                        contentDescription = "Kapat",
+                        size = 34.dp,
+                    ) {
+                        Icon(
+                            MinimuvIcons.Close,
+                            contentDescription = null,
+                            tint = tk.textMuted,
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
+                }
+
                 Spacer(Modifier.height(10.dp))
-                Column(
+
+                Box(
+                    Modifier
+                        .size(width = 118.dp, height = 166.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(tk.surface2),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (poster != null) {
+                        Image(
+                            bitmap = poster,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Text("🍿", fontSize = 42.sp)
+                    }
+                }
+
+                Spacer(Modifier.height(14.dp))
+                Text(
+                    "Bu gece izliyoruz",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tk.textSoft,
+                )
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    winner.title,
+                    fontFamily = Fraunces,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 22.sp,
+                    lineHeight = 27.sp,
+                    color = tk.text,
+                    textAlign = TextAlign.Center,
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "${ContentType.fromDb(winner.type).label} · Sırada",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = tk.textMuted,
+                )
+
+                Spacer(Modifier.height(18.dp))
+                DcButton(
+                    label = "Detaya git",
+                    onClick = onOpen,
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 50.dp,
+                )
+                Box(
                     Modifier
                         .fillMaxWidth()
-                        .heightIn(max = 60.dp)
-                        .verticalScroll(rememberScrollState()),
+                        .height(46.dp)
+                        .clip(RoundedCornerShape(23.dp))
+                        .clickable(MutableInteractionSource(), null, onClick = onSpinAgain),
+                    contentAlignment = Alignment.Center,
                 ) {
                     Text(
-                        "Dilimler:",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = TextSecondary,
-                        modifier = Modifier.padding(bottom = 3.dp),
+                        "Tekrar çevir 🎲",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = tk.textSoft,
                     )
-                    androidx.compose.foundation.layout.FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(5.dp),
-                        verticalArrangement = Arrangement.spacedBy(5.dp),
-                    ) {
-                        pool.forEachIndexed { index, item ->
-                            Row(
-                                Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .background(MidnightCard)
-                                    .padding(horizontal = 6.dp, vertical = 2.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Box(
-                                    Modifier
-                                        .size(8.dp)
-                                        .clip(CircleShape)
-                                        .background(sliceColors[index % sliceColors.size]),
-                                )
-                                Spacer(Modifier.width(5.dp))
-                                Text(
-                                    "${index + 1}. ${item.title.take(18)}${if (item.title.length > 18) "…" else ""}",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = TextSecondary,
-                                )
-                            }
-                        }
-                    }
                 }
             }
         }
-        Spacer(Modifier.height(16.dp))
+    }
+}
+
+@Composable
+private fun ToggleLabel(
+    label: String,
+    active: Boolean,
+    onClick: () -> Unit,
+    icon: @Composable () -> Unit,
+) {
+    val tk = tokens()
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 8.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        icon()
+        Spacer(Modifier.width(6.dp))
+        Text(
+            label,
+            style = MaterialTheme.typography.bodySmall,
+            color = if (active) tk.text else tk.textMuted,
+        )
     }
 }
 
@@ -436,19 +632,42 @@ private fun WheelCanvas(
     modifier: Modifier = Modifier,
 ) {
     val sliceAngle = 360f / titles.size
-    val primary = MaterialTheme.colorScheme.primary
+    val tk = tokens()
     Canvas(modifier) {
         val radius = size.minDimension / 2f
         val center = Offset(size.width / 2f, size.height / 2f)
-        val arcRect = Rect(center.x - radius, center.y - radius, center.x + radius, center.y + radius)
         val innerR = radius * 0.30f
-        val outerR = radius * 0.98f
+        val outerR = radius * 0.93f
+        val arcRect = Rect(center.x - outerR, center.y - outerR, center.x + outerR, center.y + outerR)
         val textPaint = android.graphics.Paint().apply {
             color = android.graphics.Color.parseColor("#F2EFE9")
             textSize = 12.dp.toPx()
             textAlign = android.graphics.Paint.Align.CENTER
             isFakeBoldText = true
         }
+
+        // Dilim aralarındaki koyu zemin
+        drawCircle(tk.bg, radius = outerR, center = center)
+        // Kalın koyu dış halka
+        drawCircle(
+            tk.bg,
+            radius = radius * 0.955f,
+            center = center,
+            style = Stroke(width = 7.dp.toPx()),
+        )
+        // Altın kesikli ring
+        drawCircle(
+            tk.gold,
+            radius = radius * 0.975f,
+            center = center,
+            style = Stroke(
+                width = 2.5.dp.toPx(),
+                pathEffect = PathEffect.dashPathEffect(
+                    floatArrayOf(7.dp.toPx(), 6.dp.toPx()),
+                ),
+            ),
+        )
+
         titles.forEachIndexed { index, title ->
             // drawArc DERECE bekler; dönüşü doğrudan derece olarak ekle
             val startAngle = index * sliceAngle + angle
@@ -525,12 +744,5 @@ private fun WheelCanvas(
                 }
             }
         }
-        drawCircle(Color(0xFF0E1116), radius = radius * 0.22f, center = center)
-        drawCircle(
-            primary,
-            radius = radius * 0.22f,
-            center = center,
-            style = Stroke(width = 4.dp.toPx()),
-        )
     }
 }

@@ -74,6 +74,7 @@ import com.sinop.minimuv.ui.components.PosterCard
 import com.sinop.minimuv.ui.components.SectionTitle
 import com.sinop.minimuv.ui.components.SoftChip
 import com.sinop.minimuv.ui.components.StatusChip
+import com.sinop.minimuv.ui.components.bounceClick
 import com.sinop.minimuv.ui.theme.Baloo2
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.MidnightElevated
@@ -82,6 +83,8 @@ import com.sinop.minimuv.ui.theme.TextSecondary
 import com.sinop.minimuv.ui.theme.statusColor
 import com.sinop.minimuv.ui.theme.typeColor
 import com.sinop.minimuv.ui.theme.typeEmoji
+import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import java.util.Locale
 import kotlinx.coroutines.launch
 import sh.calvin.reorderable.ReorderableItem
@@ -163,7 +166,7 @@ fun ListScreen(
                     value = query,
                     onValueChange = { query = it },
                     modifier = Modifier.weight(1f),
-                    placeholder = { Text("Kütüphanemizde ara… 🔍") },
+                    placeholder = { Text("Kütüphanemizde ara…") },
                     leadingIcon = { Icon(Icons.Filled.Search, null) },
                     trailingIcon = {
                         if (query.isNotBlank()) {
@@ -188,11 +191,11 @@ fun ListScreen(
                     Modifier
                         .size(44.dp)
                         .clip(RoundedCornerShape(50))
-                        .background(MidnightCard)
-                        .clickable {
+                        .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                        .bounceClick(onClick = {
                             drawerOpen = true
                             scope.launch { drawerState.open() }
-                        },
+                        }),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -237,7 +240,7 @@ fun ListScreen(
                 }
                 titles == null -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Text(
+                        EmojiText(
                             "Bir şeyler ters gitti 😵‍💫\n${vm.error.value.orEmpty()}",
                             style = MaterialTheme.typography.bodyMedium,
                             color = TextSecondary,
@@ -558,7 +561,7 @@ private fun TitleRow(
                     StatusChip(title.status)
                     if (title.totalRewatches > 0) {
                         Spacer(Modifier.width(6.dp))
-                        Text(
+                        EmojiText(
                             "🔁 ${title.totalRewatches}",
                             style = MaterialTheme.typography.labelSmall,
                             color = TextSecondary,
@@ -566,7 +569,7 @@ private fun TitleRow(
                     }
                     priorityLabel?.let {
                         Spacer(Modifier.width(6.dp))
-                        Text(
+                        EmojiText(
                             it,
                             style = MaterialTheme.typography.labelSmall,
                             color = typeColor(title.type),
@@ -576,13 +579,24 @@ private fun TitleRow(
             }
         }
         title.score?.let { score ->
-            Text(
-                String.format(Locale.US, "★ %.1f", score),
-                style = MaterialTheme.typography.labelMedium,
-                color = Color(0xFFFFD166),
-                fontFamily = Baloo2,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(start = 8.dp),
-            )
+            ) {
+                Icon(
+                    MinimuvIcons.Star,
+                    contentDescription = null,
+                    tint = Color(0xFFFFD166),
+                    modifier = Modifier.size(14.dp),
+                )
+                Spacer(Modifier.width(3.dp))
+                Text(
+                    String.format(Locale.US, "%.1f", score),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Color(0xFFFFD166),
+                    fontFamily = Baloo2,
+                )
+            }
         }
         Text(
             if (title.type != "film") {
@@ -743,7 +757,7 @@ private fun PlanPriorityList(
                             overflow = TextOverflow.Ellipsis,
                         )
                         val both = title.priorityOrder != null
-                        Text(
+                        EmojiText(
                             if (both) "👥 İkimiz de istiyoruz" else "✨ Sırada",
                             style = MaterialTheme.typography.labelSmall,
                             color = if (both) MaterialTheme.colorScheme.secondary else TextSecondary,

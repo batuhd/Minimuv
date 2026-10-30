@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import com.google.firebase.appdistribution.AppDistributionRelease
 import com.google.firebase.appdistribution.FirebaseAppDistribution
 import com.google.firebase.appdistribution.FirebaseAppDistributionException
 import com.sinop.minimuv.BuildConfig
+import com.sinop.minimuv.ui.theme.icons.EmojiText
 
 private sealed interface UpdateUiState {
     data object Idle : UpdateUiState
@@ -63,7 +65,7 @@ fun InAppUpdateHost() {
     when (val s = state) {
         is UpdateUiState.Available -> AlertDialog(
             onDismissRequest = { state = UpdateUiState.Idle },
-            title = { Text("Yeni sürüm var 🎉") },
+            title = { EmojiText("Yeni sürüm var 🎉", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall) },
             text = { Text("Minimuv v${s.release.displayVersion} hazır.\nGüncellemeyi şimdi indirip kuralım mı?") },
             confirmButton = {
                 TextButton(onClick = {
