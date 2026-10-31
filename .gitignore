@@ -54,3 +54,6 @@ parse_cozum.py
 parsed_audits.txt
 run_audit.py
 tmp_audit.txt
+
+# Audit reports
+audit-reports/
