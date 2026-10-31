@@ -48,19 +48,18 @@ import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.data.WatchLog
 import com.sinop.minimuv.data.WatchStatus
-import com.sinop.minimuv.ui.theme.Gold
-import com.sinop.minimuv.ui.theme.MidnightCard
-import com.sinop.minimuv.ui.theme.MidnightElevated
 import com.sinop.minimuv.ui.theme.icons.EmojiText
 import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
 import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import com.sinop.minimuv.ui.theme.typeColor
+import com.sinop.minimuv.ui.theme.tokens
 import com.sinop.minimuv.ui.theme.typeEmoji
 import java.time.DayOfWeek
 import java.time.LocalDate
 
 @Composable
 fun WrappedScreen(onBack: () -> Unit) {
+    val tk = tokens()
     val repo = remember { TitleRepository() }
     var data by remember { mutableStateOf<Pair<List<Title>, List<WatchLog>>?>(null) }
     var loadError by remember { mutableStateOf<String?>(null) }
@@ -86,7 +85,7 @@ fun WrappedScreen(onBack: () -> Unit) {
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF0E0E12))
+            .background(tk.bg)
             .statusBarsPadding(),
     ) {
         Column(Modifier.fillMaxSize()) {
@@ -98,26 +97,26 @@ fun WrappedScreen(onBack: () -> Unit) {
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Geri",
-                        tint = Color.White,
+                        tint = tk.text,
                     )
                 }
-                Text("Yıl Özetimiz", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
+                Text("Yıl Özetimiz", style = MaterialTheme.typography.titleLarge, color = tk.text, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
                 IconButton(
                     onClick = { year = (year - 1).coerceAtLeast(2000) },
                     modifier = Modifier.semantics { contentDescription = "Önceki yıl" },
-                ) { Text("◀", color = Color.White.copy(alpha = 0.7f)) }
-                Text("$year", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
+                ) { Text("◀", color = tk.text.copy(alpha = 0.7f)) }
+                Text("$year", style = MaterialTheme.typography.titleMedium, color = tk.text, fontWeight = FontWeight.Bold)
                 IconButton(
                     onClick = { year = (year + 1).coerceAtMost(LocalDate.now().year) },
                     modifier = Modifier.semantics { contentDescription = "Sonraki yıl" },
-                ) { Text("▶", color = Color.White.copy(alpha = 0.7f)) }
+                ) { Text("▶", color = tk.text.copy(alpha = 0.7f)) }
             }
 
             when {
                 data == null && loadError == null -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        androidx.compose.material3.CircularProgressIndicator(color = Color.White)
+                        androidx.compose.material3.CircularProgressIndicator(color = tk.text)
                     }
                 }
                 loadError != null -> {
@@ -125,11 +124,11 @@ fun WrappedScreen(onBack: () -> Unit) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             MinimuvEmojiIcon("📡", size = 30.dp)
                             Spacer(Modifier.height(8.dp))
-                            Text("Özet hesaplanamadı", style = MaterialTheme.typography.titleMedium, color = Color.White)
+                            Text("Özet hesaplanamadı", style = MaterialTheme.typography.titleMedium, color = tk.text)
                             Text(
                                 "Bağlantıyı kontrol edip tekrar dene.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = Color.White.copy(alpha = 0.7f),
+                                color = tk.text.copy(alpha = 0.7f),
                             )
                             Spacer(Modifier.height(12.dp))
                             com.sinop.minimuv.ui.components.MinimuvButton(
@@ -147,6 +146,7 @@ fun WrappedScreen(onBack: () -> Unit) {
 
 @Composable
 private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
+    val tk = tokens()
     val (titles, log) = pair
     val yearPrefix = year.toString()
 
@@ -178,7 +178,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                 Text(
                     "$year için kayıt yok. Bu yıl birlikte izlemeye başlayın!",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color.White.copy(alpha = 0.8f),
+                    color = tk.text.copy(alpha = 0.8f),
                 )
             }
         }
@@ -253,7 +253,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                 .clip(RoundedCornerShape(24.dp))
                 .background(
                     Brush.linearGradient(
-                        listOf(Brand1, Brand2, Brand3),
+                        listOf(tk.van, tk.sinop, tk.gold),
                     ),
                 ),
         ) {
@@ -266,19 +266,19 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                 Text(
                     "Minimuv Wrapped",
                     style = MaterialTheme.typography.labelMedium,
-                    color = Color.White.copy(alpha = 0.85f),
+                    color = tk.text.copy(alpha = 0.85f),
                 )
                 Column {
                     Text(
                         "$year",
                         style = MaterialTheme.typography.displayLarge,
-                        color = Color.White,
+                        color = tk.text,
                         fontWeight = FontWeight.Bold,
                     )
                     Text(
                         "Birlikte geçirdiğimiz ekran yılı",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = Color.White.copy(alpha = 0.9f),
+                        color = tk.text.copy(alpha = 0.9f),
                     )
                 }
             }
@@ -298,7 +298,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
 
         if (top3.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
-            EmojiText("Yılın En Değerlileri 🏆", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            EmojiText("Yılın En Değerlileri 🏆", style = MaterialTheme.typography.titleMedium, color = tk.text)
             Spacer(Modifier.height(8.dp))
             top3.forEachIndexed { index, t ->
                 Row(
@@ -306,14 +306,14 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(14.dp))
-                        .background(MidnightCard)
+                        .background(tk.surface1)
                         .padding(10.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Text(
                         "${index + 1}",
                         style = MaterialTheme.typography.headlineSmall,
-                        color = if (index == 0) Gold else Color.White.copy(alpha = 0.6f),
+                        color = if (index == 0) tk.gold else tk.text.copy(alpha = 0.6f),
                         modifier = Modifier.width(28.dp),
                     )
                     Box(
@@ -321,7 +321,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                             .width(44.dp)
                             .aspectRatio(2f / 3f)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(MidnightElevated),
+                            .background(tk.surface2),
                     ) {
                         if (t.posterUrl != null) {
                             AsyncImage(
@@ -337,7 +337,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                         Text(
                             t.title,
                             style = MaterialTheme.typography.titleSmall,
-                            color = Color.White,
+                            color = tk.text,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -350,12 +350,12 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                     }
                     if (t.score != null) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(MinimuvIcons.Star, null, tint = Gold, modifier = Modifier.size(14.dp))
+                            Icon(MinimuvIcons.Star, null, tint = tk.gold, modifier = Modifier.size(14.dp))
                             Spacer(Modifier.width(2.dp))
                             Text(
                                 String.format(java.util.Locale.US, "%.1f", t.score),
                                 style = MaterialTheme.typography.titleSmall,
-                                color = Gold,
+                                color = tk.gold,
                             )
                         }
                     }
@@ -365,13 +365,13 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
 
         // ── Aylık aktivite grafiği ─────────────────────────────────
         Spacer(Modifier.height(24.dp))
-        EmojiText("Aylık Aktivite 📅", style = MaterialTheme.typography.titleMedium, color = Color.White)
+        EmojiText("Aylık Aktivite 📅", style = MaterialTheme.typography.titleMedium, color = tk.text)
         Spacer(Modifier.height(10.dp))
         Row(
             Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(16.dp))
-                .background(MidnightCard)
+                .background(tk.surface1)
                 .padding(horizontal = 12.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.Bottom,
@@ -389,15 +389,15 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                             .height(barHeight)
                             .clip(RoundedCornerShape(topStart = 3.dp, topEnd = 3.dp))
                             .background(
-                                if (count > 0) Color(0xFF3D8BFF)
-                                else Color.White.copy(alpha = 0.12f),
+                                if (count > 0) tk.van
+                                else tk.text.copy(alpha = 0.12f),
                             ),
                     )
                     Spacer(Modifier.height(5.dp))
                     Text(
                         monthLabels[i],
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = tk.text.copy(alpha = 0.7f),
                     )
                 }
             }
@@ -406,14 +406,14 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
         // ── Tür dağılımı ───────────────────────────────────────────
         if (typeCounts.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
-            EmojiText("Tür Dağılımı 🎭", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            EmojiText("Tür Dağılımı 🎭", style = MaterialTheme.typography.titleMedium, color = tk.text)
             Spacer(Modifier.height(8.dp))
             val maxCount = typeCounts.values.maxOrNull() ?: 1
             Column(
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MidnightCard)
+                    .background(tk.surface1)
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
@@ -433,7 +433,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                                 .weight(1f)
                                 .height(10.dp)
                                 .clip(RoundedCornerShape(50))
-                                .background(Color.White.copy(alpha = 0.12f)),
+                                .background(tk.text.copy(alpha = 0.12f)),
                         ) {
                             if (count > 0) {
                                 Box(
@@ -449,7 +449,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                         Text(
                             "$count",
                             style = MaterialTheme.typography.titleSmall,
-                            color = Color.White.copy(alpha = 0.8f),
+                            color = tk.text.copy(alpha = 0.8f),
                         )
                     }
                 }
@@ -479,7 +479,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                 Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MidnightCard)
+                    .background(tk.surface1)
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -489,12 +489,12 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                     Text(
                         "${formatDateTr(longestBinge.key)} — bir günde ${longestBinge.value} bölüm!",
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color.White,
+                        color = tk.text,
                     )
                     Text(
                         "Yılın en büyük maraton günü",
                         style = MaterialTheme.typography.labelSmall,
-                        color = Color.White.copy(alpha = 0.7f),
+                        color = tk.text.copy(alpha = 0.7f),
                     )
                 }
             }
@@ -502,7 +502,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
 
         if (firstTitle != null || lastTitle != null) {
             Spacer(Modifier.height(24.dp))
-            EmojiText("Yılın Serüveni 🎞️", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            EmojiText("Yılın Serüveni 🎞️", style = MaterialTheme.typography.titleMedium, color = tk.text)
             Spacer(Modifier.height(8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 if (firstTitle != null) {
@@ -516,7 +516,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
 
         if (favorites.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
-            Text("Birlikte bayıldıklarımız (9+)", style = MaterialTheme.typography.titleMedium, color = Color.White)
+            Text("Birlikte bayıldıklarımız (9+)", style = MaterialTheme.typography.titleMedium, color = tk.text)
             Spacer(Modifier.height(8.dp))
             favorites.forEach { t ->
                 Row(
@@ -524,7 +524,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                         .fillMaxWidth()
                         .padding(vertical = 4.dp)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(MidnightCard)
+                        .background(tk.surface1)
                         .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -533,7 +533,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                             .width(40.dp)
                             .aspectRatio(2f / 3f)
                             .clip(RoundedCornerShape(6.dp))
-                            .background(MidnightElevated),
+                            .background(tk.surface2),
                     ) {
                         if (t.posterUrl != null) {
                             AsyncImage(
@@ -548,18 +548,18 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
                     Text(
                         t.title,
                         style = MaterialTheme.typography.titleSmall,
-                        color = Color.White,
+                        color = tk.text,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f),
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(MinimuvIcons.Star, null, tint = Gold, modifier = Modifier.size(14.dp))
+                        Icon(MinimuvIcons.Star, null, tint = tk.gold, modifier = Modifier.size(14.dp))
                         Spacer(Modifier.width(2.dp))
                         Text(
                             String.format(java.util.Locale.US, "%.1f", t.score ?: 0.0),
                             style = MaterialTheme.typography.titleSmall,
-                            color = Gold,
+                            color = tk.gold,
                         )
                     }
                 }
@@ -570,7 +570,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
         EmojiText(
             "Bir yıl daha birlikte izlemeye… 💑",
             style = MaterialTheme.typography.titleMedium,
-            color = Color.White.copy(alpha = 0.7f),
+            color = tk.text.copy(alpha = 0.7f),
             modifier = Modifier.fillMaxWidth(),
         )
         Spacer(Modifier.height(32.dp))
@@ -579,10 +579,11 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
 
 @Composable
 private fun MilestoneCard(emoji: String, label: String, title: Title, modifier: Modifier = Modifier) {
+    val tk = tokens()
     Column(
         modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(MidnightCard)
+            .background(tk.surface1)
             .padding(14.dp),
     ) {
         MinimuvEmojiIcon(emoji, size = 22.dp)
@@ -590,7 +591,7 @@ private fun MilestoneCard(emoji: String, label: String, title: Title, modifier: 
         Text(
             title.title,
             style = MaterialTheme.typography.titleSmall,
-            color = Color.White,
+            color = tk.text,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
@@ -600,7 +601,7 @@ private fun MilestoneCard(emoji: String, label: String, title: Title, modifier: 
             color = typeColor(title.type),
         )
         Spacer(Modifier.height(4.dp))
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tk.text.copy(alpha = 0.7f))
     }
 }
 
@@ -622,19 +623,17 @@ private fun formatDateTr(iso: String): String =
 
 @Composable
 private fun StatCard(emoji: String, value: String, label: String, modifier: Modifier = Modifier) {
+    val tk = tokens()
     Column(
         modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(MidnightCard)
+            .background(tk.surface1)
             .padding(16.dp),
     ) {
         MinimuvEmojiIcon(emoji, size = 22.dp)
         Spacer(Modifier.height(4.dp))
-        Text(value, style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.7f))
+        Text(value, style = MaterialTheme.typography.titleLarge, color = tk.text, fontWeight = FontWeight.Bold)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tk.text.copy(alpha = 0.7f))
     }
 }
 
-private val Brand1 = Color(0xFF7B2CBF)
-private val Brand2 = Color(0xFFC85E7A)
-private val Brand3 = Color(0xFFF5A623)

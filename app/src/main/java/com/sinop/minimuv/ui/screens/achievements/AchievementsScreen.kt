@@ -45,8 +45,10 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.sinop.minimuv.data.Achievement
@@ -55,16 +57,15 @@ import com.sinop.minimuv.data.Achievements
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.ui.components.ConfettiOverlay
 import com.sinop.minimuv.ui.components.MinimuvSurface
-import com.sinop.minimuv.ui.theme.Gold
-import com.sinop.minimuv.ui.theme.GoldDeep
-import com.sinop.minimuv.ui.theme.OutlineSoft
-import com.sinop.minimuv.ui.theme.TextPrimary
-import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.components.screenGlow
+import com.sinop.minimuv.ui.theme.Fraunces
 import com.sinop.minimuv.ui.theme.icons.EmojiText
 import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
+import com.sinop.minimuv.ui.theme.tokens
 
 @Composable
 fun AchievementsScreen(onBack: () -> Unit = {}) {
+    val tk = tokens()
     val vm: AchievementsViewModel = viewModel()
     val unlocked by vm.unlocked.collectAsStateWithLifecycle()
     val stats by vm.stats.collectAsStateWithLifecycle()
@@ -84,6 +85,7 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
+                .screenGlow()
                 .statusBarsPadding(),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(
                 top = 10.dp, bottom = 96.dp,
@@ -97,9 +99,15 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
                         .padding(horizontal = 8.dp, vertical = 4.dp),
                 ) {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri", tint = tk.text)
                     }
-                    Text("Rozetlerimiz", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Rozetlerimiz",
+                        fontFamily = Fraunces,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = tk.text,
+                    )
                 }
             }
             item {
@@ -112,7 +120,7 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
                     EmojiText(
                         "Birlikte başardıklarımız. 💕",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary,
+                        color = tk.textMuted,
                     )
                     Spacer(Modifier.height(14.dp))
                     StatsBar(stats)
@@ -157,10 +165,17 @@ private fun StatsBar(stats: CoupleStats) {
 
 @Composable
 private fun StatCell(emoji: String, value: String, label: String) {
+    val tk = tokens()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         MinimuvEmojiIcon(emoji, size = 20.dp)
-        Text(value, style = MaterialTheme.typography.titleLarge)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+        Text(
+            value,
+            fontFamily = Fraunces,
+            fontWeight = FontWeight.Bold,
+            fontSize = 20.sp,
+            color = tk.text,
+        )
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tk.textMuted)
     }
 }
 
@@ -172,6 +187,7 @@ private fun JourneyRow(
     progress: Int,
     justOpened: Boolean,
 ) {
+    val tk = tokens()
     val haptic = LocalHapticFeedback.current
     val scale by animateFloatAsState(
         targetValue = if (justOpened) 1.25f else 1f,
@@ -193,7 +209,7 @@ private fun JourneyRow(
         Canvas(Modifier.align(Alignment.CenterStart)) {
             val mid = size.height / 2f
             drawLine(
-                color = OutlineSoft,
+                color = tk.surface3,
                 start = Offset(0f, mid),
                 end = Offset(size.width, mid),
                 strokeWidth = 3.dp.toPx(),
@@ -221,7 +237,7 @@ private fun JourneyRow(
                             .clip(CircleShape)
                             .background(
                                 Brush.radialGradient(
-                                    listOf(Gold.copy(alpha = 0.30f), Color(0x00FFD166)),
+                                    listOf(tk.gold.copy(alpha = 0.30f), tk.gold.copy(alpha = 0f)),
                                 )
                             ),
                     )
@@ -232,11 +248,11 @@ private fun JourneyRow(
                         .clip(CircleShape)
                         .background(
                             if (isUnlocked) {
-                                Brush.radialGradient(listOf(Gold, GoldDeep))
+                                Brush.radialGradient(listOf(tk.gold, tk.gold.copy(alpha = 0.75f)))
                             } else {
                                 // Kilitli: frosted cam hissi
                                 Brush.radialGradient(
-                                    listOf(Color(0x8C2A313C), Color(0x8C1A1F26)),
+                                    listOf(tk.surface3.copy(alpha = 0.55f), tk.surface2.copy(alpha = 0.55f)),
                                 )
                             },
                         )
@@ -244,11 +260,11 @@ private fun JourneyRow(
                             width = 1.dp,
                             brush = if (isUnlocked) {
                                 Brush.radialGradient(
-                                    listOf(Color.White.copy(alpha = 0.55f), GoldDeep.copy(alpha = 0.25f)),
+                                    listOf(tk.text.copy(alpha = 0.55f), tk.gold.copy(alpha = 0.25f)),
                                 )
                             } else {
                                 Brush.radialGradient(
-                                    listOf(TextPrimary.copy(alpha = 0.18f), Color.Transparent),
+                                    listOf(tk.text.copy(alpha = 0.18f), Color.Transparent),
                                 )
                             },
                             shape = CircleShape,
@@ -266,13 +282,15 @@ private fun JourneyRow(
             Column {
                 Text(
                     def.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = if (isUnlocked) Gold else MaterialTheme.colorScheme.onBackground,
+                    fontFamily = Fraunces,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = if (isUnlocked) tk.gold else tk.text,
                 )
                 Text(
                     def.description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = TextSecondary,
+                    color = tk.textSoft,
                     maxLines = 2,
                 )
                 if (!isUnlocked) {
@@ -289,7 +307,7 @@ private fun JourneyRow(
                                 .width(120.dp)
                                 .height(8.dp)
                                 .clip(CircleShape)
-                                .background(OutlineSoft.copy(alpha = 0.6f)),
+                                .background(tk.surface3.copy(alpha = 0.6f)),
                         ) {
                             if (fillFraction > 0.01f) {
                                 Box(
@@ -297,7 +315,7 @@ private fun JourneyRow(
                                         .fillMaxWidth(fillFraction)
                                         .fillMaxHeight()
                                         .clip(CircleShape)
-                                        .background(Brush.horizontalGradient(listOf(GoldDeep, Gold))),
+                                        .background(Brush.horizontalGradient(listOf(tk.gold.copy(alpha = 0.7f), tk.gold))),
                                 )
                             }
                         }
@@ -305,7 +323,7 @@ private fun JourneyRow(
                         Text(
                             "$progress/${def.target}",
                             style = MaterialTheme.typography.labelMedium,
-                            color = TextSecondary,
+                            color = tk.textMuted,
                         )
                     }
                 }

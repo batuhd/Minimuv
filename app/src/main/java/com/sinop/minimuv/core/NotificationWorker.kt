@@ -42,6 +42,15 @@ object BackgroundNotifier {
             )
         }.onFailure { Log.w("BackgroundNotifier", "zamanlama hatası", it) }
     }
+
+    fun scheduleTestNotification(context: Context, delaySeconds: Long = 5L) {
+        val request = androidx.work.OneTimeWorkRequestBuilder<TestNotificationWorker>()
+            .setInitialDelay(delaySeconds, TimeUnit.SECONDS)
+            .build()
+        runCatching {
+            WorkManager.getInstance(context).enqueue(request)
+        }.onFailure { Log.w("BackgroundNotifier", "test bildirim zamanlama hatası", it) }
+    }
 }
 
 class NotificationWorker(
@@ -90,5 +99,23 @@ class NotificationWorker(
             Log.w("NotificationWorker", "kontrol hatası (retry)", e)
             Result.retry()
         }
+    }
+}
+
+class TestNotificationWorker(
+    appContext: Context,
+    params: WorkerParameters,
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        val context = applicationContext
+        NotificationHelper.ensureChannels(context)
+        NotificationHelper.show(
+            context,
+            "💌 Minimuv Test Bildirimi",
+            "Uygulama kapalıyken bile bildirimler sorunsuz çalışıyor! 🎉",
+            id = (System.currentTimeMillis() % 100000).toInt(),
+        )
+        return Result.success()
     }
 }

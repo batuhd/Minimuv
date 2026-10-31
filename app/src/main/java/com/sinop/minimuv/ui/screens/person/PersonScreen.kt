@@ -139,7 +139,7 @@ fun PersonScreen(
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Geri",
-                    tint = Color.White,
+                    tint = tk.text,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -148,7 +148,7 @@ fun PersonScreen(
                     Icon(
                         if (isFav) MinimuvIcons.Heart else Icons.Filled.FavoriteBorder,
                         contentDescription = if (isFav) "Favoriden çıkar" else "Favoriye ekle",
-                        tint = if (isFav) Color(0xFFEF476F) else Color.White,
+                        tint = if (isFav) tk.van else tk.text,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -209,7 +209,7 @@ fun PersonScreen(
                                     p.name.take(1).uppercase(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 32.sp,
-                                    color = Color.White,
+                                    color = tk.text,
                                 )
                             }
                         }
@@ -220,7 +220,7 @@ fun PersonScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 24.sp,
                                 lineHeight = 28.sp,
-                                color = Color.White,
+                                color = tk.text,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -267,10 +267,15 @@ fun PersonScreen(
                             "Yapımları",
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
-                            color = Color.White,
+                            color = tk.text,
                         )
                         Text(
-                            "${worksList.size} / ${p.works.size} gösteriliyor",
+                            // Filtre etkinse sayı filtrelenmiş listeyi gösterir; tümü değil.
+                            if (selectedFilter == "Hepsi") {
+                                "${worksList.size} yapım"
+                            } else {
+                                "$selectedFilter: ${worksList.size} / ${p.works.size}"
+                            },
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 12.sp),
                             color = tk.textMuted,
                         )
@@ -289,7 +294,7 @@ fun PersonScreen(
                             Box(
                                 Modifier
                                     .clip(RoundedCornerShape(50))
-                                    .background(if (isSelected) Color.White else tk.surface2)
+                                    .background(if (isSelected) tk.text else tk.surface2)
                                     .clickable { selectedFilter = filter }
                                     .padding(horizontal = 14.dp, vertical = 7.dp),
                             ) {
@@ -299,7 +304,7 @@ fun PersonScreen(
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         fontSize = 12.sp,
                                     ),
-                                    color = if (isSelected) Color.Black else tk.textSoft,
+                                    color = if (isSelected) tk.ink else tk.textSoft,
                                 )
                             }
                         }
@@ -360,7 +365,7 @@ internal fun PersonWorkRow(work: PersonWork, displayLang: String?, onClick: () -
                 shownTitle,
                 fontWeight = FontWeight.Bold,
                 fontSize = 14.sp,
-                color = Color.White,
+                color = tk.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

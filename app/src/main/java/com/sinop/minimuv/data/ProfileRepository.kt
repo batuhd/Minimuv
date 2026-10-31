@@ -9,10 +9,14 @@ import kotlinx.serialization.json.JsonNull
 
 class ProfileRepository {
 
-    suspend fun getProfiles(): List<Profile> =
-        SupabaseProvider.client.postgrest.from("profiles")
+    suspend fun getProfiles(): List<Profile> {
+        val list = SupabaseProvider.client.postgrest.from("profiles")
             .select { order("name", Order.ASCENDING) }
             .decodeList<Profile>()
+        AppCache.profiles.value = list
+        AppCache.profilesLoaded = true
+        return list
+    }
 
     suspend fun getProfile(id: String): Profile? =
         SupabaseProvider.client.postgrest.from("profiles")
@@ -36,6 +40,19 @@ class ProfileRepository {
             }
         ) {
             filter { eq("id", profileId) }
+        }
+        // Bellek önbelleğini ağa gitmeden güncelle (avatar/tema anında yansısın).
+        AppCache.patchProfile(profileId) {
+            it.copy(
+                name = name ?: it.name,
+                emoji = emoji ?: it.emoji,
+                avatarColor = avatarColor ?: it.avatarColor,
+                avatarUrl = when {
+                    clearAvatar -> null
+                    avatarUrl != null -> avatarUrl
+                    else -> it.avatarUrl
+                },
+            )
         }
     }
 

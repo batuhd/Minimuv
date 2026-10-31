@@ -3,6 +3,7 @@ package com.sinop.minimuv.ui.screens.list
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sinop.minimuv.core.RealtimeManager
+import com.sinop.minimuv.data.AppCache
 import com.sinop.minimuv.data.EpisodeProgress
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
@@ -20,11 +21,12 @@ class ListViewModel : ViewModel() {
     private val repo = TitleRepository()
     private val profileRepo = ProfileRepository()
 
-    val titles = MutableStateFlow<List<Title>?>(null)
+    // P2: önbellek sıcaksa liste ağ beklemeden dolu açılır.
+    val titles = MutableStateFlow<List<Title>?>(if (AppCache.titlesLoaded) AppCache.titlesLite.value else null)
     val loading = MutableStateFlow(false)
     val error = MutableStateFlow<String?>(null)
-    val profiles = MutableStateFlow<List<Profile>>(emptyList())
-    val perProfileProgress = MutableStateFlow<List<EpisodeProgress>>(emptyList())
+    val profiles = MutableStateFlow<List<Profile>>(AppCache.profiles.value)
+    val perProfileProgress = MutableStateFlow<List<EpisodeProgress>>(AppCache.episodeProgress.value)
 
     init {
         refresh()

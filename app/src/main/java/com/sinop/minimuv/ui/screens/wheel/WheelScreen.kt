@@ -57,8 +57,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.graphics.drawscope.clipPath
-import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.input.pointer.pointerInput
@@ -77,7 +77,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.DialogWindowProvider
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil3.ImageLoader
+import coil3.SingletonImageLoader
 import coil3.request.ImageRequest
 import coil3.toBitmap
 import com.sinop.minimuv.core.WheelSound
@@ -95,6 +95,7 @@ import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
 import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import com.sinop.minimuv.ui.theme.tokens
 import com.sinop.minimuv.ui.theme.together
+import com.sinop.minimuv.ui.theme.toneShifted
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -108,10 +109,14 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
-// Dilim renkleri — canvas ve lejant aynı listeyi kullanır
-private val sliceColors = listOf(
-    Color(0xFF2E5245), Color(0xFF5B3B77), Color(0xFF1E2C63),
-    Color(0xFF1F5F63), Color(0xFF96601A), Color(0xFF7B2436),
+/** Dilim renkleri vurgu + partner renginden türetilir; canvas ve lejant aynı listeyi kullanır. */
+private fun wheelSliceColors(van: Color, sinop: Color): List<Color> = listOf(
+    van.copy(alpha = 0.85f),
+    sinop.copy(alpha = 0.85f),
+    toneShifted(van, 24f),
+    toneShifted(sinop, 24f),
+    van.copy(alpha = 0.55f),
+    sinop.copy(alpha = 0.55f),
 )
 
 @Composable
@@ -127,6 +132,8 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
     var soundOn by rememberSaveable { mutableStateOf(true) }
     var vibrationOn by rememberSaveable { mutableStateOf(true) }
     var typeFilter by remember { mutableStateOf<ContentType?>(null) }
+    // 3 ve altında çark yerine kart seçimi gösterilir (B3); burada vurgulanan kart tutulur.
+    var highlight by remember { mutableIntStateOf(-1) }
     val rotation = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
 
@@ -148,6 +155,7 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
         if (!spinning) {
             winner = null
             showWinner = false
+            highlight = -1
         }
     }
 
@@ -297,51 +305,51 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                         .aspectRatio(1f),
                     contentAlignment = Alignment.Center,
                 ) {
-                    WheelCanvas(
-                        titles = pool,
-                        angle = rotation.value,
-                        posters = posters,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                    // Merkez: altın halkalı oynat düğmesi
-                    Box(
-                        modifier = Modifier
-                            .size(92.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFF0E1116))
-                            .clickable(enabled = !spinning) { spinWheel() }
-                            .drawWithContent {
-                                drawContent()
-                                drawCircle(
-                                    color = tk.gold,
-                                    style = Stroke(width = 4.dp.toPx()),
-                                )
-                            },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            MinimuvIcons.Play,
-                            contentDescription = "Çevir",
-                            tint = tk.gold,
-                            modifier = Modifier.size(36.dp),
+                        WheelCanvas(
+                            titles = pool,
+                            angle = rotation.value,
+                            posters = posters,
+                            modifier = Modifier.fillMaxSize(),
                         )
-                    }
-                    // Gösterge: altın damla
-                    Canvas(Modifier.fillMaxSize()) {
-                        val cx = size.width / 2f
-                        val headR = 9.dp.toPx()
-                        val headCy = headR + 1.dp.toPx()
-                        drawCircle(tk.gold, radius = headR, center = Offset(cx, headCy))
-                        val tipY = headCy + 18.dp.toPx()
-                        val path = Path().apply {
-                            moveTo(cx - headR, headCy + 3.dp.toPx())
-                            lineTo(cx, tipY)
-                            lineTo(cx + headR, headCy + 3.dp.toPx())
-                            close()
+                        // Merkez: altın halkalı oynat düğmesi
+                        Box(
+                            modifier = Modifier
+                                .size(92.dp)
+                                .clip(CircleShape)
+                                .background(tk.bg)
+                                .clickable(enabled = !spinning) { spinWheel() }
+                                .drawWithContent {
+                                    drawContent()
+                                    drawCircle(
+                                        color = tk.van,
+                                        style = Stroke(width = 4.dp.toPx()),
+                                    )
+                                },
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Icon(
+                                MinimuvIcons.Play,
+                                contentDescription = "Çevir",
+                                tint = tk.van,
+                                modifier = Modifier.size(36.dp),
+                            )
                         }
-                        drawPath(path, color = tk.gold)
+                        // Gösterge: altın damla
+                        Canvas(Modifier.fillMaxSize()) {
+                            val cx = size.width / 2f
+                            val headR = 9.dp.toPx()
+                            val headCy = headR + 1.dp.toPx()
+                            drawCircle(tk.van, radius = headR, center = Offset(cx, headCy))
+                            val tipY = headCy + 18.dp.toPx()
+                            val path = Path().apply {
+                                moveTo(cx - headR, headCy + 3.dp.toPx())
+                                lineTo(cx, tipY)
+                                lineTo(cx + headR, headCy + 3.dp.toPx())
+                                close()
+                            }
+                            drawPath(path, color = tk.van)
+                        }
                     }
-                }
 
                 Spacer(Modifier.height(20.dp))
 
@@ -457,8 +465,8 @@ private fun WinnerPopup(
                 Modifier
                     .fillMaxSize()
                     .graphicsLayer { alpha = appear.value }
-                    .background(Color.Black.copy(alpha = 0.68f))
-                    .clickable(MutableInteractionSource(), null, onClick = onClose),
+                    .background(tk.overlayScrim)
+                    .clickable(remember { MutableInteractionSource() }, null, onClick = onClose),
             )
             ConfettiOverlay(trigger = confettiTrigger, modifier = Modifier.fillMaxSize())
 
@@ -558,7 +566,7 @@ private fun WinnerPopup(
                         .fillMaxWidth()
                         .height(46.dp)
                         .clip(RoundedCornerShape(23.dp))
-                        .clickable(MutableInteractionSource(), null, onClick = onSpinAgain),
+                        .clickable(remember { MutableInteractionSource() }, null, onClick = onSpinAgain),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(
@@ -601,7 +609,8 @@ private fun ToggleLabel(
 @Composable
 private fun rememberPosterBitmaps(titles: List<Title>): Map<String, ImageBitmap> {
     val context = LocalContext.current
-    val loader = remember(context) { ImageLoader.Builder(context).build() }
+    // Süreç geneli singleton ImageLoader (bellek + disk önbelleği paylaşılır) — P2.
+    val loader = remember(context) { SingletonImageLoader.get(context) }
     var bitmaps by remember { mutableStateOf<Map<String, ImageBitmap>>(emptyMap()) }
     LaunchedEffect(titles) {
         val urls = titles.mapNotNull { it.posterUrl }.distinct()
@@ -643,6 +652,7 @@ private fun WheelCanvas(
 ) {
     val sliceAngle = 360f / titles.size
     val tk = tokens()
+    val sliceColors = remember(tk.van, tk.sinop) { wheelSliceColors(tk.van, tk.sinop) }
     Canvas(modifier) {
         val radius = size.minDimension / 2f
         val center = Offset(size.width / 2f, size.height / 2f)
@@ -650,7 +660,7 @@ private fun WheelCanvas(
         val outerR = radius * 0.93f
         val arcRect = Rect(center.x - outerR, center.y - outerR, center.x + outerR, center.y + outerR)
         val textPaint = android.graphics.Paint().apply {
-            color = android.graphics.Color.parseColor("#F2EFE9")
+            color = tk.text.toArgb()
             textSize = 12.dp.toPx()
             textAlign = android.graphics.Paint.Align.CENTER
             isFakeBoldText = true
@@ -665,9 +675,9 @@ private fun WheelCanvas(
             center = center,
             style = Stroke(width = 7.dp.toPx()),
         )
-        // Altın kesikli ring
+        // Vurgu renkli kesikli halka
         drawCircle(
-            tk.gold,
+            tk.van,
             radius = radius * 0.975f,
             center = center,
             style = Stroke(
@@ -690,68 +700,71 @@ private fun WheelCanvas(
                 topLeft = arcRect.topLeft,
                 size = arcRect.size,
             )
-            // Döndürülmüş uzayda dilim hep yukarı bakar; afişin üst kenarı dışa dönük kalır.
-            // Böylece kazanan dilim tepedeyken afiş dik durur.
-            val mid = startAngle + sliceAngle / 2f
-            rotate(degrees = mid - 270f, pivot = center) {
-                val halfRad = Math.toRadians((sweep / 2.0).toDouble())
-                val wedge = Path().apply {
-                    moveTo(center.x, center.y)
-                    lineTo(
-                        center.x - outerR * sin(halfRad).toFloat(),
-                        center.y - outerR * cos(halfRad).toFloat(),
-                    )
-                    arcTo(
-                        rect = arcRect,
-                        startAngleDegrees = -sweep / 2f,
-                        sweepAngleDegrees = sweep,
-                        forceMoveTo = false,
-                    )
-                    close()
-                }
-                val poster = title.posterUrl?.let { posters[it] }
-                if (poster != null) {
-                    clipPath(wedge) {
-                        val dstH = outerR - innerR
-                        val dstW = 2f * outerR * sin(halfRad).toFloat()
-                        val dstAspect = dstW / dstH
-                        val srcW = poster.width.toFloat()
-                        val srcH = poster.height.toFloat()
-                        val srcAspect = srcW / srcH
-                        var sx = 0f
-                        var sy = 0f
-                        var sW = srcW
-                        var sH = srcH
-                        if (srcAspect > dstAspect) {
-                            sW = srcH * dstAspect
-                            sx = (srcW - sW) / 2f
-                        } else {
-                            sH = srcW / dstAspect
-                            sy = (srcH - sH) / 2f
-                        }
-                        val bandMid = (innerR + outerR) / 2f
-                        drawImage(
-                            image = poster,
-                            srcOffset = IntOffset(sx.roundToInt(), sy.roundToInt()),
-                            srcSize = IntSize(sW.roundToInt(), sH.roundToInt()),
-                            dstOffset = IntOffset(
-                                (center.x - dstW / 2f).roundToInt(),
-                                (center.y - bandMid - dstH / 2f).roundToInt(),
-                            ),
-                            dstSize = IntSize(dstW.roundToInt(), dstH.roundToInt()),
-                        )
+            // Afiş dilimle birlikte DÖNDÜRÜLMEZ: dilim açıortayına dik, sabit 2:3 oranında
+            // ve wedge ile kırpılarak çizilir. Böylece her dilimde dik durur (B3).
+            val sweepMid = startAngle + sweep / 2f
+            val midRad = Math.toRadians(sweepMid.toDouble())
+            val bandMid = (innerR + outerR) / 2f
+            val posterCx = center.x + cos(midRad).toFloat() * bandMid
+            val posterCy = center.y + sin(midRad).toFloat() * bandMid
+            val wedge = Path().apply {
+                moveTo(center.x, center.y)
+                arcTo(
+                    rect = arcRect,
+                    startAngleDegrees = startAngle,
+                    sweepAngleDegrees = sweep,
+                    forceMoveTo = false,
+                )
+                close()
+            }
+            val poster = title.posterUrl?.let { posters[it] }
+            if (poster != null) {
+                clipPath(wedge) {
+                    val halfRad = Math.toRadians((sweep / 2.0).toDouble())
+                    // Dilimin bant ortasındaki kiriş genişliği — afiş bunu aşmasın.
+                    val chord = 2f * bandMid * sin(halfRad).toFloat()
+                    var dstH = (outerR - innerR) * 0.86f
+                    var dstW = dstH * 2f / 3f
+                    if (dstW > chord * 0.92f) {
+                        dstW = chord * 0.92f
+                        dstH = dstW * 3f / 2f
                     }
-                } else {
-                    // Afiş yoksa numara — lejantla eşleşir
-                    drawContext.canvas.save()
-                    drawContext.canvas.nativeCanvas.drawText(
-                        "${index + 1}",
-                        center.x,
-                        center.y - radius * 0.63f,
-                        textPaint,
+                    val srcW = poster.width.toFloat()
+                    val srcH = poster.height.toFloat()
+                    val dstAspect = dstW / dstH
+                    val srcAspect = srcW / srcH
+                    var sx = 0f
+                    var sy = 0f
+                    var sW = srcW
+                    var sH = srcH
+                    if (srcAspect > dstAspect) {
+                        sW = srcH * dstAspect
+                        sx = (srcW - sW) / 2f
+                    } else {
+                        sH = srcW / dstAspect
+                        sy = (srcH - sH) / 2f
+                    }
+                    drawImage(
+                        image = poster,
+                        srcOffset = IntOffset(sx.roundToInt(), sy.roundToInt()),
+                        srcSize = IntSize(sW.roundToInt(), sH.roundToInt()),
+                        dstOffset = IntOffset(
+                            (posterCx - dstW / 2f).roundToInt(),
+                            (posterCy - dstH / 2f).roundToInt(),
+                        ),
+                        dstSize = IntSize(dstW.roundToInt(), dstH.roundToInt()),
                     )
-                    drawContext.canvas.restore()
                 }
+            } else {
+                // Afiş yoksa numara — lejantla eşleşir
+                drawContext.canvas.save()
+                drawContext.canvas.nativeCanvas.drawText(
+                    "${index + 1}",
+                    posterCx,
+                    posterCy + textPaint.textSize / 3f,
+                    textPaint,
+                )
+                drawContext.canvas.restore()
             }
         }
     }

@@ -6,6 +6,7 @@ import com.sinop.minimuv.core.RealtimeManager
 import com.sinop.minimuv.data.Achievement
 import com.sinop.minimuv.data.AchievementChecker
 import com.sinop.minimuv.data.Achievements
+import com.sinop.minimuv.data.AppCache
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.data.TitleRepository
 import kotlinx.coroutines.FlowPreview
@@ -23,6 +24,18 @@ class AchievementsViewModel : ViewModel() {
     val newlyUnlocked = MutableStateFlow<List<Achievement>>(emptyList())
 
     init {
+        // P2: önbellek sıcaksa istatistikler ağ beklemeden hesaplanır.
+        if (AppCache.titlesLoaded) {
+            runCatching {
+                stats.value = Achievements.computeStats(
+                    AppCache.titlesLite.value,
+                    AppCache.watchLog.value,
+                    AppCache.titleScores.value,
+                    AppCache.titleNotes.value,
+                    AppCache.episodeProgress.value,
+                )
+            }
+        }
         refresh()
         observeRealtime()
     }

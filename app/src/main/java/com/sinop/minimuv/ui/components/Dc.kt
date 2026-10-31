@@ -381,18 +381,19 @@ fun DcButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    enabled: Boolean = true,
     height: Dp = 48.dp,
 ) {
     val tk = tokens()
     Box(
         modifier
             .height(height)
-            .background(tk.together, RoundedCornerShape(height / 2))
-            .clickable(MutableInteractionSource(), null, onClick = onClick, role = Role.Button)
+            .background(if (enabled) tk.together else androidx.compose.ui.graphics.SolidColor(tk.surface3), RoundedCornerShape(height / 2))
+            .clickable(MutableInteractionSource(), null, enabled = enabled, onClick = onClick, role = Role.Button)
             .padding(horizontal = 22.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Text(label, style = MaterialTheme.typography.labelLarge, color = tk.ink)
+        Text(label, style = MaterialTheme.typography.labelLarge, color = if (enabled) tk.ink else tk.textMuted)
     }
 }
 

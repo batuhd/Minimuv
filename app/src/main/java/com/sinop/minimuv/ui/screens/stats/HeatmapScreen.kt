@@ -35,22 +35,25 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.sinop.minimuv.data.AppCache
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.data.WatchLog
 import com.sinop.minimuv.ui.components.MinimuvButton
-import com.sinop.minimuv.ui.theme.MidnightCard
-import com.sinop.minimuv.ui.theme.TextSecondary
 import com.sinop.minimuv.ui.theme.icons.EmojiText
 import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
-import com.sinop.minimuv.ui.theme.typeColor
+import com.sinop.minimuv.ui.theme.tokens
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 
 @Composable
 fun HeatmapScreen(onBack: () -> Unit) {
+    val tk = tokens()
     val repo = remember { TitleRepository() }
-    var log by remember { mutableStateOf<List<WatchLog>?>(null) }
+    // P2: önbellek sıcaksa takvim ağ beklemeden dolu açılır.
+    var log by remember {
+        mutableStateOf(if (AppCache.watchLogLoaded) AppCache.watchLog.value else null)
+    }
     var loadError by remember { mutableStateOf<String?>(null) }
     var retryTick by remember { mutableIntStateOf(0) }
 
@@ -94,7 +97,7 @@ fun HeatmapScreen(onBack: () -> Unit) {
                         Text(
                             "Bağlantıyı kontrol edip tekrar dene.",
                             style = MaterialTheme.typography.bodySmall,
-                            color = TextSecondary,
+                            color = tk.textMuted,
                         )
                         Spacer(Modifier.height(12.dp))
                         MinimuvButton(label = "Tekrar dene", onClick = { retryTick++ })
@@ -108,7 +111,7 @@ fun HeatmapScreen(onBack: () -> Unit) {
                         EmojiText(
                             "Henüz izleme günlüğü yok. Bir şeyler izlemeye başlayın! 🍿",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = TextSecondary,
+                            color = tk.textMuted,
                         )
                     }
                 } else {
@@ -121,6 +124,7 @@ fun HeatmapScreen(onBack: () -> Unit) {
 
 @Composable
 private fun HeatmapContent(entries: List<WatchLog>) {
+    val tk = tokens()
     val byDate = entries.groupBy { it.date }.mapValues { (_, v) -> v.sumOf { it.episodesWatched } }
     val maxCount = byDate.values.maxOrNull() ?: 1
     val totalEpisodes = entries.sumOf { it.episodesWatched }
@@ -135,7 +139,7 @@ private fun HeatmapContent(entries: List<WatchLog>) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .clip(RoundedCornerShape(16.dp))
-                    .background(MidnightCard)
+                    .background(tk.surface1)
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
@@ -149,7 +153,7 @@ private fun HeatmapContent(entries: List<WatchLog>) {
         item { Spacer(Modifier.height(16.dp)) }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Az", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Text("Az", style = MaterialTheme.typography.labelSmall, color = tk.textMuted)
                 Spacer(Modifier.size(6.dp))
                 // Gerçek kuartil doygunlukları: 0 ve max'ın %20/50/80'i ile tam doygunluk
                 listOf(0f, 0.15f, 0.4f, 0.65f, 1f).forEach { fraction ->
@@ -163,34 +167,41 @@ private fun HeatmapContent(entries: List<WatchLog>) {
                     Spacer(Modifier.size(2.dp))
                 }
                 Spacer(Modifier.size(4.dp))
-                Text("Çok", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+                Text("Çok", style = MaterialTheme.typography.labelSmall, color = tk.textMuted)
             }
         }
     }
 }
 
-private fun heatSwatch(fraction: Float): Color = when {
-    fraction <= 0f -> MidnightCard
-    fraction < 0.25f -> typeColor("dizi").copy(alpha = 0.35f)
-    fraction < 0.5f -> typeColor("dizi").copy(alpha = 0.55f)
-    fraction < 0.75f -> typeColor("dizi").copy(alpha = 0.75f)
-    else -> typeColor("dizi")
+@Composable
+private fun heatSwatch(fraction: Float): Color {
+    val tk = tokens()
+    return when {
+        fraction <= 0f -> tk.surface1
+        fraction < 0.25f -> tk.van.copy(alpha = 0.35f)
+        fraction < 0.5f -> tk.van.copy(alpha = 0.55f)
+        fraction < 0.75f -> tk.van.copy(alpha = 0.75f)
+        else -> tk.van
+    }
 }
 
+@Composable
 private fun heatColor(count: Int, max: Int): Color =
     heatSwatch(if (count <= 0) 0f else count.toFloat() / max.coerceAtLeast(1).toFloat())
 
 @Composable
 private fun Stat(emoji: String, value: String, label: String) {
+    val tk = tokens()
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         MinimuvEmojiIcon(emoji, size = 20.dp)
         Text(value, style = MaterialTheme.typography.titleLarge)
-        Text(label, style = MaterialTheme.typography.labelSmall, color = TextSecondary)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tk.textMuted)
     }
 }
 
 @Composable
 private fun HeatmapGrid(byDate: Map<String, Int>, maxCount: Int) {
+    val tk = tokens()
     val today = LocalDate.now()
     val mondayOfThisWeek = today.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
     val start = mondayOfThisWeek.minusWeeks(25) // ~26 hafta geri
@@ -214,7 +225,7 @@ private fun HeatmapGrid(byDate: Map<String, Int>, maxCount: Int) {
         Text(
             "Son 6 ay",
             style = MaterialTheme.typography.titleSmall,
-            color = TextSecondary,
+            color = tk.textMuted,
             modifier = Modifier.padding(bottom = 8.dp),
         )
         // Hücre + boşluk = 14dp; 26 sütun ≈ 364dp + gün etiketleri → dar ekranlarda da tam sığar
@@ -226,7 +237,7 @@ private fun HeatmapGrid(byDate: Map<String, Int>, maxCount: Int) {
                 monthLabels.forEach { (_, label) ->
                     Box(Modifier.size(width = cell, height = 14.dp), contentAlignment = Alignment.TopStart) {
                         if (label != null) {
-                            Text(label, style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = TextSecondary)
+                            Text(label, style = MaterialTheme.typography.labelSmall, fontSize = 8.sp, color = tk.textMuted)
                         }
                     }
                 }
@@ -243,7 +254,7 @@ private fun HeatmapGrid(byDate: Map<String, Int>, maxCount: Int) {
                         Text(
                             label,
                             style = MaterialTheme.typography.labelSmall,
-                            color = TextSecondary,
+                            color = tk.textMuted,
                             fontSize = 8.sp,
                         )
                     }

@@ -3,6 +3,7 @@ package com.sinop.minimuv.ui.screens.wheel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sinop.minimuv.core.RealtimeManager
+import com.sinop.minimuv.data.AppCache
 import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.data.WatchStatus
@@ -16,7 +17,17 @@ class WheelViewModel : ViewModel() {
 
     private val repo = TitleRepository()
 
-    val planTitles = MutableStateFlow<List<Title>>(emptyList())
+    // P2: çark ilk karede görünsün — önbellek sıcaksa ağ beklemeden dolu başlar.
+    val planTitles = MutableStateFlow<List<Title>>(cachedPlanTitles())
+
+    private fun cachedPlanTitles(): List<Title> =
+        if (AppCache.titlesLoaded) {
+            AppCache.titlesLite.value
+                .filter { it.status == WatchStatus.PLAN.db }
+                .sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
+        } else {
+            emptyList()
+        }
 
     init {
         refresh()

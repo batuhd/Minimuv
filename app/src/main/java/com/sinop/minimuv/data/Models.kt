@@ -178,6 +178,14 @@ data class TitleNote(
 
 // ── Ekranlar arası taslak (henüz kaydedilmemiş yeni başlık) ──────────────
 
+/** Tek satırlık çift ayarları: birliktelik başlangıç tarihi. */
+@Serializable
+data class CoupleSettings(
+    val id: Int = 1,
+    @SerialName("together_since") val togetherSince: String? = null,
+    @SerialName("updated_at") val updatedAt: String? = null,
+)
+
 data class TitleDraft(
     val type: String,
     val externalId: String? = null,

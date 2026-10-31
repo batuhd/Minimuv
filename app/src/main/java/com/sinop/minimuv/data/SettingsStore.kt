@@ -7,6 +7,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 
 private val Context.dataStore by preferencesDataStore(name = "minimuv_settings")
 
@@ -31,6 +33,15 @@ class SettingsStore(private val context: Context) {
         val KEY_LIST_VIEW = stringPreferencesKey("list_view")
         val KEY_SEARCH_LANG = stringPreferencesKey("search_lang")
         val KEY_DISPLAY_LANG = stringPreferencesKey("display_lang")
+        // Çift ayarları (DB'deki couple_settings) için son bilinen değer.
+        val KEY_TOGETHER_SINCE = stringPreferencesKey("together_since")
+        // Son bilinen profil listesi (JSON) — soğuk açılışta avatar/isim anında.
+        val KEY_PROFILES_SNAPSHOT = stringPreferencesKey("profiles_snapshot")
+    }
+
+    private val snapshotJson = kotlinx.serialization.json.Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
     }
 
     val supabaseUrl: Flow<String?> = context.dataStore.data.map { it[KEY_SUPABASE_URL] }
@@ -42,6 +53,7 @@ class SettingsStore(private val context: Context) {
     val listView: Flow<String?> = context.dataStore.data.map { it[KEY_LIST_VIEW] }
     val searchLang: Flow<String?> = context.dataStore.data.map { it[KEY_SEARCH_LANG] }
     val displayLang: Flow<String?> = context.dataStore.data.map { it[KEY_DISPLAY_LANG] }
+    val togetherSince: Flow<String?> = context.dataStore.data.map { it[KEY_TOGETHER_SINCE] }
 
     /** null = henüz yüklenmedi; yüklendiyse içindeki değerler güvenilirdir. */
     val rawPrefs: Flow<androidx.datastore.preferences.core.Preferences> = context.dataStore.data
@@ -70,12 +82,20 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[KEY_ONBOARDING_DONE] = "true" }
     }
 
-    suspend fun setThemeAccentVan(value: String) {
-        context.dataStore.edit { it[KEY_THEME_ACCENT_VAN] = value }
-    }
-
-    suspend fun setThemeAccentSinop(value: String) {
-        context.dataStore.edit { it[KEY_THEME_ACCENT_SINOP] = value }
+    /**
+     * Profil listesinden kendi ve partner renklerini önbelleğe yazar.
+     * Değişiklik yoksa DataStore'a dokunmaz (gereksiz tema emisyonu olmasın).
+     */
+    suspend fun cacheAccentColors(profiles: List<Profile>) {
+        val prefs = context.dataStore.data.first()
+        val myId = prefs[KEY_PROFILE_ID]
+        val me = profiles.firstOrNull { it.id == myId }?.avatarColor
+        val partner = profiles.firstOrNull { it.id != myId }?.avatarColor
+        if (me == prefs[KEY_ACCENT_ME] && partner == prefs[KEY_ACCENT_PARTNER]) return
+        context.dataStore.edit {
+            if (me != null) it[KEY_ACCENT_ME] = me else it.remove(KEY_ACCENT_ME)
+            if (partner != null) it[KEY_ACCENT_PARTNER] = partner else it.remove(KEY_ACCENT_PARTNER)
+        }
     }
 
     suspend fun saveListView(value: String) {
@@ -90,6 +110,31 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[KEY_DISPLAY_LANG] = value }
     }
 
+    suspend fun saveTogetherSince(value: String?) {
+        context.dataStore.edit {
+            if (value == null) it.remove(KEY_TOGETHER_SINCE) else it[KEY_TOGETHER_SINCE] = value
+        }
+    }
+
+    /** DB'den gelen değeri önbelleğe yazar; değişiklik yoksa DataStore'a dokunmaz. */
+    suspend fun cacheTogetherSince(value: String?) {
+        if (context.dataStore.data.first()[KEY_TOGETHER_SINCE] == value) return
+        saveTogetherSince(value)
+    }
+
+    /** Profil listesini (isim/emoji/renk/avatar URL) soğuk açılış için saklar. */
+    suspend fun cacheProfilesSnapshot(profiles: List<Profile>) {
+        if (profiles.isEmpty()) return
+        val encoded = runCatching { snapshotJson.encodeToString(profiles) }.getOrNull() ?: return
+        if (context.dataStore.data.first()[KEY_PROFILES_SNAPSHOT] == encoded) return
+        context.dataStore.edit { it[KEY_PROFILES_SNAPSHOT] = encoded }
+    }
+
+    suspend fun readProfilesSnapshot(): List<Profile> {
+        val raw = context.dataStore.data.first()[KEY_PROFILES_SNAPSHOT] ?: return emptyList()
+        return runCatching { snapshotJson.decodeFromString<List<Profile>>(raw) }.getOrDefault(emptyList())
+    }
+
     suspend fun clearProfile() {
         context.dataStore.edit { it.remove(KEY_PROFILE_ID) }
     }
@@ -99,7 +144,10 @@ class SettingsStore(private val context: Context) {
             it.remove(KEY_SUPABASE_URL)
             it.remove(KEY_ANON_KEY)
             it.remove(KEY_PROFILE_ID)
+            it.remove(KEY_TOGETHER_SINCE)
+            it.remove(KEY_PROFILES_SNAPSHOT)
         }
+        AppCache.clear()
     }
 
     // ── Arka plan bildirim durumu ─────────────────────────────────────────

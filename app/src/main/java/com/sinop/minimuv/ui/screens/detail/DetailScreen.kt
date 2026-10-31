@@ -28,7 +28,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.MoreVert
 import com.sinop.minimuv.ui.theme.statusColor
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -78,9 +77,6 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.filled.MoreHoriz
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -90,8 +86,9 @@ import androidx.compose.ui.unit.sp
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.TitleNote
 import com.sinop.minimuv.ui.theme.readableOn
-import com.sinop.minimuv.ui.theme.tokens
 import com.sinop.minimuv.ui.theme.together
+import com.sinop.minimuv.ui.theme.tokens
+import com.sinop.minimuv.ui.theme.toneShifted
 
 private fun round1(v: Double): Double = Math.round(v * 10.0) / 10.0
 
@@ -199,7 +196,6 @@ fun DetailScreen(
     var showStartDatePicker by remember { mutableStateOf(false) }
     var showFinishDatePicker by remember { mutableStateOf(false) }
     var celebrate by remember { mutableStateOf(0) }
-    var menuOpen by remember { mutableStateOf(false) }
 
     val type = loaded?.type ?: draft?.type ?: ContentType.FILM.db
     val titleText = loaded?.displayTitle(displayLang) ?: draft?.title ?: ""
@@ -497,9 +493,7 @@ fun DetailScreen(
                         }
                     }
                 },
-                onDelete = if (!isDraft) {
-                    { showDeleteConfirm = true }
-                } else null,
+                onDelete = null,
             )
             } else {
                 // Okuma modunda da hata görünür olsun (BUG-023).
@@ -560,38 +554,20 @@ fun DetailScreen(
                     Icon(
                         Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Geri",
-                        tint = Color.White,
+                        tint = tk.text,
                         modifier = Modifier.size(20.dp),
                     )
                 }
-                Box {
-                    GlassCircleButton(onClick = { menuOpen = true }) {
-                        Icon(
-                            Icons.Filled.MoreHoriz,
-                            contentDescription = "Diğer",
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp),
-                        )
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Düzenle") },
-                            leadingIcon = { Icon(MinimuvIcons.Edit, contentDescription = null) },
+                if (!isDraft) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        GlassPillButton(
+                            label = "Favori",
+                            icon = if (isFavorite) MinimuvIcons.Heart else MinimuvIcons.HeartOutline,
+                            selected = isFavorite,
                             onClick = {
-                                menuOpen = false
-                                editing = true
-                            },
-                        )
-                        DropdownMenuItem(
-                            text = { Text(if (isFavorite) "Favoriden çıkar" else "Favorilere ekle") },
-                            leadingIcon = {
-                                Icon(
-                                    if (isFavorite) MinimuvIcons.Heart else MinimuvIcons.HeartOutline,
-                                    contentDescription = null,
-                                )
-                            },
-                            onClick = {
-                                menuOpen = false
                                 val next = !isFavorite
                                 isFavorite = next
                                 loaded?.let { t ->
@@ -599,24 +575,12 @@ fun DetailScreen(
                                 }
                             },
                         )
-                        if (!isDraft) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text("Sil", color = MaterialTheme.colorScheme.error)
-                                },
-                                leadingIcon = {
-                                    Icon(
-                                        Icons.Filled.Delete,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.error,
-                                    )
-                                },
-                                onClick = {
-                                    menuOpen = false
-                                    showDeleteConfirm = true
-                                },
-                            )
-                        }
+                        GlassPillButton(
+                            label = "Sil",
+                            icon = Icons.Filled.Delete,
+                            tint = MaterialTheme.colorScheme.error,
+                            onClick = { showDeleteConfirm = true },
+                        )
                     }
                 }
             }
@@ -666,6 +630,52 @@ fun DetailScreen(
     }
 }
 
+/** Üst bardaki cam görünümlü ikon + etiket düğmesi (Favori / Sil). */
+@Composable
+private fun GlassPillButton(
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit,
+    tint: Color = Color.Unspecified,
+    selected: Boolean = false,
+) {
+    val tk = tokens()
+    val contentTint = when {
+        selected -> tk.ink
+        tint == Color.Unspecified -> tk.text
+        else -> tint
+    }
+    Row(
+        Modifier
+            .clip(RoundedCornerShape(50))
+            .then(
+                if (selected) Modifier.background(tk.together)
+                else Modifier
+                    .background(tk.surface1.copy(alpha = 0.65f))
+                    .border(1.dp, tk.text.copy(alpha = 0.10f), RoundedCornerShape(50))
+            )
+            .clickable(role = androidx.compose.ui.semantics.Role.Button, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 9.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = contentTint,
+            modifier = Modifier.size(16.dp),
+        )
+        Text(
+            label,
+            style = MaterialTheme.typography.labelMedium.copy(
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 12.sp,
+            ),
+            color = contentTint,
+        )
+    }
+}
+
 // ── Düzenleme modunda kompakt başlık: ekran alanını içerik için açar ─────
 
 @Composable
@@ -695,7 +705,7 @@ internal fun CompactEditHeader(
                 Icon(
                     MinimuvIcons.Close,
                     contentDescription = "Kapat",
-                    tint = Color.White,
+                    tint = tk.text,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -705,15 +715,20 @@ internal fun CompactEditHeader(
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
                 ),
-                color = Color.White,
+                color = tk.text,
             )
-            GlassCircleButton(onClick = { onMoreOptions?.invoke() }) {
-                Icon(
-                    Icons.Default.MoreVert,
-                    contentDescription = "Diğer",
-                    tint = Color.White,
-                    modifier = Modifier.size(18.dp),
-                )
+            if (onMoreOptions != null) {
+                GlassCircleButton(onClick = onMoreOptions) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = "Sil",
+                        tint = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+            } else {
+                // Başlığı ortada tutmak için geri düğmesiyle aynı genişlikte boşluk.
+                Spacer(Modifier.size(40.dp))
             }
         }
 
@@ -726,7 +741,7 @@ internal fun CompactEditHeader(
                     .height(100.dp)
                     .clip(RoundedCornerShape(16.dp))
                     .background(tk.surface2)
-                    .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp)),
+                    .border(1.dp, tk.text.copy(alpha = 0.10f), RoundedCornerShape(16.dp)),
             ) {
                 if (posterUrl != null) {
                     AsyncImage(
@@ -781,7 +796,7 @@ internal fun CompactEditHeader(
                     fontWeight = FontWeight.Bold,
                     fontSize = 24.sp,
                     lineHeight = 28.sp,
-                    color = Color.White,
+                    color = tk.text,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -831,7 +846,8 @@ internal fun DetailViewContent(
     } ?: overview?.takeIf { it.isNotBlank() }
 
     val people = details?.cast.orEmpty()
-    val personSource = if (type == "anime") {
+    // TMDB-only anime yedeğinde kadro TMDB'de; kaynak detaydan gelir (B4).
+    val personSource = details?.personSource ?: if (type == "anime") {
         com.sinop.minimuv.core.PersonSource.ANIME
     } else {
         com.sinop.minimuv.core.PersonSource.TMDB
@@ -884,7 +900,8 @@ internal fun DetailViewContent(
         Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(bottom = 120.dp),
+            // Düzenle FAB'ı (60dp + 20dp boşluk) son metnin üstüne binmesin.
+            .padding(bottom = 160.dp),
     ) {
         DetailHero(
             titleText = titleText,
@@ -1165,7 +1182,7 @@ private fun DetailHero(
                     fontWeight = FontWeight.Bold,
                     fontSize = 22.sp,
                     lineHeight = 26.sp,
-                    color = Color.White,
+                    color = tk.text,
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
@@ -1184,7 +1201,7 @@ private fun DetailHero(
                             Icon(
                                 MinimuvIcons.Heart,
                                 contentDescription = "Favori",
-                                tint = Color(0xFFEF476F),
+                                tint = tk.van,
                                 modifier = Modifier.size(13.dp),
                             )
                         }
@@ -1206,7 +1223,7 @@ private fun PosterCard(posterUrl: String?) {
             .height(152.dp)
             .clip(RoundedCornerShape(16.dp))
             .background(tk.surface2)
-            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(16.dp)),
+            .border(1.dp, tk.text.copy(alpha = 0.10f), RoundedCornerShape(16.dp)),
     ) {
         if (posterUrl != null) {
             AsyncImage(
@@ -1399,7 +1416,7 @@ private fun CoupleModePill(
             Icon(
                 MinimuvIcons.Heart,
                 contentDescription = null,
-                tint = Color(0xFFEF476F),
+                tint = tk.van,
                 modifier = Modifier.size(12.dp),
             )
         } else {
@@ -1621,13 +1638,13 @@ private fun DetailNoteCardItem(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(if (revealed) Color(0xFFFFB74D).copy(alpha = 0.15f) else Color(0xFFFFB74D))
+                        .background(if (revealed) tk.gold.copy(alpha = 0.15f) else tk.gold)
                         .padding(horizontal = 8.dp, vertical = 3.dp),
                 ) {
                     Text(
                         if (revealed) "🙈 Spoiler" else "🙈 Spoiler (Aç)",
                         style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp, fontWeight = FontWeight.Bold),
-                        color = if (revealed) Color(0xFFFFB74D) else Color.Black,
+                        color = if (revealed) tk.gold else tk.ink,
                     )
                 }
             }
@@ -1650,7 +1667,7 @@ private fun DetailNoteCardItem(
                     Text(
                         "🙈 Spoiler içeriyor · Okumak için dokunun",
                         style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp),
-                        color = Color(0xFFFFB74D),
+                        color = tk.gold,
                     )
                 }
             }
@@ -1743,11 +1760,6 @@ private fun ScoreBar(value: Double?, color: Color, track: Color) {
 
 // ── Kadro / bilgi / not yardımcıları ────────────────────────────────────
 
-private val CastAvatarColors = listOf(
-    Color(0xFF4A2568), Color(0xFF1F5F63), Color(0xFF6B1F2A),
-    Color(0xFF1E2C63), Color(0xFF1F4A2E), Color(0xFF5B3B77),
-)
-
 private fun initialsOf(name: String): String {
     val parts = name.trim().split(" ").filter { it.isNotBlank() }
     return when {
@@ -1757,8 +1769,19 @@ private fun initialsOf(name: String): String {
     }
 }
 
-private fun castAvatarColor(name: String): Color =
-    CastAvatarColors[(name.hashCode() and 0x7FFFFFFF) % CastAvatarColors.size]
+/** Kadro avatarları vurgu renklerinden türetilir — sabit renk yok (T4). */
+@Composable
+private fun castAvatarColor(name: String): Color {
+    val tk = tokens()
+    val tones = remember(tk.van, tk.sinop) {
+        listOf(
+            tk.van, tk.sinop,
+            toneShifted(tk.van, 24f), toneShifted(tk.sinop, 24f),
+            tk.van.copy(alpha = 0.75f), tk.sinop.copy(alpha = 0.75f),
+        )
+    }
+    return tones[(name.hashCode() and 0x7FFFFFFF) % tones.size]
+}
 
 @Composable
 private fun CastAvatar(
@@ -1793,7 +1816,7 @@ private fun CastAvatar(
                     initialsOf(name),
                     fontWeight = FontWeight.Bold,
                     fontSize = 18.sp,
-                    color = Color.White,
+                    color = readableOn(castAvatarColor(name)),
                 )
             }
         }
@@ -1920,12 +1943,13 @@ private fun SerifHeading(text: String) {
 /** Üst bardaki yarı saydam yuvarlak düğme. */
 @Composable
 internal fun GlassCircleButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    val tk = tokens()
     Box(
         Modifier
             .size(44.dp)
             .clip(CircleShape)
-            .background(Color(0x9910141A))
-            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape)
+            .background(tk.surface1.copy(alpha = 0.65f))
+            .border(1.dp, tk.text.copy(alpha = 0.10f), CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -1947,6 +1971,7 @@ internal fun SaveBar(
     onSave: () -> Unit,
     onDelete: (() -> Unit)?,
 ) {
+    val tk = tokens()
     Column(
         Modifier
             .fillMaxWidth()
@@ -1981,12 +2006,12 @@ internal fun SaveBar(
                     .weight(1f)
                     .height(52.dp)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(if (enabled) Color(0xFF2962FF) else Color(0xFF2962FF).copy(alpha = 0.5f))
+                    .background(if (enabled) tk.van else tk.van.copy(alpha = 0.5f))
                     .clickable(enabled = enabled, onClick = onSave),
                 contentAlignment = Alignment.Center,
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(MinimuvIcons.Save, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                    Icon(MinimuvIcons.Save, contentDescription = null, tint = tk.onVan, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(
                         if (isDraft) "Koleksiyona ekle 🎬" else "Kaydet",
@@ -1994,7 +2019,7 @@ internal fun SaveBar(
                             fontWeight = FontWeight.Bold,
                             fontSize = 15.sp,
                         ),
-                        color = Color.White,
+                        color = tk.onVan,
                     )
                 }
             }

@@ -36,7 +36,34 @@ data class SearchResult(
     val overviewEn: String? = null,
     val totalEpisodes: Int?,
     val rating: Double? = null,
+    /** Kaynak etiketi: "anilist" | "tmdb" (B10). */
+    val source: String = "tmdb",
 )
+
+private fun searchResultKeys(r: SearchResult): Set<String> =
+    listOfNotNull(r.title, r.altTitle, r.titleEn)
+        .map { TextNormalizer.fold(it) }
+        .filter { it.isNotBlank() }
+        .toSet()
+
+/** Aynı tür + normalize başlık + yıl (±1) → aynı yapım. */
+private fun SearchResult.isSameWorkAs(other: SearchResult): Boolean {
+    if (type != other.type) return false
+    val y1 = year?.toIntOrNull()
+    val y2 = other.year?.toIntOrNull()
+    if (y1 != null && y2 != null && kotlin.math.abs(y1 - y2) > 1) return false
+    val a = searchResultKeys(this)
+    return searchResultKeys(other).any { it in a }
+}
+
+/** TMDB/AniList çift kayıtlarını tekilleştirir (B7). Liste sırası önceliktir. */
+private fun dedupeCrossSource(results: List<SearchResult>): List<SearchResult> {
+    val kept = mutableListOf<SearchResult>()
+    for (r in results) {
+        if (kept.none { it.isSameWorkAs(r) }) kept += r
+    }
+    return kept
+}
 
 /** Arama başlık dili: TR → Türkçe (anime için romaji), EN → İngilizce. */
 enum class TitleLanguage(val tmdb: String, val label: String) {
@@ -152,7 +179,35 @@ data class TitleDetails(
     val cast: List<CastMember> = emptyList(),
     /** YouTube / Dailymotion fragman adresi. */
     val trailerUrl: String? = null,
+    /** Kadro/kişi bağlantılarının açılacağı kaynak (TMDB anime yedeğinde TMDB). */
+    val personSource: PersonSource = PersonSource.TMDB,
 )
+
+private val NON_ALNUM = Regex("[^\\p{L}\\p{N}]")
+
+/** Kişi/şirket adlarını karşılaştırmak için normalize eder: "BluTV" == "Blutv". */
+internal fun normalizeName(raw: String?): String =
+    raw.orEmpty()
+        .trim()
+        .replace('İ', 'i')
+        .replace('I', 'i')
+        .lowercase(java.util.Locale.ROOT)
+        .replace(NON_ALNUM, "")
+
+/** Aynı kişi/şirketin farklı yazımlarla iki kez görünmesini engeller (B9).
+ *  Yaratıcı listesinden yönetmenle aynı olanlar çıkarılır. */
+private fun TitleDetails.deduped(): TitleDetails {
+    val uniqueDirectors = directors.distinctBy { normalizeName(it.name) }
+    val directorKeys = uniqueDirectors.map { normalizeName(it.name) }.toSet()
+    return copy(
+        directors = uniqueDirectors,
+        producers = producers.distinctBy { normalizeName(it.name) },
+        creators = creators
+            .distinctBy { normalizeName(it.name) }
+            .filterNot { normalizeName(it.name) in directorKeys },
+        studios = studios.distinctBy { normalizeName(it.name) },
+    )
+}
 
 /** Kişi sayfasının kaynağı: TMDB oyuncu/yönetmen ya da AniList karakter. */
 enum class PersonSource { TMDB, ANIME }
@@ -241,11 +296,21 @@ object SearchApi {
         val key = "${type.db}|$externalId"
         synchronized(detailsCache) { detailsCache[key] }?.let { return it }
         val fetched = searchWithRetry {
-            when (type) {
-                ContentType.ANIME -> anilistDetails(externalId)
+            when {
+                // TMDB-only anime kimliği kaynak türünü taşır: "tmdb:movie:123".
+                externalId.startsWith("tmdb:") -> {
+                    val parts = externalId.split(":")
+                    val kind = parts.getOrNull(1) ?: "tv"
+                    val id = parts.getOrNull(2) ?: error("Geçersiz TMDB anime kimliği")
+                    tmdbDetails(
+                        if (kind == "movie") ContentType.FILM else ContentType.DIZI,
+                        id,
+                    )
+                }
+                type == ContentType.ANIME -> anilistDetails(externalId)
                 else -> tmdbDetails(type, externalId)
             }
-        }
+        }.deduped()
         synchronized(detailsCache) { detailsCache[key] = fetched }
         return fetched
     }
@@ -294,7 +359,7 @@ object SearchApi {
             val page = try {
                 searchWithRetry {
                     when (type) {
-                        ContentType.ANIME -> searchAniList(q, qLang)
+                        ContentType.ANIME -> searchAnime(q, qLang)
                         else -> searchTmdb(type, q, qLang)
                     }
                 }.also { hadSuccess = true }
@@ -311,7 +376,7 @@ object SearchApi {
             if (index >= 1 && merged.size >= 3) break
         }
 
-        val ranked = rankResults(merged, normalized)
+        val ranked = rankResults(dedupeCrossSource(merged), normalized)
         // Hiçbir strateji başarılı olamadıysa "sonuç yok" diye önbelleğe yazma;
         // çağırana hatayı ilet (AddScreen "Bağlantı sorunu" gösterir).
         if (!hadSuccess && lastError != null) throw lastError!!
@@ -333,6 +398,7 @@ object SearchApi {
             if (all.all { it.isFailure }) throw all.first().exceptionOrNull()!!
             all.flatMap { it.getOrDefault(emptyList()) }
         }.distinctBy { it.type.db to it.externalId }
+            .let { dedupeCrossSource(it) }
         val ranked = rankResults(results, TextNormalizer.fold(query.trim())).take(30)
         synchronized(cache) { cache[key] = ranked }
         return ranked
@@ -564,6 +630,7 @@ object SearchApi {
                 overviewEn = cleanOverview(media.description),
                 totalEpisodes = media.episodes,
                 rating = media.averageScore?.let { it / 10.0 },
+                source = "anilist",
             )
         }
     }
@@ -581,24 +648,77 @@ object SearchApi {
             parameter("language", lang.tmdb)
             parameter("include_adult", "false")
         }.body<TmdbSearchResponse>()
-        return response.results.orEmpty().mapNotNull { item ->
-            if (item.posterPath == null) return@mapNotNull null
-            val title = item.title ?: item.name ?: "?"
-            val original = item.originalTitle ?: item.originalName
-            SearchResult(
-                externalId = item.id.toString(),
-                type = type,
-                title = title,
-                altTitle = original?.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) },
-                titleEn = original?.takeIf { it.isNotBlank() } ?: title,
-                year = (item.releaseDate ?: item.firstAirDate)?.take(4),
-                posterUrl = "https://image.tmdb.org/t/p/w500${item.posterPath}",
-                overview = cleanOverview(item.overview),
-                overviewEn = cleanOverview(item.overview),
-                totalEpisodes = null,
-                rating = item.voteAverage?.takeIf { it > 0 },
-            )
+        // Anime TV/filmler Dizi/Film sekmelerinden çıkarılır; Anime sekmesinde gösterilir (B4).
+        return response.results.orEmpty()
+            .filterNot { it.isAnime() }
+            .mapNotNull { it.toSearchResult(type) }
+    }
+
+    /** TMDB'de olup AniList'te bulunmayan animeler için yedek arama (B4/B7). */
+    private suspend fun searchTmdbAnime(query: String, lang: TitleLanguage): List<SearchResult> {
+        if (query.isBlank() || TMDB_API_KEY.isBlank()) return emptyList()
+
+        suspend fun fetch(kind: String): List<TmdbItem> =
+            client.get("https://api.themoviedb.org/3/search/$kind") {
+                parameter("api_key", TMDB_API_KEY)
+                parameter("query", query)
+                parameter("language", lang.tmdb)
+                parameter("include_adult", "false")
+            }.body<TmdbSearchResponse>().results.orEmpty()
+
+        val movies = fetch("movie").filter { it.isAnime() }
+            .mapNotNull { it.toSearchResult(ContentType.ANIME, prefix = "movie") }
+        val series = fetch("tv").filter { it.isAnime() }
+            .mapNotNull { it.toSearchResult(ContentType.ANIME, prefix = "tv") }
+        return (movies + series).distinctBy { it.externalId }
+    }
+
+    /** TMDB arama öğesini sonuca çevirir. [prefix] verilirse kimlik kaynak türünü
+     *  taşır ("tmdb:movie:123") — detay çekiminde doğru endpoint seçilir. */
+    private fun TmdbItem.toSearchResult(type: ContentType, prefix: String? = null): SearchResult? {
+        if (posterPath == null) return null
+        val title = title ?: name ?: "?"
+        val original = originalTitle ?: originalName
+        return SearchResult(
+            externalId = if (prefix != null) "tmdb:$prefix:$id" else id.toString(),
+            type = type,
+            title = title,
+            altTitle = original?.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) },
+            titleEn = original?.takeIf { it.isNotBlank() } ?: title,
+            year = (releaseDate ?: firstAirDate)?.take(4),
+            posterUrl = "https://image.tmdb.org/t/p/w500$posterPath",
+            overview = cleanOverview(overview),
+            overviewEn = cleanOverview(overview),
+            totalEpisodes = null,
+            rating = voteAverage?.takeIf { it > 0 },
+            source = "tmdb",
+        )
+    }
+
+    private fun TmdbItem.isAnime(): Boolean =
+        originalLanguage.equals("ja", ignoreCase = true) && genreIds.orEmpty().contains(16)
+
+    /** Anime sekmesi: AniList önce, TMDB-only animeler yedek (B4). */
+    private suspend fun searchAnime(query: String, lang: TitleLanguage): List<SearchResult> {
+        var anilistError: Exception? = null
+        val anilist = try {
+            searchAniList(query, lang)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            anilistError = e
+            emptyList()
         }
+        val tmdb = try {
+            searchTmdbAnime(query, lang)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+        if (anilist.isEmpty() && tmdb.isEmpty() && anilistError != null) throw anilistError!!
+        // AniList önde: çakışmada AniList kaydı kazanır (B7).
+        return dedupeCrossSource(anilist + tmdb)
     }
 
     // ── Detay çekimleri ──────────────────────────────────────────────────
@@ -873,6 +993,7 @@ object SearchApi {
                 )
             },
             trailerUrl = trailerUrl,
+            personSource = PersonSource.ANIME,
         )
     }
 
@@ -937,12 +1058,13 @@ object SearchApi {
 
     private suspend fun anilistPersonDetails(characterId: String, lang: TitleLanguage): PersonDetails {
         val graphQl = """
-            query (${'$'}id: Int) {
+            query (${'$'}id: Int, ${'$'}page: Int) {
               Character(id: ${'$'}id) {
                 name { full }
                 image { large }
                 description(asHtml: false)
-                media(perPage: 50, type: ANIME) {
+                media(perPage: 50, type: ANIME, page: ${'$'}page) {
+                  pageInfo { hasNextPage }
                   edges {
                     characterRole
                     node {
@@ -957,12 +1079,26 @@ object SearchApi {
               }
             }
         """.trimIndent()
-        val response = anilistPost<AniListPersonResponse>(
-            graphQl,
-            mapOf("id" to (characterId.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(characterId))),
-        )
-        val character = response.data?.character ?: throw IllegalStateException("AniList karakteri boş")
-        val works = character.media?.edges.orEmpty().mapNotNull { edge ->
+        // Filmografi 50'den uzun olabilir: AniList sayfalarını tüket (en fazla 10 sayfa).
+        val edges = mutableListOf<AniListPersonMediaEdge>()
+        var character: AniListPersonCharacter? = null
+        var page = 1
+        while (page <= 10) {
+            val response = anilistPost<AniListPersonResponse>(
+                graphQl,
+                mapOf(
+                    "id" to (characterId.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(characterId)),
+                    "page" to JsonPrimitive(page),
+                ),
+            )
+            val loaded = response.data?.character ?: throw IllegalStateException("AniList karakteri boş")
+            character = loaded
+            edges += loaded.media?.edges.orEmpty()
+            if (loaded.media?.pageInfo?.hasNextPage != true) break
+            page++
+        }
+        val ch = character ?: throw IllegalStateException("AniList karakteri boş")
+        val works = edges.mapNotNull { edge ->
             val node = edge.node ?: return@mapNotNull null
             val title = when (lang) {
                 TitleLanguage.EN -> node.title?.english ?: node.title?.romaji
@@ -983,9 +1119,9 @@ object SearchApi {
             )
         }.distinctBy { it.externalId }
         return PersonDetails(
-            name = character.name?.full ?: "?",
-            imageUrl = character.image?.large,
-            bio = cleanOverview(character.description),
+            name = ch.name?.full ?: "?",
+            imageUrl = ch.image?.large,
+            bio = cleanOverview(ch.description),
             works = works,
         )
     }
@@ -1041,10 +1177,11 @@ object SearchApi {
         // type: ANIME gönderiliyordu ve API GraphQL hatası döndürünce sayfa
         // "Bu stüdyo bulunamadı" gösteriyordu (BUG-086).
         val graphQl = """
-            query (${'$'}id: Int) {
+            query (${'$'}id: Int, ${'$'}page: Int) {
               Studio(id: ${'$'}id) {
                 name
-                media(perPage: 50, sort: POPULARITY_DESC) {
+                media(perPage: 50, sort: POPULARITY_DESC, page: ${'$'}page) {
+                  pageInfo { hasNextPage }
                   edges {
                     node {
                       id
@@ -1058,12 +1195,26 @@ object SearchApi {
               }
             }
         """.trimIndent()
-        val response = anilistPost<AniListStudioResponse>(
-            graphQl,
-            mapOf("id" to (studioId.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(studioId))),
-        )
-        val studio = response.data?.studio ?: throw IllegalStateException("AniList stüdyosu boş")
-        val works = studio.media?.edges.orEmpty().mapNotNull { edge ->
+        // Stüdyonun tüm yapımları: AniList sayfaları tüketilir (en fazla 10 sayfa).
+        val edges = mutableListOf<AniListStudioMediaEdge>()
+        var studio: AniListStudioDetail? = null
+        var page = 1
+        while (page <= 10) {
+            val response = anilistPost<AniListStudioResponse>(
+                graphQl,
+                mapOf(
+                    "id" to (studioId.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(studioId)),
+                    "page" to JsonPrimitive(page),
+                ),
+            )
+            val loaded = response.data?.studio ?: throw IllegalStateException("AniList stüdyosu boş")
+            studio = loaded
+            edges += loaded.media?.edges.orEmpty()
+            if (loaded.media?.pageInfo?.hasNextPage != true) break
+            page++
+        }
+        val st = studio ?: throw IllegalStateException("AniList stüdyosu boş")
+        val works = edges.mapNotNull { edge ->
             val node = edge.node ?: return@mapNotNull null
             val title = when (lang) {
                 TitleLanguage.EN -> node.title?.english ?: node.title?.romaji
@@ -1082,7 +1233,7 @@ object SearchApi {
                 posterUrl = node.coverImage?.extraLarge,
             )
         }.distinctBy { it.externalId }
-        return StudioDetails(name = studio.name ?: "?", works = works)
+        return StudioDetails(name = st.name ?: "?", works = works)
     }
 }
 
@@ -1135,6 +1286,10 @@ private data class TmdbItem(
     @SerialName("first_air_date") val firstAirDate: String? = null,
     val overview: String? = null,
     @SerialName("vote_average") val voteAverage: Double? = null,
+    // Anime sınıflandırması için (B4): JA + Animation türü → anime.
+    @SerialName("genre_ids") val genreIds: List<Int>? = null,
+    @SerialName("original_language") val originalLanguage: String? = null,
+    @SerialName("origin_country") val originCountry: List<String>? = null,
 )
 
 @Serializable
@@ -1310,7 +1465,13 @@ private data class AniListPersonCharacter(
 )
 
 @Serializable
-private data class AniListPersonMedia(val edges: List<AniListPersonMediaEdge>? = null)
+private data class AniListPageInfo(@SerialName("hasNextPage") val hasNextPage: Boolean? = null)
+
+@Serializable
+private data class AniListPersonMedia(
+    val edges: List<AniListPersonMediaEdge>? = null,
+    val pageInfo: AniListPageInfo? = null,
+)
 
 @Serializable
 private data class AniListPersonMediaEdge(
@@ -1355,7 +1516,10 @@ private data class AniListStudioData(@SerialName("Studio") val studio: AniListSt
 private data class AniListStudioDetail(val name: String? = null, val media: AniListStudioMedia? = null)
 
 @Serializable
-private data class AniListStudioMedia(val edges: List<AniListStudioMediaEdge>? = null)
+private data class AniListStudioMedia(
+    val edges: List<AniListStudioMediaEdge>? = null,
+    val pageInfo: AniListPageInfo? = null,
+)
 
 @Serializable
 private data class AniListStudioMediaEdge(val node: AniListStudioMediaNode? = null)

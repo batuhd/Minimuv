@@ -139,7 +139,7 @@ fun StudioScreen(
                 Icon(
                     Icons.AutoMirrored.Filled.ArrowBack,
                     contentDescription = "Geri",
-                    tint = Color.White,
+                    tint = tk.text,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -148,7 +148,7 @@ fun StudioScreen(
                     Icon(
                         if (isFav) MinimuvIcons.Heart else Icons.Filled.FavoriteBorder,
                         contentDescription = if (isFav) "Favoriden çıkar" else "Favoriye ekle",
-                        tint = if (isFav) Color(0xFFEF476F) else Color.White,
+                        tint = if (isFav) tk.van else tk.text,
                         modifier = Modifier.size(18.dp),
                     )
                 }
@@ -192,7 +192,7 @@ fun StudioScreen(
                                 .size(84.dp)
                                 .clip(RoundedCornerShape(18.dp))
                                 .background(tk.surface1)
-                                .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp)),
+                                .border(1.dp, tk.text.copy(alpha = 0.10f), RoundedCornerShape(18.dp)),
                             contentAlignment = Alignment.Center,
                         ) {
                             if (s.logoUrl != null) {
@@ -207,7 +207,7 @@ fun StudioScreen(
                                     s.name.take(1).uppercase(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 32.sp,
-                                    color = Color.White,
+                                    color = tk.text,
                                 )
                             }
                         }
@@ -218,7 +218,7 @@ fun StudioScreen(
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 24.sp,
                                 lineHeight = 28.sp,
-                                color = Color.White,
+                                color = tk.text,
                                 maxLines = 2,
                                 overflow = TextOverflow.Ellipsis,
                             )
@@ -256,7 +256,7 @@ fun StudioScreen(
                             "Yapımları",
                             fontWeight = FontWeight.Bold,
                             fontSize = 20.sp,
-                            color = Color.White,
+                            color = tk.text,
                         )
                         Text(
                             "${worksList.size} / ${s.works.size} gösteriliyor",
@@ -277,7 +277,7 @@ fun StudioScreen(
                             Box(
                                 Modifier
                                     .clip(RoundedCornerShape(50))
-                                    .background(if (isSelected) Color.White else tk.surface2)
+                                    .background(if (isSelected) tk.text else tk.surface2)
                                     .clickable { selectedFilter = filter }
                                     .padding(horizontal = 14.dp, vertical = 7.dp),
                             ) {
@@ -287,7 +287,7 @@ fun StudioScreen(
                                         fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                                         fontSize = 12.sp,
                                     ),
-                                    color = if (isSelected) Color.Black else tk.textSoft,
+                                    color = if (isSelected) tk.ink else tk.textSoft,
                                 )
                             }
                         }

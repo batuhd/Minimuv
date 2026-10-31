@@ -70,16 +70,18 @@ android {
         applicationId = "com.sinop.minimuv"
         minSdk = 26
         targetSdk = 36
-        versionCode = 300
-        versionName = "3.0.0"
+        versionCode = 324
+        versionName = "3.2.4"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "TMDB_API_KEY", "\"$tmdbApiKey\"")
-        buildConfigField("String", "FCM_APP_ID", "\"$firebaseAppId\"")
-        buildConfigField("String", "FCM_API_KEY", "\"$firebaseApiKey\"")
-        buildConfigField("String", "FCM_PROJECT_ID", "\"$firebaseProjectId\"")
-        buildConfigField("String", "FCM_SENDER_ID", "\"$firebaseSenderId\"")
+        fun toConfigString(v: String): String = "\"" + v.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+        buildConfigField("String", "TMDB_API_KEY", toConfigString(tmdbApiKey))
+        buildConfigField("String", "FCM_APP_ID", toConfigString(firebaseAppId))
+        buildConfigField("String", "FCM_API_KEY", toConfigString(firebaseApiKey))
+        buildConfigField("String", "FCM_PROJECT_ID", toConfigString(firebaseProjectId))
+        buildConfigField("String", "FCM_SENDER_ID", toConfigString(firebaseSenderId))
     }
 
     buildTypes {

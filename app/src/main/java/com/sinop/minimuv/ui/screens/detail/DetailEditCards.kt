@@ -106,7 +106,7 @@ internal fun StatusCard(
                 Icon(
                     MinimuvIcons.Check,
                     contentDescription = null,
-                    tint = Color(0xFFFFC107),
+                    tint = tk.gold,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -115,7 +115,7 @@ internal fun StatusCard(
                 "Durum",
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
-                color = Color.White,
+                color = tk.text,
             )
         }
 
@@ -130,9 +130,9 @@ internal fun StatusCard(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(50))
-                        .background(if (isSelected) Color(0xFFFFC107) else tk.surface2)
+                        .background(if (isSelected) tk.gold else tk.surface2)
                         .then(
-                            if (!isSelected) Modifier.border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(50))
+                            if (!isSelected) Modifier.border(1.dp, tk.text.copy(alpha = 0.12f), RoundedCornerShape(50))
                             else Modifier,
                         )
                         .clickable { onSelect(s.db) }
@@ -144,7 +144,7 @@ internal fun StatusCard(
                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 13.sp,
                         ),
-                        color = if (isSelected) Color.Black else tk.textSoft,
+                        color = if (isSelected) tk.ink else tk.textSoft,
                     )
                 }
             }
@@ -193,7 +193,7 @@ internal fun EpisodesCard(
                 Icon(
                     MinimuvIcons.Play,
                     contentDescription = null,
-                    tint = Color(0xFFFFC107),
+                    tint = tk.gold,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -202,7 +202,7 @@ internal fun EpisodesCard(
                 "Bölümler",
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
-                color = Color.White,
+                color = tk.text,
                 modifier = Modifier.weight(1f),
             )
             Text(
@@ -237,7 +237,7 @@ internal fun EpisodesCard(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (!isAyrı) Color(0xFF263238) else Color.Transparent)
+                    .background(if (!isAyrı) tk.surface3 else Color.Transparent)
                     .clickable { onWatchMode(WatchMode.BIRLIKTE.db) }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center,
@@ -248,14 +248,14 @@ internal fun EpisodesCard(
                         fontWeight = if (!isAyrı) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 13.sp,
                     ),
-                    color = if (!isAyrı) Color.White else tk.textMuted,
+                    color = if (!isAyrı) tk.text else tk.textMuted,
                 )
             }
             Box(
                 Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(10.dp))
-                    .background(if (isAyrı) Color(0xFF263238) else Color.Transparent)
+                    .background(if (isAyrı) tk.surface3 else Color.Transparent)
                     .clickable { onWatchMode(WatchMode.AYRI.db) }
                     .padding(vertical = 8.dp),
                 contentAlignment = Alignment.Center,
@@ -266,7 +266,7 @@ internal fun EpisodesCard(
                         fontWeight = if (isAyrı) FontWeight.Bold else FontWeight.Medium,
                         fontSize = 13.sp,
                     ),
-                    color = if (isAyrı) Color.White else tk.textMuted,
+                    color = if (isAyrı) tk.text else tk.textMuted,
                 )
             }
         }
@@ -311,7 +311,7 @@ internal fun EpisodesCard(
                             "$sharedProgress",
                             fontWeight = FontWeight.Bold,
                             fontSize = 24.sp,
-                            color = Color.White,
+                            color = tk.text,
                         )
                         Text(
                             if (total != null) " / $total" else " bölüm",
@@ -358,7 +358,7 @@ private fun ProfileProgressRow(
                 Text(
                     profile.displayName,
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
-                    color = Color.White,
+                    color = tk.text,
                 )
                 Text(
                     if (total != null) "$progress / $total" else "$progress",
@@ -380,7 +380,7 @@ private fun ProfileProgressRow(
                         Modifier
                             .fillMaxWidth(fraction)
                             .fillMaxHeight()
-                            .background(if (editable) Color(0xFFFFC107) else color),
+                            .background(if (editable) tk.gold else color),
                     )
                 }
             }
@@ -410,7 +410,7 @@ internal fun StepperButton(
             .minimumInteractiveComponentSize()
             .size(34.dp)
             .clip(CircleShape)
-            .background(if (isPrimary) Color(0xFFFFC107) else tk.surface2)
+            .background(if (isPrimary) tk.gold else tk.surface2)
             .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -418,7 +418,7 @@ internal fun StepperButton(
             text,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp,
-            color = if (isPrimary) Color.Black else tk.textSoft,
+            color = if (isPrimary) tk.ink else tk.textSoft,
         )
     }
 }
@@ -465,7 +465,7 @@ internal fun ScoreCard(
                 Icon(
                     MinimuvIcons.Star,
                     contentDescription = null,
-                    tint = Color(0xFF26A69A),
+                    tint = tk.van,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -474,7 +474,7 @@ internal fun ScoreCard(
                 "Puan",
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
-                color = Color.White,
+                color = tk.text,
                 modifier = Modifier.weight(1f),
             )
             // Segmente Sekme
@@ -487,7 +487,7 @@ internal fun ScoreCard(
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (!showDetailed) Color(0xFF263238) else Color.Transparent)
+                        .background(if (!showDetailed) tk.surface3 else Color.Transparent)
                         .clickable {
                             detailTabTouched = true
                             showDetailed = false
@@ -500,13 +500,13 @@ internal fun ScoreCard(
                             fontWeight = if (!showDetailed) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 12.sp,
                         ),
-                        color = if (!showDetailed) Color.White else tk.textMuted,
+                        color = if (!showDetailed) tk.text else tk.textMuted,
                     )
                 }
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(10.dp))
-                        .background(if (showDetailed) Color(0xFF263238) else Color.Transparent)
+                        .background(if (showDetailed) tk.surface3 else Color.Transparent)
                         .clickable {
                             detailTabTouched = true
                             showDetailed = true
@@ -519,7 +519,7 @@ internal fun ScoreCard(
                             fontWeight = if (showDetailed) FontWeight.Bold else FontWeight.Medium,
                             fontSize = 12.sp,
                         ),
-                        color = if (showDetailed) Color.White else tk.textMuted,
+                        color = if (showDetailed) tk.text else tk.textMuted,
                     )
                 }
             }
@@ -537,7 +537,7 @@ internal fun ScoreCard(
                     myScore?.let { String.format(Locale.US, "%.1f", it) } ?: "—",
                     fontWeight = FontWeight.Bold,
                     fontSize = 42.sp,
-                    color = Color.White,
+                    color = tk.text,
                 )
                 Text(
                     " /10",
@@ -567,8 +567,8 @@ internal fun ScoreCard(
                     },
                     valueRange = 0f..10f,
                     colors = SliderDefaults.colors(
-                        thumbColor = Color.White,
-                        activeTrackColor = Color(0xFF26A69A),
+                        thumbColor = tk.text,
+                        activeTrackColor = tk.van,
                         inactiveTrackColor = tk.surface3,
                     ),
                 )
@@ -611,13 +611,13 @@ private fun CriterionSliderRow(
             Text(
                 label,
                 style = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp),
-                color = Color.White,
+                color = tk.text,
             )
             Text(
                 value?.let { String.format(Locale.US, "%.1f", it) } ?: "—",
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
-                color = Color(0xFF26A69A),
+                color = tk.van,
             )
         }
         Spacer(Modifier.height(1.dp))
@@ -626,8 +626,8 @@ private fun CriterionSliderRow(
             onValueChange = { onChange(Math.round(it.toDouble() * 10.0) / 10.0) },
             valueRange = 0f..10f,
             colors = SliderDefaults.colors(
-                thumbColor = Color.White,
-                activeTrackColor = Color(0xFF26A69A),
+                thumbColor = tk.text,
+                activeTrackColor = tk.van,
                 inactiveTrackColor = tk.surface3,
             ),
         )
@@ -663,7 +663,7 @@ internal fun DatesCard(
                 Icon(
                     MinimuvIcons.Calendar,
                     contentDescription = null,
-                    tint = Color(0xFFAB47BC),
+                    tint = tk.sinop,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -672,7 +672,7 @@ internal fun DatesCard(
                 "Takvim",
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
-                color = Color.White,
+                color = tk.text,
             )
         }
 
@@ -708,7 +708,7 @@ internal fun DatesCard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                         ),
-                        color = if (startDate != null) Color.White else tk.textMuted,
+                        color = if (startDate != null) tk.text else tk.textMuted,
                     )
                 }
             }
@@ -739,7 +739,7 @@ internal fun DatesCard(
                             fontWeight = FontWeight.Bold,
                             fontSize = 14.sp,
                         ),
-                        color = if (finishDate != null) Color.White else tk.textMuted,
+                        color = if (finishDate != null) tk.text else tk.textMuted,
                     )
                 }
             }
@@ -760,7 +760,7 @@ internal fun DatesCard(
                 "$rewatches",
                 fontWeight = FontWeight.Bold,
                 fontSize = 16.sp,
-                color = Color.White,
+                color = tk.text,
                 modifier = Modifier.padding(horizontal = 12.dp),
             )
             StepperButton("+", isPrimary = false) { onRewatches(rewatches + 1) }
@@ -802,7 +802,7 @@ internal fun NotesCard(
                 Icon(
                     MinimuvIcons.Edit,
                     contentDescription = null,
-                    tint = Color(0xFF42A5F5),
+                    tint = tk.van,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -811,7 +811,7 @@ internal fun NotesCard(
                 "Notlar",
                 fontWeight = FontWeight.Bold,
                 fontSize = 17.sp,
-                color = Color.White,
+                color = tk.text,
             )
         }
 
@@ -952,19 +952,19 @@ private fun TitleNoteRow(
                     Box(
                         Modifier
                             .clip(RoundedCornerShape(50))
-                            .background(Color(0xFFFFB74D).copy(alpha = 0.20f))
+                            .background(tk.gold.copy(alpha = 0.20f))
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     ) {
                         Text(
                             "🙈 Spoiler",
                             style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
-                            color = Color(0xFFFFB74D),
+                            color = tk.gold,
                         )
                     }
                 }
             }
             Spacer(Modifier.height(2.dp))
-            Text(cleanText, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = Color.White)
+            Text(cleanText, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp), color = tk.text)
         }
         Icon(
             MinimuvIcons.Edit,
@@ -1026,20 +1026,20 @@ private fun EpisodeNoteItemRow(
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 12.sp,
                         ),
-                        color = Color.White,
+                        color = tk.text,
                     )
                     if (isSpoiler) {
                         Spacer(Modifier.width(6.dp))
                         Box(
                             Modifier
                                 .clip(RoundedCornerShape(50))
-                                .background(Color(0xFFFFB74D).copy(alpha = 0.20f))
+                                .background(tk.gold.copy(alpha = 0.20f))
                                 .padding(horizontal = 6.dp, vertical = 2.dp),
                         ) {
                             Text(
                                 "🙈 Spoiler",
                                 style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp, fontWeight = FontWeight.Bold),
-                                color = Color(0xFFFFB74D),
+                                color = tk.gold,
                             )
                         }
                     }
@@ -1112,14 +1112,14 @@ private fun NoteTextDialog(
                     horizontalArrangement = Arrangement.SpaceBetween,
                 ) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("🙈 Spoiler içeriyor", style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp), color = Color.White)
+                        Text("🙈 Spoiler içeriyor", style = MaterialTheme.typography.bodyMedium.copy(fontSize = 13.sp), color = tk.text)
                     }
                     Switch(
                         checked = isSpoiler,
                         onCheckedChange = { isSpoiler = it },
                         colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = Color(0xFFFFB74D),
+                            checkedThumbColor = tk.text,
+                            checkedTrackColor = tk.gold,
                         ),
                     )
                 }

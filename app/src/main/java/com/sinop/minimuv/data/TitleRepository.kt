@@ -14,13 +14,18 @@ private data class ScoreProbe(val score: Double? = null)
 
 class TitleRepository {
 
-    suspend fun getTitles(): List<Title> =
-        fetchAllPaged("titles", "created_at")
+    suspend fun getTitles(): List<Title> {
+        val list = fetchAllPaged<Title>("titles", "created_at")
+        AppCache.titlesLite.value = list
+        AppCache.titlesLoaded = true
+        return list
+    }
 
     /** Liste ekranı için gerekli kolonları çeker — overview/notlar gibi ağır
-     *  alanlar taşınmaz; JSON payload ve decode süresi belirgin azalır. */
-    suspend fun getTitlesLite(): List<Title> =
-        fetchAllPaged(
+     *  alanlar taşınmaz; JSON payload ve decode süresi belirgin azalır.
+     *  Sonuç [AppCache]'e yazılır: ekranlar bir sonraki açılışta ağ beklemeden dolar. */
+    suspend fun getTitlesLite(): List<Title> {
+        val list = fetchAllPaged<Title>(
             table = "titles",
             orderColumn = "created_at",
             columns = listOf(
@@ -48,6 +53,10 @@ class TitleRepository {
                 "notes",
             ),
         )
+        AppCache.titlesLite.value = list
+        AppCache.titlesLoaded = true
+        return list
+    }
 
     suspend fun getTitle(id: String): Title? =
         SupabaseProvider.client.postgrest.from("titles")
@@ -56,6 +65,7 @@ class TitleRepository {
 
     suspend fun insert(title: Title) {
         SupabaseProvider.client.postgrest.from("titles").insert(title)
+        AppCache.upsertTitle(title)
     }
 
     suspend fun update(id: String, changes: Map<String, Any?>) {
@@ -82,6 +92,7 @@ class TitleRepository {
         ) {
             filter { eq("id", id) }
         }
+        AppCache.patchTitle(id) { it.withChanges(changes) }
     }
 
     suspend fun updatePriority(id: String, priorityOrder: Int) {
@@ -92,6 +103,7 @@ class TitleRepository {
         ) {
             filter { eq("id", id) }
         }
+        AppCache.patchTitle(id) { it.copy(priorityOrder = priorityOrder) }
     }
 
     suspend fun updateWatchOrder(id: String, order: Int) {
@@ -102,12 +114,14 @@ class TitleRepository {
         ) {
             filter { eq("id", id) }
         }
+        AppCache.patchTitle(id) { it.copy(watchOrder = order) }
     }
 
     suspend fun delete(id: String) {
         SupabaseProvider.client.postgrest.from("titles").delete {
             filter { eq("id", id) }
         }
+        AppCache.removeTitle(id)
     }
 
     // ── Kişi bazlı puanlar ───────────────────────────────────────────────
@@ -118,8 +132,12 @@ class TitleRepository {
             .decodeList<TitleScore>()
 
     /** Tüm kişi-bazlı puanlar (rozet istatistikleri için). */
-    suspend fun getAllTitleScores(): List<TitleScore> =
-        fetchAllPaged("title_scores", "id")
+    suspend fun getAllTitleScores(): List<TitleScore> {
+        val list = fetchAllPaged<TitleScore>("title_scores", "id")
+        AppCache.titleScores.value = list
+        AppCache.scoresLoaded = true
+        return list
+    }
 
     suspend fun upsertTitleScore(score: TitleScore) {
         val existing = SupabaseProvider.client.postgrest.from("title_scores")
@@ -197,8 +215,12 @@ class TitleRepository {
             .select { filter { eq("title_id", titleId) } }
             .decodeList<EpisodeProgress>()
 
-    suspend fun getAllEpisodeProgress(): List<EpisodeProgress> =
-        fetchAllPaged("episode_progress_per_profile", "id")
+    suspend fun getAllEpisodeProgress(): List<EpisodeProgress> {
+        val list = fetchAllPaged<EpisodeProgress>("episode_progress_per_profile", "id")
+        AppCache.episodeProgress.value = list
+        AppCache.progressLoaded = true
+        return list
+    }
 
     suspend fun setEpisodeProgress(titleId: String, profileId: String, episode: Int) {
         // Atomik upsert: select-then-insert yarışını kapatır (BUG-045).
@@ -264,16 +286,27 @@ class TitleRepository {
         }
     }
 
-    suspend fun getAllTitleNotes(): List<TitleNote> =
-        fetchAllPaged("title_notes", "created_at")
+    suspend fun getAllTitleNotes(): List<TitleNote> {
+        val list = fetchAllPaged<TitleNote>("title_notes", "created_at")
+        AppCache.titleNotes.value = list
+        AppCache.notesLoaded = true
+        return list
+    }
 
     // ── İzleme günlüğü ───────────────────────────────────────────────────
 
-    suspend fun getWatchLog(): List<WatchLog> =
-        fetchAllPaged("watch_log", "date")
+    suspend fun getWatchLog(): List<WatchLog> {
+        val list = fetchAllPaged<WatchLog>("watch_log", "date")
+        AppCache.watchLog.value = list
+        AppCache.watchLogLoaded = true
+        return list
+    }
 
     suspend fun insertWatchLog(entry: WatchLog) {
         SupabaseProvider.client.postgrest.from("watch_log").insert(entry)
+        if (AppCache.watchLogLoaded) {
+            AppCache.watchLog.value = AppCache.watchLog.value + entry
+        }
     }
 
     suspend fun getWatchLogForTitle(titleId: String): List<WatchLog> =
@@ -356,3 +389,45 @@ class TitleRepository {
         return all
     }
 }
+
+/** `changes` haritasında anahtar varsa değerini, yoksa mevcut değeri döndürür. */
+private fun <T> Map<String, Any?>.pick(key: String, current: T): T {
+    if (!containsKey(key)) return current
+    @Suppress("UNCHECKED_CAST")
+    return (get(key) as? T) ?: current
+}
+
+private fun <T> Map<String, Any?>.pickNullable(key: String, current: T?): T? {
+    if (!containsKey(key)) return current
+    @Suppress("UNCHECKED_CAST")
+    return get(key) as? T
+}
+
+/** Yazma sonrası bellek önbelleğini ağa gitmeden günceller (P2 write-through). */
+private fun Title.withChanges(c: Map<String, Any?>): Title = copy(
+    type = c.pick("type", type),
+    externalId = c.pickNullable("external_id", externalId),
+    title = c.pick("title", title),
+    titleEn = c.pickNullable("title_en", titleEn),
+    posterUrl = c.pickNullable("poster_url", posterUrl),
+    overview = c.pickNullable("overview", overview),
+    overviewEn = c.pickNullable("overview_en", overviewEn),
+    status = c.pick("status", status),
+    score = c.pickNullable("score", score),
+    episodeProgress = c.pick("episode_progress", episodeProgress),
+    totalEpisodes = c.pickNullable("total_episodes", totalEpisodes),
+    startDate = c.pickNullable("start_date", startDate),
+    finishDate = c.pickNullable("finish_date", finishDate),
+    totalRewatches = c.pick("total_rewatches", totalRewatches),
+    notes = c.pickNullable("notes", notes),
+    story = c.pickNullable("story", story),
+    characters = c.pickNullable("characters", characters),
+    visuals = c.pickNullable("visuals", visuals),
+    audio = c.pickNullable("audio", audio),
+    enjoyment = c.pickNullable("enjoyment", enjoyment),
+    isPrivate = c.pick("is_private", isPrivate),
+    watchMode = c.pick("watch_mode", watchMode),
+    priorityOrder = c.pickNullable("priority_order", priorityOrder),
+    watchOrder = c.pickNullable("watch_order", watchOrder),
+    isFavorite = c.pick("is_favorite", isFavorite),
+)

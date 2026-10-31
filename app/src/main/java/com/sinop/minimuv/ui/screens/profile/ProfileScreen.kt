@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,11 +48,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import com.sinop.minimuv.ui.theme.together
+import kotlinx.coroutines.async
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -60,6 +62,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -71,26 +74,37 @@ import com.canhub.cropper.CropImageOptions
 import com.sinop.minimuv.core.RealtimeManager
 import com.sinop.minimuv.data.AchievementDef
 import com.sinop.minimuv.data.Achievements
+import com.sinop.minimuv.data.AppCache
+import com.sinop.minimuv.data.CoupleRepository
+import com.sinop.minimuv.data.CoupleSettings
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.DcButton
+import com.sinop.minimuv.ui.components.ShimmerBox
+import com.sinop.minimuv.ui.theme.AppPalette
 import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
+import com.sinop.minimuv.ui.theme.parseHexColor
 import com.sinop.minimuv.ui.theme.tokens
 import java.io.ByteArrayOutputStream
 import java.time.DayOfWeek
+import java.time.Duration
 import java.time.LocalDate
+import java.time.LocalDateTime
+import java.time.Period
 import java.time.temporal.TemporalAdjusters
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 private val EMOJI_CHOICES = listOf("🌊", "🦜", "🎬", "🍿", "🌸", "🐱", "🐼", "🦊", "🌙", "⭐", "🍒", "👾")
-private val COLOR_CHOICES = listOf("#3D8BFF", "#9B5DE5", "#2ED573", "#FF6FA5", "#F5A623", "#FF8FA3")
+// Profil renkleri tema ile aynı ortak paletten seçilir (T1/T2).
+private val COLOR_CHOICES = AppPalette.colors.map { it.hex }
 
 @Composable
 fun ProfileScreen(
@@ -107,10 +121,13 @@ fun ProfileScreen(
     val repo = remember { ProfileRepository() }
     val titleRepo = remember { TitleRepository() }
 
-    var profiles by remember { mutableStateOf<List<Profile>>(emptyList()) }
+    var profiles by remember { mutableStateOf(AppCache.profiles.value) }
     var stats by remember { mutableStateOf<CoupleStats?>(null) }
-    var titles by remember { mutableStateOf<List<com.sinop.minimuv.data.Title>>(emptyList()) }
-    var watchLogs by remember { mutableStateOf<List<com.sinop.minimuv.data.WatchLog>>(emptyList()) }
+    var titles by remember {
+        mutableStateOf(if (AppCache.titlesLoaded) AppCache.titlesLite.value else emptyList())
+    }
+    var watchLogs by remember { mutableStateOf(AppCache.watchLog.value) }
+    var couple by remember { mutableStateOf(AppCache.coupleSettings.value) }
     var editing by remember { mutableStateOf<Profile?>(null) }
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var uploadingPhoto by remember { mutableStateOf(false) }
@@ -119,20 +136,41 @@ fun ProfileScreen(
     fun reload() {
         scope.launch {
             runCatching {
-                val p = repo.getProfiles()
-                val t = titleRepo.getTitles()
-                val log = titleRepo.getWatchLog()
-                val sc = runCatching { titleRepo.getAllTitleScores() }.getOrDefault(emptyList())
-                val prog = runCatching { titleRepo.getAllEpisodeProgress() }.getOrDefault(emptyList())
-                val notes = runCatching { titleRepo.getAllTitleNotes() }.getOrDefault(emptyList())
-                StatsBundle(p, t, log, sc, prog, notes)
+                // P2: yedi istek paralel — sıralı ağ turları yerine tek tur.
+                kotlinx.coroutines.supervisorScope {
+                    val p = async { repo.getProfiles() }
+                    val t = async { titleRepo.getTitlesLite() }
+                    val log = async { titleRepo.getWatchLog() }
+                    val sc = async {
+                        runCatching { titleRepo.getAllTitleScores() }.getOrDefault(emptyList())
+                    }
+                    val prog = async {
+                        runCatching { titleRepo.getAllEpisodeProgress() }.getOrDefault(emptyList())
+                    }
+                    val notes = async {
+                        runCatching { titleRepo.getAllTitleNotes() }.getOrDefault(emptyList())
+                    }
+                    val coupleSettings = async {
+                        runCatching { CoupleRepository().get() }.getOrNull()
+                    }
+                    StatsBundle(
+                        p.await(), t.await(), log.await(), sc.await(),
+                        prog.await(), notes.await(), coupleSettings.await(),
+                    )
+                }
             }.onSuccess { bundle ->
                 profiles = bundle.profiles
                 titles = bundle.titles
                 watchLogs = bundle.log
+                couple = bundle.couple
                 stats = Achievements.computeStats(
                     bundle.titles, bundle.log, bundle.scores, bundle.notes, bundle.progress,
                 )
+                // Tema renkleri profil verisinden beslenir: kayıt sonrası anında yansısın.
+                settings.cacheAccentColors(bundle.profiles)
+                settings.cacheTogetherSince(bundle.couple?.togetherSince)
+                // Soğuk açılışta avatar/isim ağ beklemeden gelsin.
+                settings.cacheProfilesSnapshot(bundle.profiles)
             }.onFailure {
                 Log.w("ProfileScreen", "Profil verileri yüklenemedi", it)
             }
@@ -142,7 +180,7 @@ fun ProfileScreen(
     LaunchedEffect(Unit) {
         reload()
         RealtimeManager.events
-            .filter { it == "profiles" || it == "titles" }
+            .filter { it == "profiles" || it == "titles" || it == "couple_settings" }
             .debounce(500)
             .collect { reload() }
     }
@@ -208,6 +246,21 @@ fun ProfileScreen(
         }
     }
 
+    // A1: birliktelik süresi dakikada bir tazelenir.
+    var nowDateTime by remember { mutableStateOf(LocalDateTime.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(60_000)
+            nowDateTime = LocalDateTime.now()
+        }
+    }
+    val togetherSince = remember(couple?.togetherSince) {
+        couple?.togetherSince?.let { iso -> runCatching { LocalDate.parse(iso) }.getOrNull() }
+    }
+    val togetherDurationText = remember(togetherSince, nowDateTime) {
+        togetherSince?.let { formatTogetherDuration(it, nowDateTime) }
+    }
+
     val totalWatchHours = remember(titles, watchLogs) {
         val totalEps = titles.sumOf { t ->
             when (t.type) {
@@ -241,24 +294,15 @@ fun ProfileScreen(
                 "Aşk",
                 fontWeight = FontWeight.Bold,
                 fontSize = 28.sp,
-                color = Color.White,
+                color = tk.text,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Profiller arası hızlı geçiş: profil seçim ekranına döner.
-                GlassCircleButton(onClick = onSwitchProfile) {
-                    Icon(
-                        MinimuvIcons.People,
-                        contentDescription = "Profil değiştir",
-                        tint = Color.White,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
                 // K4: açık tema geçici olarak kapalı — tema değiştirme düğmesi gizlendi.
                 GlassCircleButton(onClick = onOpenSettings) {
                     Icon(
                         MinimuvIcons.SettingsIcon,
                         contentDescription = "Ayarlar",
-                        tint = Color.White,
+                        tint = tk.text,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -271,7 +315,8 @@ fun ProfileScreen(
             partnerProfile = partnerProfile,
             myColor = myColor,
             partnerColor = partnerColor,
-            streakDays = stats?.streakDays ?: 0,
+            togetherDuration = togetherDurationText,
+            onSetStartDate = onOpenSettings,
             onEditMyProfile = {
                 editError = null
                 editing = myProfile
@@ -330,12 +375,12 @@ fun ProfileScreen(
                     "Rozetlerimiz",
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
-                    color = Color.White,
+                    color = tk.text,
                 )
                 Text(
                     "Tümünü gör ($totalUnlockedBadges / ${Achievements.ALL.size}) ›",
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
-                    color = Color(0xFFFFC107),
+                    color = tk.gold,
                     modifier = Modifier.clickable(onClick = onOpenBadges),
                 )
             }
@@ -357,7 +402,7 @@ fun ProfileScreen(
                     "İzleme takvimi",
                     fontWeight = FontWeight.Bold,
                     fontSize = 20.sp,
-                    color = Color.White,
+                    color = tk.text,
                 )
                 Text(
                     "Son 4 ay",
@@ -457,7 +502,8 @@ private fun CoupleHeaderBanner(
     partnerProfile: Profile?,
     myColor: Color,
     partnerColor: Color,
-    streakDays: Int,
+    togetherDuration: String?,
+    onSetStartDate: () -> Unit,
     onEditMyProfile: () -> Unit,
     onEditPartnerProfile: () -> Unit,
     onEditMyPhoto: () -> Unit,
@@ -485,7 +531,8 @@ private fun CoupleHeaderBanner(
                     if (myProfile != null) {
                         AvatarView(profile = myProfile, size = 80.dp)
                     } else {
-                        Text("V", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+                        // P2: profil henüz gelmediyse harf ("V") yerine shimmer iskelet.
+                        ShimmerBox(Modifier.fillMaxSize(), CircleShape)
                     }
                 }
                 EditBadge(
@@ -499,7 +546,7 @@ private fun CoupleHeaderBanner(
                 myProfile?.displayName ?: "Van",
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                color = Color.White,
+                color = tk.text,
             )
         }
 
@@ -509,23 +556,33 @@ private fun CoupleHeaderBanner(
                 Modifier
                     .width(100.dp)
                     .height(2.dp)
-                    .background(Color.White.copy(alpha = 0.18f)),
+                    .background(tk.text.copy(alpha = 0.12f)),
             )
             Box(
                 Modifier
                     .clip(RoundedCornerShape(50))
                     .background(tk.surface1)
-                    .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(50))
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                    .border(1.dp, tk.text.copy(alpha = 0.12f), RoundedCornerShape(50))
+                    .then(
+                        if (togetherDuration == null) {
+                            Modifier.clickable(role = Role.Button, onClick = onSetStartDate)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(horizontal = 10.dp, vertical = 6.dp),
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("❤️‍🔥", fontSize = 13.sp)
                     Spacer(Modifier.width(4.dp))
                     Text(
-                        "$streakDays gün",
+                        togetherDuration ?: "Başlangıç tarihini ayarla",
                         fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = Color.White,
+                        fontSize = 11.sp,
+                        color = if (togetherDuration == null) tk.van else tk.text,
+                        maxLines = 2,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.widthIn(max = 124.dp),
                     )
                 }
             }
@@ -546,7 +603,7 @@ private fun CoupleHeaderBanner(
                     if (partnerProfile != null) {
                         AvatarView(profile = partnerProfile, size = 80.dp)
                     } else {
-                        Text("S", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+                        ShimmerBox(Modifier.fillMaxSize(), CircleShape)
                     }
                 }
                 EditBadge(
@@ -560,7 +617,7 @@ private fun CoupleHeaderBanner(
                 partnerProfile?.displayName ?: "Sinop",
                 fontWeight = FontWeight.Bold,
                 fontSize = 15.sp,
-                color = Color.White,
+                color = tk.text,
             )
         }
     }
@@ -575,15 +632,16 @@ private fun StatBox(value: String, label: String, modifier: Modifier = Modifier)
         modifier
             .clip(RoundedCornerShape(18.dp))
             .background(tk.surface1)
-            .padding(vertical = 14.dp, horizontal = 12.dp),
+            .padding(vertical = 12.dp, horizontal = 10.dp),
     ) {
         Column {
             Text(
                 value,
                 fontFamily = FontFamily.Serif,
                 fontWeight = FontWeight.Bold,
-                fontSize = 22.sp,
-                color = Color.White,
+                fontSize = 18.sp,
+                letterSpacing = (-0.3).sp,
+                color = tk.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -677,8 +735,8 @@ private fun BadgeTile(
     modifier: Modifier = Modifier,
 ) {
     val tk = tokens()
-    val bg = if (isUnlocked) Color(0xFF2A2415) else tk.surface2
-    val borderCol = if (isUnlocked) Color(0xFFFFC107).copy(alpha = 0.6f) else Color.White.copy(alpha = 0.08f)
+    val bg = tk.surface2
+    val borderCol = if (isUnlocked) tk.gold.copy(alpha = 0.6f) else tk.text.copy(alpha = 0.08f)
 
     Row(
         modifier
@@ -692,7 +750,7 @@ private fun BadgeTile(
             Modifier
                 .size(36.dp)
                 .clip(CircleShape)
-                .background(if (isUnlocked) Color(0xFFFFC107).copy(alpha = 0.2f) else tk.surface3),
+                .background(if (isUnlocked) tk.gold.copy(alpha = 0.2f) else tk.surface3),
             contentAlignment = Alignment.Center,
         ) {
             Text(def.emoji, fontSize = 18.sp)
@@ -703,7 +761,7 @@ private fun BadgeTile(
                 def.title,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
-                color = Color.White,
+                color = tk.text,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -712,7 +770,7 @@ private fun BadgeTile(
                 Text(
                     "Kazanıldı",
                     style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-                    color = Color(0xFFFFC107),
+                    color = tk.gold,
                 )
             } else {
                 Text(
@@ -755,7 +813,7 @@ private fun HeatmapCard(logs: List<com.sinop.minimuv.data.WatchLog>) {
                         Modifier
                             .size(10.dp)
                             .clip(RoundedCornerShape(2.dp))
-                            .background(Color(0xFF26A69A).copy(alpha = frac)),
+                            .background(tk.van.copy(alpha = frac)),
                     )
                     Spacer(Modifier.width(3.dp))
                 }
@@ -795,10 +853,17 @@ private fun HeatmapMonthGrid(byDate: Map<String, Int>, maxCount: Int) {
         }
     }
 
+    val scrollState = rememberScrollState()
+    LaunchedEffect(scrollState.maxValue) {
+        if (scrollState.maxValue > 0) {
+            scrollState.scrollTo(scrollState.maxValue)
+        }
+    }
+
     Row(
         Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState()),
+            .horizontalScroll(scrollState),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         yearMonths.forEach { ym ->
@@ -833,7 +898,7 @@ private fun MonthCalendarCard(
         Modifier
             .clip(RoundedCornerShape(16.dp))
             .background(tk.surface2.copy(alpha = 0.5f))
-            .border(1.dp, Color.White.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
+            .border(1.dp, tk.text.copy(alpha = 0.12f), RoundedCornerShape(16.dp))
             .padding(12.dp),
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -842,7 +907,7 @@ private fun MonthCalendarCard(
                 "$monthName $year",
                 fontWeight = FontWeight.Bold,
                 fontSize = 13.sp,
-                color = Color.White,
+                color = tk.text,
             )
             Spacer(Modifier.height(10.dp))
 
@@ -857,7 +922,7 @@ private fun MonthCalendarCard(
                             dayHeader,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = 10.sp,
-                            color = Color.White.copy(alpha = 0.6f),
+                            color = tk.text.copy(alpha = 0.6f),
                         )
                     }
                 }
@@ -877,8 +942,8 @@ private fun MonthCalendarCard(
                                 val hasWatched = count > 0
 
                                 val alpha = if (hasWatched) (count.toFloat() / maxCount).coerceIn(0.40f, 1.0f) else 0.08f
-                                val bgCol = if (hasWatched) Color(0xFF26A69A).copy(alpha = alpha) else tk.surface3.copy(alpha = 0.4f)
-                                val borderCol = if (hasWatched) Color(0xFF80CBC4).copy(alpha = 0.6f) else Color.Transparent
+                                val bgCol = if (hasWatched) tk.van.copy(alpha = alpha) else tk.surface3.copy(alpha = 0.4f)
+                                val borderCol = if (hasWatched) tk.sinop.copy(alpha = 0.6f) else Color.Transparent
 
                                 Box(
                                     Modifier
@@ -895,7 +960,7 @@ private fun MonthCalendarCard(
                                         "${dayDate.dayOfMonth}",
                                         fontSize = 11.sp,
                                         fontWeight = if (hasWatched) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (hasWatched) Color.White else Color.White.copy(alpha = 0.35f),
+                                        color = if (hasWatched) tk.text else tk.text.copy(alpha = 0.35f),
                                     )
                                 }
                             } else {
@@ -918,19 +983,13 @@ private fun WrappedSummaryBanner(
     hoursCount: Int,
     onOpenWrapped: () -> Unit,
 ) {
+    val tk = tokens()
+    val bannerText = Color.White
     Box(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(26.dp))
-            .background(
-                Brush.horizontalGradient(
-                    listOf(
-                        Color(0xFF8A2387),
-                        Color(0xFFE94057),
-                        Color(0xFFF27121),
-                    ),
-                ),
-            )
+            .background(tk.together)
             .clickable(onClick = onOpenWrapped)
             .padding(20.dp),
     ) {
@@ -947,7 +1006,7 @@ private fun WrappedSummaryBanner(
                         fontSize = 11.sp,
                         letterSpacing = 1.2.sp,
                     ),
-                    color = Color.White.copy(alpha = 0.90f),
+                    color = bannerText.copy(alpha = 0.85f),
                 )
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -955,21 +1014,21 @@ private fun WrappedSummaryBanner(
                     fontFamily = FontFamily.Serif,
                     fontWeight = FontWeight.Bold,
                     fontSize = 40.sp,
-                    color = Color.White,
+                    color = bannerText,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
                     "$titlesCount yapım • $hoursCount saat birlikte",
                     style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold, fontSize = 13.sp),
-                    color = Color.White,
+                    color = bannerText.copy(alpha = 0.95f),
                 )
             }
             Spacer(Modifier.width(10.dp))
             Box(
                 Modifier
                     .clip(RoundedCornerShape(50))
-                    .background(Color.Black.copy(alpha = 0.65f))
-                    .border(1.dp, Color.White.copy(alpha = 0.2f), RoundedCornerShape(50))
+                    .background(bannerText.copy(alpha = 0.18f))
+                    .border(1.dp, bannerText.copy(alpha = 0.35f), RoundedCornerShape(50))
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
                 Text(
@@ -978,7 +1037,7 @@ private fun WrappedSummaryBanner(
                         fontWeight = FontWeight.Bold,
                         fontSize = 12.sp,
                     ),
-                    color = Color.White,
+                    color = bannerText,
                 )
             }
         }
@@ -987,6 +1046,23 @@ private fun WrappedSummaryBanner(
 
 // ── Yardımcılar ve Modallar ────────────────────────────────────────────────
 
+/** "2 yıl 3 ay 12 gün 5 saat" — takvim farkı; saat, gün başından kalan süredir (A1). */
+private fun formatTogetherDuration(since: LocalDate, now: LocalDateTime): String {
+    if (since.isAfter(now.toLocalDate())) return "Yeni başlangıç 🌱"
+    val period = Period.between(since, now.toLocalDate())
+    val anchor = since
+        .plusYears(period.years.toLong())
+        .plusMonths(period.months.toLong())
+        .plusDays(period.days.toLong())
+        .atStartOfDay()
+    val hours = Duration.between(anchor, now).toHours().coerceIn(0, 23)
+    return buildString {
+        if (period.years > 0) append("${period.years} yıl ")
+        if (period.years > 0 || period.months > 0) append("${period.months} ay ")
+        append("${period.days} gün $hours saat")
+    }
+}
+
 private data class StatsBundle(
     val profiles: List<Profile>,
     val titles: List<com.sinop.minimuv.data.Title>,
@@ -994,16 +1070,18 @@ private data class StatsBundle(
     val scores: List<com.sinop.minimuv.data.TitleScore>,
     val progress: List<com.sinop.minimuv.data.EpisodeProgress> = emptyList(),
     val notes: List<com.sinop.minimuv.data.TitleNote> = emptyList(),
+    val couple: CoupleSettings? = null,
 )
 
 @Composable
 internal fun GlassCircleButton(onClick: () -> Unit, content: @Composable () -> Unit) {
+    val tk = tokens()
     Box(
         Modifier
             .size(40.dp)
             .clip(CircleShape)
-            .background(Color(0x9910141A))
-            .border(1.dp, Color.White.copy(alpha = 0.10f), CircleShape)
+            .background(tk.surface1.copy(alpha = 0.65f))
+            .border(1.dp, tk.text.copy(alpha = 0.10f), CircleShape)
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
@@ -1016,22 +1094,31 @@ internal fun AvatarView(profile: Profile, size: Dp, onClick: (() -> Unit)? = nul
     // onClick yokken clickable EKLEME: devre dışı clickable dokunuşu yutuyor ve
     // avatarın üstündeki "Profili düzenle" tıklamasının çalışmasını engelliyordu.
     val clickMod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
+    val tk = tokens()
     if (profile.avatarUrl != null) {
-        AsyncImage(
-            model = profile.avatarUrl,
-            contentDescription = null,
-            modifier = Modifier
+        var loaded by remember(profile.avatarUrl) { mutableStateOf(false) }
+        Box(
+            Modifier
                 .size(size)
                 .clip(CircleShape)
                 .then(clickMod),
-            contentScale = ContentScale.Crop,
-        )
+        ) {
+            // P2: görsel inerken harf yerine shimmer iskelet.
+            if (!loaded) ShimmerBox(Modifier.fillMaxSize(), CircleShape)
+            AsyncImage(
+                model = profile.avatarUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onSuccess = { loaded = true },
+            )
+        }
     } else {
         Box(
             Modifier
                 .size(size)
                 .clip(CircleShape)
-                .background(profile.avatarColor?.let { parseColorSafe(it) }?.copy(alpha = 0.25f) ?: Color(0xFF3A2F14))
+                .background(profile.avatarColor?.let { parseColorSafe(it) }?.copy(alpha = 0.25f) ?: tk.surface3)
                 .then(clickMod),
             contentAlignment = Alignment.Center,
         ) {
@@ -1040,8 +1127,7 @@ internal fun AvatarView(profile: Profile, size: Dp, onClick: (() -> Unit)? = nul
     }
 }
 
-internal fun parseColorSafe(hex: String): Color =
-    runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrElse { Color(0xFF3D8BFF) }
+internal fun parseColorSafe(hex: String): Color = parseHexColor(hex)
 
 @Composable
 private fun EditBadge(
@@ -1183,8 +1269,9 @@ private fun ProfileEditSheet(
                 color = tk.textMuted,
                 modifier = Modifier.fillMaxWidth(),
             )
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            FlowRow(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 COLOR_CHOICES.forEach { c ->

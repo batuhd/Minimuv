@@ -26,19 +26,23 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DatePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -52,29 +56,28 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sinop.minimuv.BuildConfig
 import com.sinop.minimuv.core.TitleLanguage
+import com.sinop.minimuv.data.CoupleRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.DcIconButton
 import com.sinop.minimuv.ui.components.FilterPill
 import com.sinop.minimuv.ui.components.screenGlow
-import com.sinop.minimuv.ui.screens.list.ViewMode
-import com.sinop.minimuv.ui.theme.ThemeAccent
 import com.sinop.minimuv.ui.theme.icons.EmojiText
-import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
-import com.sinop.minimuv.ui.theme.onColorFor
 import com.sinop.minimuv.ui.theme.tokens
+import java.time.Instant
+import java.time.LocalDate
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     settings: SettingsStore,
@@ -82,17 +85,28 @@ fun SettingsScreen(
     onBack: () -> Unit = {},
 ) {
     val tk = tokens()
+    val ctx = LocalContext.current
     val profileId by settings.profileId.collectAsState(initial = null)
-    val accentVanName by settings.themeAccentVan.collectAsState(initial = null)
-    val accentSinopName by settings.themeAccentSinop.collectAsState(initial = null)
-    val accentVan = ThemeAccent.entries.firstOrNull { it.name == accentVanName } ?: ThemeAccent.BLUE
-    val accentSinop = ThemeAccent.entries.firstOrNull { it.name == accentSinopName } ?: ThemeAccent.TEAL
     val scope = rememberCoroutineScope()
     val titleRepo = remember { TitleRepository() }
+    val coupleRepo = remember { CoupleRepository() }
 
     var aboutTaps by remember { mutableIntStateOf(0) }
     var showSecretMenu by remember { mutableStateOf(false) }
     var showResetConfirm by remember { mutableStateOf(false) }
+
+    // A3: birliktelik başlangıcı — önce önbellek, sonra DB tazelemesi.
+    val cachedTogetherSince by settings.togetherSince.collectAsState(initial = null)
+    var pickedTogetherSince by remember { mutableStateOf<LocalDate?>(null) }
+    var showTogetherPicker by remember { mutableStateOf(false) }
+    val togetherSince = pickedTogetherSince
+        ?: cachedTogetherSince?.let { iso -> runCatching { LocalDate.parse(iso) }.getOrNull() }
+    val togetherFormatter = remember { DateTimeFormatter.ofPattern("d MMMM yyyy", Locale.forLanguageTag("tr")) }
+    LaunchedEffect(Unit) {
+        runCatching { coupleRepo.get()?.togetherSince }.getOrNull()?.let { iso ->
+            settings.cacheTogetherSince(iso)
+        }
+    }
 
     Box(
         Modifier
@@ -134,55 +148,6 @@ fun SettingsScreen(
             )
             Spacer(Modifier.height(20.dp))
 
-            SettingsSection("Görünüm") {
-                Text(
-                    "Van için vurgu rengi",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = tk.text,
-                    modifier = Modifier.padding(vertical = 6.dp),
-                )
-                AccentPicker(
-                    selected = accentVan,
-                    onSelect = { a -> scope.launch { settings.setThemeAccentVan(a.name) } },
-                )
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    "Sinop için vurgu rengi",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = tk.text,
-                    modifier = Modifier.padding(vertical = 6.dp),
-                )
-                AccentPicker(
-                    selected = accentSinop,
-                    onSelect = { a -> scope.launch { settings.setThemeAccentSinop(a.name) } },
-                )
-
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    "Kütüphane görünümü",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = tk.text,
-                    modifier = Modifier.padding(vertical = 6.dp),
-                )
-                val viewModeName by settings.listView.collectAsState(initial = null)
-                val viewMode = ViewMode.fromDb(viewModeName)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    ViewMode.entries.forEach { mode ->
-                        FilterPill(
-                            text = mode.label,
-                            selected = viewMode == mode,
-                            onClick = {
-                                scope.launch { runCatching { settings.saveListView(mode.name) } }
-                            },
-                        )
-                    }
-                }
-            }
-
-            Spacer(Modifier.height(20.dp))
             SettingsSection("Dil") {
                 Text(
                     "Liste ve detay dili",
@@ -232,8 +197,33 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(20.dp))
+            SettingsSection("Birlikteyiz") {
+                SettingsRow(
+                    label = "Birliktelik başlangıcı",
+                    subtitle = togetherSince?.format(togetherFormatter) ?: "Tarih seçilmedi",
+                ) {
+                    showTogetherPicker = true
+                }
+                Text(
+                    "Aşk sayfasındaki ❤️‍🔥 yanında birlikte geçen süre gösterilir.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = tk.textMuted,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
             SettingsSection("Bildirimler") {
                 BatteryOptimizationRow()
+                var testTriggered by remember { mutableStateOf(false) }
+                SettingsRow(
+                    label = if (testTriggered) "Test Bildirimi Hazır! 📲" else "Test Bildirimi Gönder (5sn sonra)",
+                    subtitle = if (testTriggered) "5s sonra bildirim gelecek. Şimdi uygulamayı kapatabilirsin!" else "Uygulama kapalıyken bildirimin nasıl göründüğünü test et.",
+                ) {
+                    com.sinop.minimuv.core.BackgroundNotifier.scheduleTestNotification(ctx, 5L)
+                    testTriggered = true
+                    android.widget.Toast.makeText(ctx, "5s sonra bildirim gelecek. Şimdi uygulamayı kapatabilirsin! 📲", android.widget.Toast.LENGTH_LONG).show()
+                }
                 Text(
                     "Uygulama kapalıyken bile ~15 dakikada bir kontrol edip bildirim düşürürüz. Kalıcı bildirim göstermeyiz.",
                     style = MaterialTheme.typography.bodySmall,
@@ -327,6 +317,40 @@ fun SettingsScreen(
                 TextButton(onClick = { showResetConfirm = false }) { Text("Vazgeç") }
             },
         )
+    }
+
+    // 🤫 Gizli menü: partnere mesaj + bildirim
+    if (showTogetherPicker) {
+        val pickerState = rememberDatePickerState(
+            initialSelectedDateMillis = togetherSince
+                ?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli(),
+        )
+        DatePickerDialog(
+            onDismissRequest = { showTogetherPicker = false },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        pickerState.selectedDateMillis?.let { millis ->
+                            val picked = Instant.ofEpochMilli(millis)
+                                .atZone(ZoneOffset.UTC)
+                                .toLocalDate()
+                            pickedTogetherSince = picked
+                            val iso = picked.toString()
+                            scope.launch {
+                                runCatching { coupleRepo.setTogetherSince(iso) }
+                                settings.saveTogetherSince(iso)
+                            }
+                        }
+                        showTogetherPicker = false
+                    },
+                ) { Text("Kaydet") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showTogetherPicker = false }) { Text("Vazgeç") }
+            },
+        ) {
+            DatePicker(state = pickerState)
+        }
     }
 
     // 🤫 Gizli menü: partnere mesaj + bildirim
@@ -454,49 +478,6 @@ private fun SettingsSection(
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             content = content,
         )
-    }
-}
-
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-private fun AccentPicker(
-    selected: ThemeAccent,
-    onSelect: (ThemeAccent) -> Unit,
-) {
-    val tk = tokens()
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(bottom = 4.dp),
-    ) {
-        ThemeAccent.entries.forEach { a ->
-            Box(
-                Modifier
-                    .size(38.dp)
-                    .clip(CircleShape)
-                    .background(a.primary)
-                    .border(
-                        width = if (a == selected) 3.dp else 0.dp,
-                        color = tk.gold,
-                        shape = CircleShape,
-                    )
-                    .clickable(onClickLabel = a.label) { onSelect(a) }
-                    .semantics {
-                        contentDescription = a.label
-                        if (a == selected) stateDescription = "Seçili"
-                    },
-                contentAlignment = Alignment.Center,
-            ) {
-                if (a == selected) {
-                    Icon(
-                        MinimuvIcons.Check,
-                        contentDescription = null,
-                        tint = onColorFor(a.primary),
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
-            }
-        }
     }
 }
 

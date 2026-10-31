@@ -232,6 +232,14 @@ create table if not exists public.favorites (
   unique (profile_id, fav_type, source, external_id)
 );
 
+-- ── Çift ayarları (tek satır): birliktelik başlangıç tarihi ───
+create table if not exists public.couple_settings (
+  id int primary key default 1 check (id = 1),
+  together_since date,
+  updated_at timestamptz not null default now()
+);
+insert into public.couple_settings (id) values (1) on conflict (id) do nothing;
+
 -- Eski tek-metinli notları tekil notlara taşı (titles.notes'e dokunulmaz;
 -- yalnızca title_notes'ta olmayanlar eklenir — tekrar çalıştırma güvenli)
 insert into public.title_notes (title_id, profile_id, note_text)
@@ -280,6 +288,7 @@ alter table public.partner_pings enable row level security;
 alter table public.title_notes enable row level security;
 alter table public.fcm_tokens enable row level security;
 alter table public.favorites enable row level security;
+alter table public.couple_settings enable row level security;
 
 do $$
 declare
@@ -288,7 +297,7 @@ begin
   foreach t in array array[
     'profiles', 'titles', 'episode_progress_per_profile', 'episode_notes',
     'achievements', 'watch_log', 'title_scores', 'partner_pings', 'title_notes',
-    'fcm_tokens', 'favorites'
+    'fcm_tokens', 'favorites', 'couple_settings'
   ] loop
     execute format('drop policy if exists anon_all on public.%I', t);
     execute format(
@@ -306,7 +315,7 @@ begin
   foreach t in array array[
     'titles', 'title_notes', 'title_scores', 'episode_progress_per_profile',
     'episode_notes', 'achievements', 'watch_log', 'partner_pings', 'profiles',
-    'favorites'
+    'favorites', 'couple_settings'
   ] loop
     if not exists (
       select 1 from pg_publication_tables

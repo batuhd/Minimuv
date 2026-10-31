@@ -38,6 +38,10 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -45,8 +49,11 @@ import androidx.navigation.navArgument
 import com.sinop.minimuv.R
 import com.sinop.minimuv.core.NotificationHelper
 import com.sinop.minimuv.core.PartnerEventsRuntime
+import com.sinop.minimuv.core.RealtimeManager
 import com.sinop.minimuv.core.SupabaseProvider
 import com.sinop.minimuv.core.PersonSource
+import com.sinop.minimuv.data.AppCache
+import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.ui.components.BottomPillItem
 import com.sinop.minimuv.ui.components.BottomPillNav
@@ -54,6 +61,7 @@ import com.sinop.minimuv.ui.components.InAppUpdateHost
 import com.sinop.minimuv.ui.screens.add.AddScreen
 import com.sinop.minimuv.ui.screens.detail.DetailScreen
 import com.sinop.minimuv.ui.screens.detail.DetailViewModel
+import com.sinop.minimuv.ui.screens.detail.ExternalDetailScreen
 import com.sinop.minimuv.ui.screens.list.LibraryScreen
 import com.sinop.minimuv.ui.screens.list.ListViewModel
 import com.sinop.minimuv.ui.screens.person.PersonScreen
@@ -64,8 +72,11 @@ import com.sinop.minimuv.ui.screens.stats.HeatmapScreen
 import com.sinop.minimuv.ui.screens.stats.WrappedScreen
 import com.sinop.minimuv.ui.screens.studio.StudioScreen
 import com.sinop.minimuv.ui.screens.wheel.WheelScreen
-import com.sinop.minimuv.ui.theme.ThemeAccent
 import com.sinop.minimuv.ui.theme.MinimuvTheme
+import com.sinop.minimuv.ui.theme.SinopColor
+import com.sinop.minimuv.ui.theme.VanColor
+import com.sinop.minimuv.ui.theme.parseHexColor
+import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 
 // Yeni alt sekmeler: Kütüphane / Ara / Çark / Aşk
@@ -85,12 +96,13 @@ fun MinimuvApp() {
     val url = settings.urlFrom(prefs)
     val key = settings.keyFrom(prefs)
     val profileId = settings.profileFrom(prefs)
-    val accentVanName by settings.themeAccentVan.collectAsState(initial = null)
-    val accentSinopName by settings.themeAccentSinop.collectAsState(initial = null)
-    val van = ThemeAccent.entries.firstOrNull { it.name == accentVanName } ?: ThemeAccent.BLUE
-    val sinop = ThemeAccent.entries.firstOrNull { it.name == accentSinopName } ?: ThemeAccent.TEAL
+    // Açılışta önce önbellek (renk flaş etmesin), sonra MainApp içinde DB tazelemesi.
+    val accentMeHex by settings.accentMe.collectAsState(initial = null)
+    val accentPartnerHex by settings.accentPartner.collectAsState(initial = null)
+    val van = parseHexColor(accentMeHex, VanColor)
+    val sinop = parseHexColor(accentPartnerHex, SinopColor)
 
-    MinimuvTheme(van = van.primary, sinop = sinop.primary) {
+    MinimuvTheme(van = van, sinop = sinop) {
         when {
             // DataStore'un İLK emisyonunu bekliyoruz — boş veri ile karışmasın
             prefs == null -> Splash()
@@ -169,31 +181,79 @@ fun MainApp(settings: SettingsStore, profileId: String) {
         }
     }
 
+    // Tema renkleri profil verisinden: önbellek anında gösterilir, DB arka planda tazeler.
+    // P2 warm-up: profiller + başlıklar + günlük + çift ayarları önden çekilir; avatarlar
+    // Coil'e ısıtılır. Böylece Aşk/liste/çark sekmeleri ilk açılışta dolu gelir.
+    LaunchedEffect(profileId) {
+        // Soğuk açılış: son bilinen profil listesi (isim/emoji/avatar) anında görünsün.
+        if (!AppCache.profilesLoaded) {
+            runCatching { settings.readProfilesSnapshot() }
+                .getOrDefault(emptyList())
+                .takeIf { it.isNotEmpty() }
+                ?.let { AppCache.profiles.value = it }
+        }
+
+        suspend fun warmUp() {
+            runCatching {
+                kotlinx.coroutines.supervisorScope {
+                    val profilesAsync = async { ProfileRepository().getProfiles() }
+                    val titlesAsync = async {
+                        com.sinop.minimuv.data.TitleRepository().getTitlesLite()
+                    }
+                    val logAsync = async {
+                        com.sinop.minimuv.data.TitleRepository().getWatchLog()
+                    }
+                    val coupleAsync = async {
+                        com.sinop.minimuv.data.CoupleRepository().get()
+                    }
+                    profilesAsync.await().also { profiles ->
+                        settings.cacheAccentColors(profiles)
+                        settings.cacheProfilesSnapshot(profiles)
+                        warmImages(context, profiles.mapNotNull { it.avatarUrl })
+                    }
+                    titlesAsync.await()
+                    logAsync.await()
+                    coupleAsync.await()
+                }
+            }
+        }
+
+        warmUp()
+        AppCache.warmedUp = true
+        // Partner rengini kendi telefonundan değiştirirse tema anında güncellenir.
+        RealtimeManager.events.filter { it == "profiles" }.collect {
+            runCatching {
+                val profiles = ProfileRepository().getProfiles()
+                settings.cacheAccentColors(profiles)
+                settings.cacheProfilesSnapshot(profiles)
+            }
+        }
+    }
+
     val onboardingDone by settings.onboardingDone.collectAsState(initial = false)
 
     // Kişi ve stüdyo sayfalarındaki ortak "yapıma git" mantığı: kayıtlıysa detay,
-    // değilse taslak ekranı. Lite sorgu yeterli — yalnızca eşleşme alanları kullanılır.
+    // değilse salt okunur önizleme (B8). Önizlemeden "Koleksiyona ekle" taslağa geçer.
     val openWork: (com.sinop.minimuv.core.PersonWork) -> Unit = { work ->
         mainScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val existing = runCatching {
-                com.sinop.minimuv.data.TitleRepository().getTitlesLite().firstOrNull { t ->
-                    t.type == work.type &&
-                        (t.externalId == work.externalId ||
-                            t.title.equals(work.title, ignoreCase = true))
-                }
-            }.getOrNull()
+            val cached = if (AppCache.titlesLoaded) {
+                AppCache.titlesLite.value
+            } else {
+                runCatching { com.sinop.minimuv.data.TitleRepository().getTitlesLite() }.getOrNull().orEmpty()
+            }
+            val existing = cached.firstOrNull { t ->
+                t.type == work.type &&
+                    (t.externalId == work.externalId ||
+                        t.title.equals(work.title, ignoreCase = true))
+            }
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
                 if (existing != null) {
                     navController.navigate("detail/${existing.id}")
                 } else {
-                    com.sinop.minimuv.ui.screens.add.DraftHolder.draft = com.sinop.minimuv.data.TitleDraft(
-                        type = work.type,
-                        externalId = work.externalId,
-                        title = work.title,
-                        titleEn = work.titleEn,
-                        posterUrl = work.posterUrl,
+                    com.sinop.minimuv.ui.screens.detail.ExternalPreviewHolder.work = work
+                    navController.navigate(
+                        "detail/external/${work.type}/${android.net.Uri.encode(work.externalId)}",
                     )
-                    navController.navigate("detail/draft") { launchSingleTop = true }
                 }
             }
         }
@@ -240,6 +300,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     onOpenStudio = { type, id ->
                         navController.navigate("studio/${type.db}/$id")
                     },
+                    onOpenTitle = { id -> navController.navigate("detail/$id") },
                 )
             }
             composable("wheel") {
@@ -302,6 +363,26 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                         navController.popBackStack("list", inclusive = false)
                     },
                     onDeleted = { navController.popBackStack() },
+                )
+            }
+            composable("detail/external/{type}/{externalId}") { entry ->
+                val typeName = entry.arguments?.getString("type") ?: return@composable
+                val externalId = entry.arguments?.getString("externalId") ?: return@composable
+                ExternalDetailScreen(
+                    type = com.sinop.minimuv.data.ContentType.fromDb(typeName),
+                    externalId = externalId,
+                    displayLang = savedDisplayLang,
+                    onBack = { navController.popBackStack() },
+                    onOpenPerson = { source, id ->
+                        navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
+                    },
+                    onOpenStudio = { type, id ->
+                        navController.navigate("studio/${type.db}/$id")
+                    },
+                    onAdd = { draft ->
+                        com.sinop.minimuv.ui.screens.add.DraftHolder.draft = draft
+                        navController.navigate("detail/draft") { launchSingleTop = true }
+                    },
                 )
             }
             composable("heatmap") {
@@ -394,6 +475,18 @@ private fun PendingOnboarding(settings: SettingsStore) {
                 label = "Başlayalım",
                 onClick = { scope.launch { settings.setOnboardingDone() } },
             )
+        }
+    }
+}
+
+private fun warmImages(context: android.content.Context, urls: List<String>) {
+    val loader = coil3.SingletonImageLoader.get(context)
+    urls.forEach { url ->
+        if (url.isNotBlank()) {
+            val req = coil3.request.ImageRequest.Builder(context)
+                .data(url)
+                .build()
+            loader.enqueue(req)
         }
     }
 }
