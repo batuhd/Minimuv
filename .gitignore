@@ -38,3 +38,19 @@ app/google-services.json
 
 # Windows/Studio'dan kopyalanan yerel özellik dosyaları (API anahtarı içerebilir)
 *.properties.txt
+
+# AI agents and skill configs
+.agents/
+.claude/
+.mcp.json
+skills-lock.json
+
+# Audit temp files and scripts
+check_audits.sh
+cozumler.txt
+evaluate.py
+fix-reports/
+parse_cozum.py
+parsed_audits.txt
+run_audit.py
+tmp_audit.txt
