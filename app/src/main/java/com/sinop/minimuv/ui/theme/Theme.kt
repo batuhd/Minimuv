@@ -10,30 +10,63 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.WatchStatus
 
-// Tema vurgu renkleri — tasarımdaki 15 renklik liste. Ayarlardan Van ve Sinop
-// için ayrı seçilir; varsayılan Van=0. indeks, Sinop=7. indeks.
-enum class ThemeAccent(val label: String, val hex: String) {
-    BLUE("Mavi", "#3D8BFF"),
-    PURPLE("Mandalina", "#FF9A3C"),
-    GREEN("Altın", "#E8B84A"),
-    PINK("Zeytin", "#A8D95F"),
-    AMBER("Nane", "#4FD18B"),
-    RED("Turkuaz", "#2EC4B6"),
-    CYAN("Gök", "#4FC3F7"),
-    TEAL("İndigo", "#7C8CFF"),
-    INDIGO("Mor", "#A07CFF"),
-    LAVENDER("Lila", "#D17CFF"),
-    LIME("Pembe", "#FF7CC4"),
-    CORAL("Gül", "#FF6B8B"),
-    MINT("Kum", "#C9A27C"),
-    GOLDEN("Kaya", "#9AA5B1"),
-    AUBERGINE("Mürdüm", "#5C6BC0");
+/**
+ * Ortak vurgu paleti — tek kaynak profil renkleri (T1).
+ * Etiketler renklerle birebir eşleşir; profil düzenleme ve tema aynı listeyi kullanır.
+ */
+data class PaletteColor(val label: String, val hex: String) {
+    val color: Color by lazy { Color(android.graphics.Color.parseColor(hex)) }
+}
 
-    val primary: Color by lazy { Color(android.graphics.Color.parseColor(hex)) }
+object AppPalette {
+    val colors: List<PaletteColor> = listOf(
+        PaletteColor("Mavi", "#3D8BFF"),
+        PaletteColor("Gök Mavisi", "#4FC3F7"),
+        PaletteColor("Turkuaz", "#2EC4B6"),
+        PaletteColor("Nane", "#4FD18B"),
+        PaletteColor("Adaçayı", "#7FB49A"),
+        PaletteColor("Çimen", "#A8D95F"),
+        PaletteColor("Zeytin", "#8FAF4A"),
+        PaletteColor("Altın", "#E8B84A"),
+        PaletteColor("Mandalina", "#FF9A3C"),
+        PaletteColor("Şeftali", "#FFB38A"),
+        PaletteColor("Mercan", "#FF7A5C"),
+        PaletteColor("Gül", "#FF6B8B"),
+        PaletteColor("Pembe", "#FF7CC4"),
+        PaletteColor("Fuşya", "#E45BA8"),
+        PaletteColor("Lila", "#D17CFF"),
+        PaletteColor("Mor", "#A07CFF"),
+        PaletteColor("İndigo", "#7C8CFF"),
+        PaletteColor("Mürdüm", "#8E5BC4"),
+        PaletteColor("Kaya", "#9AA5B1"),
+        PaletteColor("Kum", "#C9A27C"),
+    )
+
+    /** Profil rengi hiç tanımlanmamışsa kullanılan varsayılanlar. */
+    val defaultMine: PaletteColor = colors.first { it.hex == "#3D8BFF" }
+    val defaultPartner: PaletteColor = colors.first { it.hex == "#7C8CFF" }
+
+    fun find(hex: String?): PaletteColor? =
+        hex?.let { h -> colors.firstOrNull { it.hex.equals(h, ignoreCase = true) } }
+}
+
+/** "#RRGGBB" değerini renge çevirir; geçersizse [fallback]. */
+fun parseHexColor(hex: String?, fallback: Color = VanColor): Color =
+    hex?.let { runCatching { Color(android.graphics.Color.parseColor(it)) }.getOrNull() } ?: fallback
+
+/** İki vurgu aynıysa gradyanın ikinci durağını ton kaydırarak türet. */
+fun toneShifted(base: Color, hueShift: Float = 38f): Color {
+    val hsv = FloatArray(3)
+    android.graphics.Color.colorToHSV(base.toArgb(), hsv)
+    hsv[0] = (hsv[0] + hueShift) % 360f
+    hsv[1] = (hsv[1] * 0.8f).coerceAtLeast(0.45f)
+    hsv[2] = (hsv[2] * 0.95f).coerceAtLeast(0.55f)
+    return Color(android.graphics.Color.HSVToColor(hsv))
 }
 
 private fun buildDarkScheme(van: Color, sinop: Color) = darkColorScheme(
@@ -119,10 +152,12 @@ fun MinimuvTheme(
         ThemeMode.LIGHT -> false
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
     }
-    val tk = if (useDark) darkTokens(van, sinop) else lightTokens(van, sinop)
+    // İki taraf aynı rengi seçerse gradyan tek renge düşmesin: partner tonu türetilir.
+    val partner = if (van == sinop) toneShifted(van) else sinop
+    val tk = if (useDark) darkTokens(van, partner) else lightTokens(van, partner)
     CompositionLocalProvider(LocalMinimuvTokens provides tk) {
         MaterialTheme(
-            colorScheme = if (useDark) buildDarkScheme(van, sinop) else buildLightScheme(van, sinop),
+            colorScheme = if (useDark) buildDarkScheme(van, partner) else buildLightScheme(van, partner),
             typography = MinimuvTypography,
             shapes = MinimuvShapes,
             content = content,

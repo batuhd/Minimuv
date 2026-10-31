@@ -17,9 +17,10 @@ class SettingsStore(private val context: Context) {
         val KEY_ANON_KEY = stringPreferencesKey("anon_key")
         val KEY_PROFILE_ID = stringPreferencesKey("profile_id")
         val KEY_ONBOARDING_DONE = stringPreferencesKey("onboarding_done")
-        val KEY_THEME_ACCENT = stringPreferencesKey("theme_accent")
-        val KEY_THEME_ACCENT_VAN = stringPreferencesKey("theme_accent_van")
-        val KEY_THEME_ACCENT_SINOP = stringPreferencesKey("theme_accent_sinop")
+        // Tema renkleri artık profillerden gelir; bu anahtarlar yalnızca açılışta
+        // renk flaş etmemesi için son bilinen değerleri tutar.
+        val KEY_ACCENT_ME = stringPreferencesKey("accent_me")
+        val KEY_ACCENT_PARTNER = stringPreferencesKey("accent_partner")
         val KEY_LAST_PING_AT = stringPreferencesKey("last_ping_at")
         val KEY_TITLES_SNAPSHOT = stringPreferencesKey("titles_snapshot")
         val KEY_LAST_ANNIV_DATE = stringPreferencesKey("last_anniv_date")
@@ -36,11 +37,8 @@ class SettingsStore(private val context: Context) {
     val anonKey: Flow<String?> = context.dataStore.data.map { it[KEY_ANON_KEY] }
     val profileId: Flow<String?> = context.dataStore.data.map { it[KEY_PROFILE_ID] }
     val onboardingDone: Flow<Boolean> = context.dataStore.data.map { it[KEY_ONBOARDING_DONE] == "true" }
-    // Eski tek vurgu anahtarı, iki ayrı renk ilk kez seçilene kadar fallback olarak okunur.
-    val themeAccentVan: Flow<String?> =
-        context.dataStore.data.map { it[KEY_THEME_ACCENT_VAN] ?: it[KEY_THEME_ACCENT] }
-    val themeAccentSinop: Flow<String?> =
-        context.dataStore.data.map { it[KEY_THEME_ACCENT_SINOP] ?: it[KEY_THEME_ACCENT] }
+    val accentMe: Flow<String?> = context.dataStore.data.map { it[KEY_ACCENT_ME] }
+    val accentPartner: Flow<String?> = context.dataStore.data.map { it[KEY_ACCENT_PARTNER] }
     val listView: Flow<String?> = context.dataStore.data.map { it[KEY_LIST_VIEW] }
     val searchLang: Flow<String?> = context.dataStore.data.map { it[KEY_SEARCH_LANG] }
     val displayLang: Flow<String?> = context.dataStore.data.map { it[KEY_DISPLAY_LANG] }
