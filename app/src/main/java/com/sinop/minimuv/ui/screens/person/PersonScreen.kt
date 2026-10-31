@@ -1,5 +1,6 @@
 package com.sinop.minimuv.ui.screens.person
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -39,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,8 +52,6 @@ import com.sinop.minimuv.core.PersonWork
 import com.sinop.minimuv.core.SearchApi
 import com.sinop.minimuv.data.Favorite
 import com.sinop.minimuv.data.FavoritesRepository
-import com.sinop.minimuv.data.TitleDraft
-import com.sinop.minimuv.ui.screens.add.DraftHolder
 import com.sinop.minimuv.ui.screens.detail.GlassCircleButton
 import com.sinop.minimuv.ui.theme.TextSecondary
 import com.sinop.minimuv.ui.theme.icons.EmojiText
@@ -76,6 +76,7 @@ fun PersonScreen(
     var isFav by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("Hepsi") }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val favRepo = remember { FavoritesRepository() }
     val favType = if (source == PersonSource.ANIME) "character" else "person"
     val srcName = if (source == PersonSource.ANIME) "anime" else "tmdb"
@@ -95,7 +96,10 @@ fun PersonScreen(
         scope.launch {
             if (isFav) {
                 runCatching { favRepo.removeFavorite(profileId, favType, srcName, externalId) }
-                isFav = false
+                    .onSuccess { isFav = false }
+                    .onFailure {
+                        Toast.makeText(context, "Favoriden çıkarılamadı", Toast.LENGTH_SHORT).show()
+                    }
             } else {
                 runCatching {
                     favRepo.addFavorite(
@@ -109,7 +113,10 @@ fun PersonScreen(
                         ),
                     )
                 }
-                isFav = true
+                    .onSuccess { isFav = true }
+                    .onFailure {
+                        Toast.makeText(context, "Favoriye eklenemedi", Toast.LENGTH_SHORT).show()
+                    }
             }
         }
     }
@@ -163,10 +170,13 @@ fun PersonScreen(
                 val p = person!!
                 val worksList = remember(p.works, selectedFilter) {
                     when (selectedFilter) {
-                        "Kendisi" -> p.works.filter { (it.role ?: "").contains("self", ignoreCase = true) || (it.role ?: "").contains("kendisi", ignoreCase = true) }
-                        "Oyuncu" -> p.works.filter { (it.role ?: "").contains("cast", ignoreCase = true) || (it.role ?: "").contains("oyuncu", ignoreCase = true) }
+                        "Kendisi" -> p.works.filter {
+                            it.creditType == "cast" &&
+                                ((it.role ?: "").contains("self", ignoreCase = true) ||
+                                    (it.role ?: "").contains("kendisi", ignoreCase = true))
+                        }
+                        "Oyuncu" -> p.works.filter { it.creditType == "cast" }
                         "Anime" -> p.works.filter { it.type == "anime" }
-                        "Manga" -> p.works.filter { it.type == "manga" }
                         else -> p.works
                     }
                 }
@@ -268,8 +278,8 @@ fun PersonScreen(
 
                     Spacer(Modifier.height(10.dp))
 
-                    // Filtre Çipleri
-                    val filters = if (source == PersonSource.ANIME) listOf("Hepsi", "Anime", "Manga") else listOf("Hepsi", "Kendisi", "Oyuncu")
+                    // Filtre Çipleri (Manga çipi kaldırıldı: uygulama yalnızca anime tutar — BUG-027)
+                    val filters = if (source == PersonSource.ANIME) listOf("Hepsi", "Anime") else listOf("Hepsi", "Kendisi", "Oyuncu")
                     FlowRow(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),

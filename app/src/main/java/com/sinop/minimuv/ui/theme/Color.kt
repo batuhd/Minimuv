@@ -38,15 +38,7 @@ val VanColor = Color(0xFF3D8BFF)
 val SinopColor = Color(0xFF7C8CFF)
 
 // ── Eski adlar → yeni tokenlar (eski ekranlar derlenmeye devam etsin) ─────
-val Midnight = Bg
 val MidnightCard = Surface1
 val MidnightElevated = Surface2
 val OutlineSoft = Surface3
 val TextSecondary = TextMuted
-
-val BrandBlue = Color(0xFF3D8BFF)
-val BrandBlueDark = Color(0xFF2E6FDB)
-val BrandCream = TextPrimary
-
-// Poster yer tutucusu (Coil yüklenmeden önceki ışıltı zeminleri yok; bu yedek)
-val PosterFallbackTop = Color(0xFF3A3A46)

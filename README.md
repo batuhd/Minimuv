@@ -161,7 +161,7 @@ Veritabanı olayı ───┼─ Uygulama KAPALI → pg_net trigger → notify
 
 * **15 tema rengi** - Mavi, Mor, Yeşil, Pembe, Turuncu, Kırmızı, Gül, Camgöbeği, Turkuaz, Indigo, Lavanta, Limon, Mercan, Nane, Altın.
 * Letterboxd esintili **Midnight** koyu paleti; film/dizi/anime ve durum renkleri her ekranda sabit anlam taşır.
-* Yuvarlak hatlı **Baloo 2** başlık fontu + okunaklı **Nunito** gövde fontu; edge-to-edge tasarım.
+* **Plus Jakarta Sans** tabanlı tipografi (başlık + gövde), Midnight paleti ve yumuşak gradyanlar; edge-to-edge tasarım.
 * Ayarlar kategorilere ayrılmış (açılır menüler) — Görünüm, Dil, Bildirimler, Hakkında, Tehlikeli Bölge.
 * **Görüntüleme dili (TR/EN):** liste ve detaydaki başlıklar ile açıklamalar seçilen dilde gösterilir; TMDB/AniList'ten İngilizce veri saklanır, Türkçe özeti olmayan yapımlarda otomatik İngilizce yedek kullanılır.
 * **Kütüphane görünümü** (kompakt / poster satırları / 2'li-3'lü ızgara) artık ayarlardan seçilir.
@@ -331,7 +331,7 @@ app/src/main/java/com/sinop/minimuv/
 ├── data/            # Modeller, SettingsStore (DataStore), Repository sınıfları,
 │                    # Achievements (27 rozet tanımı + ortak istatistik hesabı) + AchievementChecker
 ├── ui/
-│   ├── theme/       # Midnight paleti, 15 vurgu rengi, sabit tür/durum renk kodlaması, Baloo2+Nunito
+│   ├── theme/       # Midnight paleti, 15 vurgu rengi, sabit tür/durum renk kodlaması, Plus Jakarta Sans
 │   ├── components/  # PosterCard, StatusChip, ScoreBadge, SoftChip, InAppUpdateHost, konfeti animasyonu…
 │   └── screens/
 │       ├── list/    # Gruplandırılmış kütüphane, 4 görünüm modu, filtre çekmecesi,

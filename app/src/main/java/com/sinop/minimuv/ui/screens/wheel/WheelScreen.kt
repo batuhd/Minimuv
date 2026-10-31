@@ -101,6 +101,8 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlin.math.cos
 import kotlin.math.roundToInt
 import kotlin.math.sin
@@ -134,7 +136,7 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
     }
     DisposableEffect(appContext) {
         WheelSound.init(appContext)
-        onDispose { }
+        onDispose { WheelSound.release() }
     }
 
     val pool = remember(titles, typeFilter) {
@@ -142,8 +144,11 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
     }
 
     LaunchedEffect(pool) {
-        winner = null
-        showWinner = false
+        // Dönüş sırasında liste sıfırlanmasın (BUG-066).
+        if (!spinning) {
+            winner = null
+            showWinner = false
+        }
     }
 
     fun vibrate(ms: Long, amplitude: Int) {
@@ -182,6 +187,8 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
 
     fun spinWheel() {
         if (spinning || pool.isEmpty()) return
+        // Dönüş boyunca filtre/liste değişse bile aynı listeyle bitir (BUG-066).
+        val spinPool = pool
         spinning = true
         winner = null
         showWinner = false
@@ -194,10 +201,10 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
             )
             // Gösterge tepede (canvas koordinatlarında 270°). Dilimler +rot ile ileri kayar,
             // bu yüzden göstergeye düşen dilim: (işaretçi - rotasyon) mod 360.
-            val slice = 360f / pool.size
+            val slice = 360f / spinPool.size
             val pointerRelative = ((270f - (target % 360f)) % 360f + 360f) % 360f
-            val index = (pointerRelative / slice).toInt().coerceIn(0, pool.size - 1)
-            winner = pool[index]
+            val index = (pointerRelative / slice).toInt().coerceIn(0, spinPool.size - 1)
+            winner = spinPool[index]
             confettiTrigger += 1
             showWinner = true
             if (vibrationOn && vibrator?.hasVibrator() == true) {
@@ -258,12 +265,12 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                FilterPill("Hepsi", typeFilter == null, onClick = { typeFilter = null })
+                FilterPill("Hepsi", typeFilter == null, onClick = { if (!spinning) typeFilter = null })
                 ContentType.entries.forEach { type ->
                     FilterPill(
                         type.label,
                         typeFilter == type,
-                        onClick = { typeFilter = if (typeFilter == type) null else type },
+                        onClick = { if (!spinning) typeFilter = if (typeFilter == type) null else type },
                     )
                 }
             }
@@ -602,17 +609,20 @@ private fun rememberPosterBitmaps(titles: List<Title>): Map<String, ImageBitmap>
             bitmaps = emptyMap()
             return@LaunchedEffect
         }
+        val semaphore = Semaphore(6)
         val loaded = coroutineScope {
             urls.map { url ->
                 async(Dispatchers.IO) {
-                    url to runCatching {
-                        loader.execute(
-                            ImageRequest.Builder(context)
-                                .data(url)
-                                .size(360)
-                                .build(),
-                        ).image
-                    }.getOrNull()
+                    semaphore.withPermit {
+                        url to runCatching {
+                            loader.execute(
+                                ImageRequest.Builder(context)
+                                    .data(url)
+                                    .size(192)
+                                    .build(),
+                            ).image
+                        }.getOrNull()
+                    }
                 }
             }.awaitAll()
         }

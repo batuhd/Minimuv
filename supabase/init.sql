@@ -17,10 +17,13 @@ create table if not exists public.profiles (
   created_at timestamptz not null default now()
 );
 
--- Profil fotoğrafı bucket'ı (public)
-insert into storage.buckets (id, name, public)
-values ('avatars', 'avatars', true)
-on conflict (id) do nothing;
+-- Profil fotoğrafı bucket'ı (public, sınırlı) — DS-SEC-08
+-- Uygulama yalnızca "<profil-uuid>.jpg" yoluna yükler (ProfileRepository.uploadAvatar).
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('avatars', 'avatars', true, 2097152, array['image/jpeg'])
+on conflict (id) do update
+  set file_size_limit = excluded.file_size_limit,
+      allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "avatars_public_read" on storage.objects;
 drop policy if exists "avatars_public_write" on storage.objects;
@@ -28,17 +31,25 @@ drop policy if exists "avatars_public_update" on storage.objects;
 create policy "avatars_public_read" on storage.objects
   for select to anon, authenticated using (bucket_id = 'avatars');
 create policy "avatars_public_write" on storage.objects
-  for insert to anon, authenticated with check (bucket_id = 'avatars');
+  for insert to anon, authenticated
+  with check (
+    bucket_id = 'avatars'
+    and name ~ '^[0-9a-fA-F-]{36}\.jpg$'
+  );
 create policy "avatars_public_update" on storage.objects
-  for update to anon, authenticated using (bucket_id = 'avatars') with check (bucket_id = 'avatars');
+  for update to anon, authenticated
+  using (bucket_id = 'avatars' and name ~ '^[0-9a-fA-F-]{36}\.jpg$')
+  with check (bucket_id = 'avatars' and name ~ '^[0-9a-fA-F-]{36}\.jpg$');
 
+-- Yalnızca tablo tamamen boşsa tohumla: profil adı değiştirildiğinde
+-- yeniden çalıştırma 'Van'/'Sinop' hayalet profilleri eklemesin (BUG-069).
 insert into public.profiles (name, emoji, avatar_color)
-select 'Van', '🌊', '#4EA8DE'
-where not exists (select 1 from public.profiles where name = 'Van');
-
-insert into public.profiles (name, emoji, avatar_color)
-select 'Sinop', '🦜', '#FF8FA3'
-where not exists (select 1 from public.profiles where name = 'Sinop');
+select v.name, v.emoji, v.color
+from (values
+  ('Van',   '🌊', '#4EA8DE'),
+  ('Sinop', '🦜', '#FF8FA3')
+) as v(name, emoji, color)
+where not exists (select 1 from public.profiles);
 
 -- ── Başlıklar ────────────────────────────────────────────────
 create table if not exists public.titles (
@@ -66,6 +77,8 @@ create table if not exists public.titles (
   is_private boolean not null default false,
   watch_mode text not null default 'birlikte' check (watch_mode in ('birlikte', 'ayri')),
   priority_order int,
+  watch_order integer,
+  updated_by_profile_id uuid references public.profiles(id) on delete set null,
   is_favorite boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -75,6 +88,9 @@ create table if not exists public.titles (
 alter table public.titles add column if not exists overview text;
 alter table public.titles add column if not exists title_en text;
 alter table public.titles add column if not exists overview_en text;
+alter table public.titles add column if not exists watch_order integer;
+-- Durumu değiştiren profili bilmek için (kendi değişikliği kendine bildirim olarak dönmesin)
+alter table public.titles add column if not exists updated_by_profile_id uuid references public.profiles(id) on delete set null;
 -- Liste özelliği kaldırıldı: mevcut kolon varsa temizlenir
 alter table public.titles drop column if exists custom_lists;
 
@@ -185,6 +201,24 @@ create table if not exists public.fcm_tokens (
   updated_at timestamptz not null default now()
 );
 
+-- ── Edge Function webhook yapılandırması ─────────────────────
+-- notify_url ve webhook_secret burada tutulur. Tablo RLS ile anon/
+-- authenticated erişimine kapalıdır; yalnızca security-definer trigger ve
+-- service-role Edge Function okuyabilir.
+create table if not exists public.app_config (
+  key text primary key,
+  value text not null
+);
+alter table public.app_config enable row level security;
+revoke all on public.app_config from anon, authenticated;
+grant select on public.app_config to service_role;
+
+-- Canlı kurulumda BİR KEZ doldurulur (değerler repoya yazılmaz):
+--   insert into public.app_config (key, value) values
+--     ('notify_url', 'https://<proje>.supabase.co/functions/v1/notify'),
+--     ('webhook_secret', '<rastgele-uzun-bir-sir>')
+--   on conflict (key) do update set value = excluded.value;
+
 -- ── Kişi / karakter / stüdyo favorileri ───────────────────────
 create table if not exists public.favorites (
   id uuid primary key default gen_random_uuid(),
@@ -201,16 +235,19 @@ create table if not exists public.favorites (
 -- Eski tek-metinli notları tekil notlara taşı (titles.notes'e dokunulmaz;
 -- yalnızca title_notes'ta olmayanlar eklenir — tekrar çalıştırma güvenli)
 insert into public.title_notes (title_id, profile_id, note_text)
-select t.id, coalesce(t.created_by_profile_id, (select id from public.profiles order by name limit 1)), t.notes
+select t.id, coalesce(t.created_by_profile_id, (select id from public.profiles order by name limit 1)), left(t.notes, 2000)
 from public.titles t
 where t.notes is not null
   and char_length(trim(t.notes)) > 0
   and not exists (
     select 1 from public.title_notes tn
-    where tn.title_id = t.id and tn.note_text = t.notes
+    where tn.title_id = t.id and tn.note_text = left(t.notes, 2000)
   );
 
--- ── Tek seferde atomik sıfırlama (uygulamadaki "verileri sıfırla") ─────
+-- ── Tek seferde atomik sıfırlama ─────────────────────────────
+-- Güvenlik: yıkıcı fonksiyon yalnızca service_role'e açıktır. Uygulama bu
+-- fonksiyonu çağırmıyor. (Postgres'te EXECUTE varsayılan olarak PUBLIC'e
+-- verildiği için önce PUBLIC/anon/authenticated'dan açıkça geri alınır.)
 create or replace function public.reset_all_data()
 returns void
 language sql
@@ -227,7 +264,8 @@ as $$
     public.titles
   restart identity cascade;
 $$;
-grant execute on function public.reset_all_data() to anon, authenticated;
+revoke all on function public.reset_all_data() from public, anon, authenticated;
+grant execute on function public.reset_all_data() to service_role;
 
 -- ── RLS: auth kullanılmıyor; anon anahtara tam erişim ────────
 -- (Uygulama özel kullanım içindir, APK paylaşılmaz.)
@@ -285,8 +323,14 @@ end $$;
 -- uygulama mesajı alınca Supabase'deki gerçek durumu kontrol edip
 -- bildirimi kendisi gösterir (çift bildirim korumalı).
 create extension if not exists pg_net;
-grant usage on schema net to postgres, anon, authenticated, service_role;
+-- net şeması yalnızca sunucu tarafına açık; istemci rolleri HTTP atamaz.
+grant usage on schema net to postgres, service_role;
+revoke usage on schema net from anon, authenticated;
 
+-- Güvenlik: URL ve paylaşılan sır repoya gömülmez; app_config tablosunda
+-- tutulur (bkz. yukarıdaki app_config bölümü). Tablo boşsa eski kurulumlarla
+-- uyum için app.settings.* ayarlarına düşülür. Hiçbiri yoksa bildirim
+-- sessizce ölmez; uyarı loglanır ve POST atlanır.
 create or replace function public.fcm_notify_event()
 returns trigger
 language plpgsql
@@ -294,14 +338,25 @@ security definer
 set search_path = public
 as $$
 declare
-  v_url text := 'https://zietgcacqaupkulcofdz.supabase.co/functions/v1/notify';
-  v_anon text := 'anon-key-buraya-yazilir';
+  v_url text;
+  v_secret text;
 begin
+  select value into v_url from public.app_config where key = 'notify_url';
+  select value into v_secret from public.app_config where key = 'webhook_secret';
+
+  v_url := coalesce(nullif(v_url, ''), nullif(current_setting('app.settings.notify_url', true), ''));
+  v_secret := coalesce(nullif(v_secret, ''), nullif(current_setting('app.settings.notify_secret', true), ''));
+
+  if v_url is null or v_secret is null then
+    raise warning 'fcm_notify_event: notify ayarlari yok (app_config); bildirim atlandi';
+    return new;
+  end if;
+
   perform net.http_post(
     url := v_url,
     headers := jsonb_build_object(
       'Content-Type', 'application/json',
-      'Authorization', 'Bearer ' || v_anon
+      'x-webhook-secret', v_secret
     ),
     body := jsonb_build_object(
       'type', tg_op,

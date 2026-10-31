@@ -8,11 +8,9 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -23,7 +21,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -63,7 +65,6 @@ import com.sinop.minimuv.ui.screens.stats.WrappedScreen
 import com.sinop.minimuv.ui.screens.studio.StudioScreen
 import com.sinop.minimuv.ui.screens.wheel.WheelScreen
 import com.sinop.minimuv.ui.theme.ThemeAccent
-import com.sinop.minimuv.ui.theme.ThemeMode
 import com.sinop.minimuv.ui.theme.MinimuvTheme
 import kotlinx.coroutines.launch
 
@@ -84,20 +85,12 @@ fun MinimuvApp() {
     val url = settings.urlFrom(prefs)
     val key = settings.keyFrom(prefs)
     val profileId = settings.profileFrom(prefs)
-    val accentVanName = prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT_VAN)
-        ?: prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT)
-    val accentSinopName = prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT_SINOP)
-        ?: prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_ACCENT)
+    val accentVanName by settings.themeAccentVan.collectAsState(initial = null)
+    val accentSinopName by settings.themeAccentSinop.collectAsState(initial = null)
     val van = ThemeAccent.entries.firstOrNull { it.name == accentVanName } ?: ThemeAccent.BLUE
     val sinop = ThemeAccent.entries.firstOrNull { it.name == accentSinopName } ?: ThemeAccent.TEAL
-    val modeName = prefs?.get(com.sinop.minimuv.data.SettingsStore.KEY_THEME_MODE)
-    val mode = when (modeName) {
-        "light" -> ThemeMode.LIGHT
-        "system" -> ThemeMode.SYSTEM
-        else -> ThemeMode.DARK
-    }
 
-    MinimuvTheme(van = van.primary, sinop = sinop.primary, mode = mode) {
+    MinimuvTheme(van = van.primary, sinop = sinop.primary) {
         when {
             // DataStore'un İLK emisyonunu bekliyoruz — boş veri ile karışmasın
             prefs == null -> Splash()
@@ -105,10 +98,9 @@ fun MinimuvApp() {
                 SupabaseSetupScreen(settings = settings, onDone = {})
             }
             else -> {
-                remember(url, key) {
-                    SupabaseProvider.configure(url, key)
-                    true
-                }
+                // İlk frame güvenliği: alt ekranların ilk kompozisyonu client'ı bulabilmeli.
+                SupabaseProvider.configure(url, key)
+                LaunchedEffect(url, key) { SupabaseProvider.configure(url, key) }
                 if (profileId.isNullOrBlank()) {
                     ProfileSelectScreen(settings = settings, onDone = {})
                 } else {
@@ -147,17 +139,20 @@ private fun Splash() {
 @Composable
 fun MainApp(settings: SettingsStore, profileId: String) {
     val navController = rememberNavController()
+    val mainScope = rememberCoroutineScope()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
     val context = LocalContext.current
     val savedListView by settings.listView.collectAsState(initial = null)
     val savedDisplayLang by settings.displayLang.collectAsState(initial = null)
     val showNav = currentRoute in TAB_ROUTES
+    var notificationAsked by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(profileId) {
         NotificationHelper.ensureChannels(context)
         val activity = context as? android.app.Activity
-        if (activity != null && Build.VERSION.SDK_INT >= 33) {
+        if (!notificationAsked && activity != null && Build.VERSION.SDK_INT >= 33) {
+            notificationAsked = true
             ActivityCompat.requestPermissions(
                 activity,
                 arrayOf(Manifest.permission.POST_NOTIFICATIONS),
@@ -175,9 +170,33 @@ fun MainApp(settings: SettingsStore, profileId: String) {
     }
 
     val onboardingDone by settings.onboardingDone.collectAsState(initial = false)
-    if (!onboardingDone) {
-        // Tasarımda onboarding yok; mevcut mantığı sadeleştirilmiş kutu korur
-        PendingOnboarding(settings = settings)
+
+    // Kişi ve stüdyo sayfalarındaki ortak "yapıma git" mantığı: kayıtlıysa detay,
+    // değilse taslak ekranı. Lite sorgu yeterli — yalnızca eşleşme alanları kullanılır.
+    val openWork: (com.sinop.minimuv.core.PersonWork) -> Unit = { work ->
+        mainScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val existing = runCatching {
+                com.sinop.minimuv.data.TitleRepository().getTitlesLite().firstOrNull { t ->
+                    t.type == work.type &&
+                        (t.externalId == work.externalId ||
+                            t.title.equals(work.title, ignoreCase = true))
+                }
+            }.getOrNull()
+            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                if (existing != null) {
+                    navController.navigate("detail/${existing.id}")
+                } else {
+                    com.sinop.minimuv.ui.screens.add.DraftHolder.draft = com.sinop.minimuv.data.TitleDraft(
+                        type = work.type,
+                        externalId = work.externalId,
+                        title = work.title,
+                        titleEn = work.titleEn,
+                        posterUrl = work.posterUrl,
+                    )
+                    navController.navigate("detail/draft") { launchSingleTop = true }
+                }
+            }
+        }
     }
 
     // Tam ekran ekranların alt menüye binmesine izin ver, sekmelerde içermin altını boş bırak
@@ -191,7 +210,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             startDestination = "list",
             modifier = Modifier
                 .fillMaxSize()
-                .then(if (showNav) Modifier.padding(bottom = 96.dp) else Modifier),
+                .then(if (showNav) Modifier.padding(bottom = 120.dp) else Modifier),
         ) {
             composable("list") {
                 val vm: ListViewModel = viewModel()
@@ -205,6 +224,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     onViewModeChange = { m ->
                         listScope.launch { settings.saveListView(m.name) }
                     },
+                    onOpenPlanOrder = { navController.navigate("plan_order") },
                 )
             }
             composable("plan_order") {
@@ -213,7 +233,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             composable("search") {
                 AddScreen(
                     settings = settings,
-                    onPicked = { navController.navigate("detail/draft") },
+                    onPicked = { navController.navigate("detail/draft") { launchSingleTop = true } },
                     onOpenPerson = { source, id ->
                         navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
                     },
@@ -229,33 +249,28 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                 com.sinop.minimuv.ui.screens.profile.ProfileScreen(
                     settings = settings,
                     onSwitchProfile = {
+                        mainScope.launch { settings.clearProfile() }
                         navController.navigate("list") {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
                         }
                     },
-                    onOpenHeatmap = { navController.navigate("heatmap") },
                     onOpenWrapped = { navController.navigate("wrapped") },
                     onOpenBadges = { navController.navigate("achievements") },
                     onOpenSettings = { navController.navigate("settings") },
-                    onOpenTitle = { navController.navigate("detail/${it}") },
-                    onOpenPerson = { source, id ->
-                        navController.navigate("person/${if (source == PersonSource.ANIME) "anime" else "tmdb"}/$id")
-                    },
-                    onOpenStudio = { type, id ->
-                        navController.navigate("studio/${type.db}/$id")
-                    },
                 )
             }
             composable("settings") {
                 SettingsScreen(
                     settings = settings,
                     onSwitchProfile = {
+                        mainScope.launch { settings.clearProfile() }
                         navController.navigate("list") {
                             popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                             launchSingleTop = true
                         }
                     },
+                    onBack = { navController.popBackStack() },
                 )
             }
             composable(
@@ -301,73 +316,25 @@ fun MainApp(settings: SettingsStore, profileId: String) {
             composable("person/{source}/{externalId}") { entry ->
                 val sourceName = entry.arguments?.getString("source") ?: return@composable
                 val externalId = entry.arguments?.getString("externalId") ?: return@composable
-                val appScope = androidx.compose.runtime.rememberCoroutineScope()
                 PersonScreen(
                     source = if (sourceName == "anime") PersonSource.ANIME else PersonSource.TMDB,
                     externalId = externalId,
                     profileId = profileId,
                     displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },
-                    onOpenWork = { work ->
-                        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                            val existing = runCatching {
-                                com.sinop.minimuv.data.TitleRepository().getTitles().firstOrNull { t ->
-                                    t.externalId == work.externalId || t.title.equals(work.title, ignoreCase = true)
-                                }
-                            }.getOrNull()
-
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                if (existing != null) {
-                                    navController.navigate("detail/${existing.id}")
-                                } else {
-                                    com.sinop.minimuv.ui.screens.add.DraftHolder.draft = com.sinop.minimuv.data.TitleDraft(
-                                        type = work.type,
-                                        externalId = work.externalId,
-                                        title = work.title,
-                                        titleEn = work.titleEn,
-                                        posterUrl = work.posterUrl,
-                                    )
-                                    navController.navigate("detail/draft") { launchSingleTop = true }
-                                }
-                            }
-                        }
-                    },
+                    onOpenWork = openWork,
                 )
             }
             composable("studio/{type}/{externalId}") { entry ->
                 val typeName = entry.arguments?.getString("type") ?: return@composable
                 val externalId = entry.arguments?.getString("externalId") ?: return@composable
-                val appScope = androidx.compose.runtime.rememberCoroutineScope()
                 StudioScreen(
                     type = com.sinop.minimuv.data.ContentType.fromDb(typeName),
                     externalId = externalId,
                     profileId = profileId,
                     displayLang = savedDisplayLang,
                     onBack = { navController.popBackStack() },
-                    onOpenWork = { work ->
-                        appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                            val existing = runCatching {
-                                com.sinop.minimuv.data.TitleRepository().getTitles().firstOrNull { t ->
-                                    t.externalId == work.externalId || t.title.equals(work.title, ignoreCase = true)
-                                }
-                            }.getOrNull()
-
-                            kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                if (existing != null) {
-                                    navController.navigate("detail/${existing.id}")
-                                } else {
-                                    com.sinop.minimuv.ui.screens.add.DraftHolder.draft = com.sinop.minimuv.data.TitleDraft(
-                                        type = work.type,
-                                        externalId = work.externalId,
-                                        title = work.title,
-                                        titleEn = work.titleEn,
-                                        posterUrl = work.posterUrl,
-                                    )
-                                    navController.navigate("detail/draft") { launchSingleTop = true }
-                                }
-                            }
-                        }
-                    },
+                    onOpenWork = openWork,
                 )
             }
         }
@@ -395,6 +362,11 @@ fun MainApp(settings: SettingsStore, profileId: String) {
         }
     }
 
+    // Onboarding ana içerikten SONRA çizilir ki görünür olsun (eskiden arkada kalıyordu).
+    if (!onboardingDone) {
+        PendingOnboarding(settings = settings)
+    }
+
     InAppUpdateHost()
 }
 
@@ -410,7 +382,9 @@ private fun PendingOnboarding(settings: SettingsStore) {
         Column(
             Modifier
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 16.dp)
                 .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(24.dp))
                 .padding(24.dp),
         ) {

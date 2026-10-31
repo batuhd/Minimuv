@@ -9,7 +9,7 @@
 
     <application
         android:name=".MinimuvApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
@@ -35,8 +35,9 @@
         <!-- Kırpma ekranı AppCompat teması ister — uygulama teması değil -->
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
-            android:exported="true"
-            android:theme="@style/Theme.Minimuv.Crop" />
+            android:exported="false"
+            android:theme="@style/Theme.Minimuv.Crop"
+            tools:replace="android:exported" />
 
         <!-- Firebase App Distribution kurulum ekranı AppCompatActivity olduğundan
              AppCompat türevi tema ister; verilmezse "Theme.AppCompat" crash'i olur. -->

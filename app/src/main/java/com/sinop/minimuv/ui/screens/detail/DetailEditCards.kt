@@ -1,6 +1,6 @@
 package com.sinop.minimuv.ui.screens.detail
 
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -19,8 +19,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material3.minimumInteractiveComponentSize
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -36,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,7 +48,8 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sinop.minimuv.data.Profile
@@ -163,7 +164,6 @@ internal fun EpisodesCard(
     onTotalEpisodes: (String) -> Unit,
     watchMode: String,
     onWatchMode: (String) -> Unit,
-    showPerProfile: Boolean,
     myProfile: Profile?,
     partnerProfile: Profile?,
     myProgress: Int,
@@ -215,6 +215,7 @@ internal fun EpisodesCard(
                 value = totalEpisodesText,
                 onValueChange = { onTotalEpisodes(it.filter { c -> c.isDigit() }) },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.width(64.dp),
                 placeholder = { Text("?", fontSize = 12.sp, textAlign = TextAlign.Center) },
                 textStyle = MaterialTheme.typography.bodySmall.copy(fontSize = 13.sp, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center),
@@ -321,7 +322,12 @@ internal fun EpisodesCard(
                 }
                 StepperButton("−", isPrimary = false) { onSharedProgress((sharedProgress - 1).coerceAtLeast(0)) }
                 Spacer(Modifier.width(8.dp))
-                StepperButton("+", isPrimary = true) { onSharedProgress(sharedProgress + 1) }
+                StepperButton("+", isPrimary = true) {
+                    onSharedProgress(
+                        if (total != null) (sharedProgress + 1).coerceAtMost(total)
+                        else sharedProgress + 1,
+                    )
+                }
             }
         }
     }
@@ -383,7 +389,9 @@ private fun ProfileProgressRow(
         if (editable) {
             StepperButton("−", isPrimary = false) { onChange((progress - 1).coerceAtLeast(0)) }
             Spacer(Modifier.width(6.dp))
-            StepperButton("+", isPrimary = true) { onChange(progress + 1) }
+            StepperButton("+", isPrimary = true) {
+                onChange(if (total != null) (progress + 1).coerceAtMost(total) else progress + 1)
+            }
         } else {
             Box(Modifier.width(74.dp))
         }
@@ -399,10 +407,11 @@ internal fun StepperButton(
     val tk = tokens()
     Box(
         Modifier
+            .minimumInteractiveComponentSize()
             .size(34.dp)
             .clip(CircleShape)
             .background(if (isPrimary) Color(0xFFFFC107) else tk.surface2)
-            .clickable(onClick = onClick),
+            .clickable(role = Role.Button, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
         Text(
@@ -418,15 +427,8 @@ internal fun StepperButton(
 
 @Composable
 internal fun ScoreCard(
-    myName: String,
-    myEmoji: String,
-    partnerName: String?,
-    partnerEmoji: String?,
     myScore: Double?,
-    isAutoScore: Boolean,
-    manualScoreText: String,
     onManualScoreChange: (String) -> Unit,
-    partnerScore: Double?,
     advStory: Double?, onAdvStory: (Double?) -> Unit,
     advCharacters: Double?, onAdvCharacters: (Double?) -> Unit,
     advVisuals: Double?, onAdvVisuals: (Double?) -> Unit,
@@ -440,6 +442,12 @@ internal fun ScoreCard(
     val hasAdvanced = advStory != null || advCharacters != null || advVisuals != null ||
         advAudio != null || advEnjoyment != null
     var showDetailed by rememberSaveable { mutableStateOf(hasAdvanced) }
+    var detailTabTouched by rememberSaveable { mutableStateOf(false) }
+    // Skorlar asenkron geldiği için ilk kompozisyonda hasAdvanced=false olabilir;
+    // kullanıcı sekmeye dokunmadıysa skorlar yüklendiğinde doğru sekmeye geç.
+    LaunchedEffect(hasAdvanced) {
+        if (!detailTabTouched && hasAdvanced) showDetailed = true
+    }
 
     Column(
         Modifier
@@ -480,7 +488,10 @@ internal fun ScoreCard(
                     Modifier
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (!showDetailed) Color(0xFF263238) else Color.Transparent)
-                        .clickable { showDetailed = false }
+                        .clickable {
+                            detailTabTouched = true
+                            showDetailed = false
+                        }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Text(
@@ -496,7 +507,10 @@ internal fun ScoreCard(
                     Modifier
                         .clip(RoundedCornerShape(10.dp))
                         .background(if (showDetailed) Color(0xFF263238) else Color.Transparent)
-                        .clickable { showDetailed = true }
+                        .clickable {
+                            detailTabTouched = true
+                            showDetailed = true
+                        }
                         .padding(horizontal = 12.dp, vertical = 6.dp),
                 ) {
                     Text(
@@ -758,7 +772,6 @@ internal fun DatesCard(
 
 @Composable
 internal fun NotesCard(
-    titleId: String,
     notes: List<com.sinop.minimuv.data.TitleNote>,
     profiles: List<Profile>,
     onAddNote: (String, String?) -> Unit,
@@ -769,7 +782,7 @@ internal fun NotesCard(
     onDeleteEpisodeNote: ((String) -> Unit)? = null,
 ) {
     val tk = tokens()
-    var showAddDialog by remember { mutableStateOf(false) }
+    var showAddDialog by rememberSaveable { mutableStateOf(false) }
     var editTarget by remember { mutableStateOf<com.sinop.minimuv.data.TitleNote?>(null) }
     var pendingDeleteAction by remember { mutableStateOf<(() -> Unit)?>(null) }
 
@@ -958,8 +971,9 @@ private fun TitleNoteRow(
             contentDescription = "Düzenle",
             tint = tk.textMuted,
             modifier = Modifier
+                .minimumInteractiveComponentSize()
                 .clip(CircleShape)
-                .clickable(onClick = onEdit)
+                .clickable(role = Role.Button, onClick = onEdit)
                 .padding(4.dp)
                 .size(15.dp),
         )
@@ -968,8 +982,9 @@ private fun TitleNoteRow(
             contentDescription = "Sil",
             tint = tk.textMuted,
             modifier = Modifier
+                .minimumInteractiveComponentSize()
                 .clip(CircleShape)
-                .clickable(onClick = onDelete)
+                .clickable(role = Role.Button, onClick = onDelete)
                 .padding(4.dp)
                 .size(15.dp),
         )
@@ -985,8 +1000,11 @@ private fun EpisodeNoteItemRow(
 ) {
     val tk = tokens()
     val author = profiles.firstOrNull { it.id == note.profileId }
+    // Partnerin spoiler işaretli notu, kullanıcı dokunana kadar gizli kalır.
+    var revealed by remember(note.id) { mutableStateOf(false) }
     val isSpoiler = (note.noteText ?: "").contains("[SPOILER]") || note.emojiReaction == "🙈"
     val cleanText = (note.noteText ?: "").replace("[SPOILER]", "").trim()
+    val hiddenBySpoiler = isSpoiler && note.profileId != myProfileId && !revealed
 
     Box(
         Modifier
@@ -1029,22 +1047,29 @@ private fun EpisodeNoteItemRow(
                 if (cleanText.isNotBlank()) {
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        cleanText,
+                        if (hiddenBySpoiler) "🙈 Spoiler — göstermek için dokun" else cleanText,
+                        modifier = if (hiddenBySpoiler) {
+                            Modifier.clickable { revealed = true }
+                        } else {
+                            Modifier
+                        },
                         style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 16.sp),
                         color = tk.textSoft,
                     )
                 }
             }
-            Icon(
-                MinimuvIcons.Delete,
-                contentDescription = "Sil",
-                tint = tk.textMuted,
-                modifier = Modifier
-                    .clip(CircleShape)
-                    .clickable(onClick = onDelete)
-                    .padding(4.dp)
-                    .size(15.dp),
-            )
+            if (note.profileId == myProfileId) {
+                Icon(
+                    MinimuvIcons.Delete,
+                    contentDescription = "Sil",
+                    tint = tk.textMuted,
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onDelete)
+                        .padding(4.dp)
+                        .size(15.dp),
+                )
+            }
         }
     }
 }

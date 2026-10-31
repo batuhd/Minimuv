@@ -14,6 +14,8 @@ object WheelSound {
     private var winId = 0
     @Volatile
     private var ready = false
+    @Volatile
+    private var loadedCount = 0
 
     fun init(context: Context) {
         if (pool != null) return
@@ -28,7 +30,15 @@ object WheelSound {
             .build()
         tickId = sp.load(context, R.raw.wheel_tick, 1)
         winId = sp.load(context, R.raw.wheel_win, 1)
-        sp.setOnLoadCompleteListener { _, _, _ -> ready = true }
+        // Her iki ses de başarıyla yüklenmeden çalmaya başlama (BUG-041).
+        sp.setOnLoadCompleteListener { _, _, status ->
+            if (status == 0) {
+                loadedCount += 1
+                if (loadedCount >= 2) ready = true
+            } else {
+                android.util.Log.w("WheelSound", "ses yüklenemedi (status=$status)")
+            }
+        }
         pool = sp
     }
 
@@ -40,5 +50,15 @@ object WheelSound {
     fun playWin() {
         if (!ready) return
         pool?.play(winId, 1f, 1f, 1, 0, 1f)
+    }
+
+    /** Ekran kapanınca SoundPool kaynaklarını serbest bırak (DEAD-021). */
+    fun release() {
+        pool?.release()
+        pool = null
+        ready = false
+        loadedCount = 0
+        tickId = 0
+        winId = 0
     }
 }

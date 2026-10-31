@@ -46,6 +46,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLayoutResult
@@ -99,6 +100,7 @@ fun Modifier.bounceClick(
                     interactionSource = source,
                     indication = ripple(),
                     enabled = enabled,
+                    role = Role.Button,
                     onClick = onClick,
                     onLongClick = onLongClick,
                 )
@@ -107,6 +109,7 @@ fun Modifier.bounceClick(
                     interactionSource = source,
                     indication = ripple(),
                     enabled = enabled,
+                    role = Role.Button,
                     onClick = onClick,
                 )
             }
@@ -145,34 +148,6 @@ fun MinimuvSurface(
                 }
             ),
     ) { content() }
-}
-
-// ── Tür rozeti: küçük renkli nokta + etiket ──────────────────────────────
-
-@Composable
-fun TypeTag(type: String, modifier: Modifier = Modifier) {
-    val color = typeColor(type)
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(
-            Modifier
-                .size(8.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
-        Spacer(Modifier.width(5.dp))
-        Text(
-            text = when (type) {
-                "film" -> "Film"
-                "dizi" -> "Dizi"
-                else -> "Anime"
-            },
-            style = MaterialTheme.typography.labelMedium,
-            color = color,
-        )
-    }
 }
 
 // ── Status rozeti: her ekranda aynı sabit renk ───────────────────────────
@@ -387,25 +362,6 @@ fun PosterCard(
     }
 }
 
-// ── Poster yokken kullanılan gri arkaplan ────────────────────────────────
-
-@Composable
-fun PosterFallback(text: String, modifier: Modifier = Modifier) {
-    Box(
-        modifier
-            .background(Brush.verticalGradient(listOf(MidnightElevated, Color(0xFF10141A))))
-            .fillMaxSize(),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            text = text.take(1).uppercase(),
-            style = MaterialTheme.typography.headlineLarge,
-            color = Color.White.copy(alpha = 0.3f),
-            fontFamily = Baloo2,
-        )
-    }
-}
-
 // ── Boş durum: sıcak mesaj + CTA ────────────────────────────────────────
 
 @Composable
@@ -444,79 +400,6 @@ fun EmptyState(
         if (actionLabel != null && onAction != null) {
             Spacer(Modifier.height(16.dp))
             MinimuvButton(label = actionLabel, onClick = onAction)
-        }
-    }
-}
-
-// ── Asılı (floating) alt menü: ince kenarlı frosted cam hap ──────────────
-
-data class FloatingNavItem(
-    val route: String,
-    val label: String,
-    val icon: ImageVector,
-)
-
-@Composable
-fun FloatingBottomBar(
-    items: List<FloatingNavItem>,
-    selectedRoute: String?,
-    onSelect: (String) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val shape = RoundedCornerShape(50)
-    Row(
-        modifier
-            .fillMaxWidth()
-            .clip(shape)
-            .background(Color(0xD9141822))
-            .border(0.5.dp, Color.White.copy(alpha = 0.10f), shape)
-            .padding(horizontal = 6.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.SpaceEvenly,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        items.forEach { item ->
-            val selected = item.route == selectedRoute
-            val tint by animateColorAsState(
-                if (selected) MaterialTheme.colorScheme.primary else TextSecondary,
-                label = "navTint",
-            )
-            val pill by animateColorAsState(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent,
-                label = "navPill",
-            )
-            val scale by animateFloatAsState(
-                targetValue = if (selected) 1.06f else 1f,
-                animationSpec = spring(dampingRatio = 0.5f, stiffness = 500f),
-                label = "navScale",
-            )
-            Column(
-                Modifier
-                    .weight(1f)
-                    .clip(RoundedCornerShape(50))
-                    .background(pill)
-                    .bounceClick(onClick = { onSelect(item.route) })
-                    .padding(vertical = 7.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Icon(
-                    item.icon,
-                    contentDescription = item.label,
-                    tint = tint,
-                    modifier = Modifier
-                        .size(21.dp)
-                        .graphicsLayer {
-                            scaleX = scale
-                            scaleY = scale
-                        },
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    item.label,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = tint,
-                    maxLines = 1,
-                )
-            }
         }
     }
 }
@@ -584,18 +467,6 @@ fun SoftChip(
     }
 }
 
-// ── Bölüm başlığı ────────────────────────────────────────────────────────
-
-@Composable
-fun SectionTitle(title: String, modifier: Modifier = Modifier) {
-    EmojiText(
-        title,
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-        style = MaterialTheme.typography.titleMedium,
-        color = MaterialTheme.colorScheme.onBackground,
-    )
-}
-
 // ── Markdown Metin Bileşeni (Açıklama / Biyografi Temizleyici) ─────────────
 
 @Composable
@@ -622,7 +493,13 @@ fun MarkdownText(
                     val position = layout.getOffsetForPosition(offset)
                     annotatedString.getStringAnnotations("URL", position, position)
                         .firstOrNull()?.let { annotation ->
-                            runCatching { uriHandler.openUri(annotation.item) }
+                            // Şema beyaz listesi: uzak markdown yalnızca web bağlantısı açabilir.
+                            val scheme = runCatching {
+                                android.net.Uri.parse(annotation.item).scheme?.lowercase()
+                            }.getOrNull()
+                            if (scheme == "http" || scheme == "https") {
+                                runCatching { uriHandler.openUri(annotation.item) }
+                            }
                         }
                 }
             }
@@ -653,7 +530,8 @@ fun parseMarkdownToAnnotatedString(
     return buildAnnotatedString {
         val linkRegex = Regex("\\[([^\\]]+)\\]\\(([^\\)]+)\\)")
         val boldRegex = Regex("(__|\\*\\*)(.*?)\\1")
-        val italicRegex = Regex("(_|\\*)(.*?)\\1")
+        // Kelime içi alt çizgi/yıldız (dosya_adi, 5*4*3) italik sayılmaz.
+        val italicRegex = Regex("(?<![\\p{L}\\p{N}])(_|\\*)(.+?)\\1(?![\\p{L}\\p{N}])")
 
         val lines = clean.lines()
         lines.forEachIndexed { lineIdx, line ->

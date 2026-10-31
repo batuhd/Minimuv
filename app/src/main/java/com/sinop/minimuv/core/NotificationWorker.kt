@@ -66,7 +66,7 @@ class NotificationWorker(
 
             val repo = TitleRepository()
             PingNotifier.process(context, profileId)
-            TitleTransitionTracker.diff(context, profileId, repo.getTitles()).forEach { (title, text) ->
+            TitleTransitionTracker.diff(context, profileId, repo.getTitlesLite()).forEach { (title, text) ->
                 NotificationHelper.show(context, title, text, (title.hashCode() + System.currentTimeMillis()).toInt())
             }
             MilestoneTracker.process(context, profileId)
@@ -76,6 +76,16 @@ class NotificationWorker(
             AnniversaryChecker.process(context)
             Log.d("NotificationWorker", "kontrol tamamlandı")
             Result.success()
+        } catch (e: kotlinx.serialization.SerializationException) {
+            // Kalıcı veri hatası: sonsuz retry yerine başarısız bitir (BUG-035).
+            Log.e("NotificationWorker", "kalıcı veri hatası", e)
+            Result.failure()
+        } catch (e: IllegalArgumentException) {
+            Log.e("NotificationWorker", "kalıcı argüman hatası", e)
+            Result.failure()
+        } catch (e: java.io.IOException) {
+            Log.w("NotificationWorker", "geçici ağ hatası (retry)", e)
+            Result.retry()
         } catch (e: Exception) {
             Log.w("NotificationWorker", "kontrol hatası (retry)", e)
             Result.retry()

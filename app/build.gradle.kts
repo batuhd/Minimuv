@@ -133,7 +133,7 @@ dependencies {
     implementation(libs.reorderable)
     implementation(libs.android.image.cropper)
     implementation(libs.androidx.work.runtime.ktx)
-    implementation(libs.firebase.messaging.ktx)
+    implementation(libs.firebase.messaging)
     implementation(libs.firebase.appdistribution)
 
     testImplementation(libs.junit)

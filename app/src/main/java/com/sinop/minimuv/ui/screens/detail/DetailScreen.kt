@@ -131,8 +131,7 @@ fun DetailScreen(
 
     // Okuma/düzenleme modu: varsayılan olarak okuma modunda açılır.
     // Düzenlemeden geri basınca ekrandan çıkmak yerine okuma moduna döner.
-    var editing by remember(titleId) { mutableStateOf(startInEdit) }
-    androidx.activity.compose.BackHandler(enabled = editing) { editing = false }
+    var editing by remember(titleId) { mutableStateOf(startInEdit || isDraft) }
 
     // ── Düzenlenebilir durumlar ──────────────────────────────────────────
     var status by remember(loaded?.id, draft) { mutableStateOf(loaded?.status ?: WatchStatus.PLAN.db) }
@@ -205,12 +204,41 @@ fun DetailScreen(
     val type = loaded?.type ?: draft?.type ?: ContentType.FILM.db
     val titleText = loaded?.displayTitle(displayLang) ?: draft?.title ?: ""
     val posterUrl = loaded?.posterUrl ?: draft?.posterUrl
-    val yearText = loaded?.startDate?.take(4) ?: details?.year?.takeIf { it.isNotBlank() }
+    val yearText = details?.year?.takeIf { it.isNotBlank() } ?: loaded?.startDate?.take(4)
     val typeColor = typeColor(type)
     val isSeries = type != ContentType.FILM.db
     val oldStatus = loaded?.status
     val totalEpisodes = totalEpisodesText.toIntOrNull()
     val (editMyColor, editPartnerColor) = coupleColors(myProfile, partnerProfile, typeColor, TextSecondary)
+
+    /** Düzenlemeden okuma moduna dönerken yerel değişiklikleri sunucu değerlerine sar. */
+    fun discardEdits() {
+        val t = loaded ?: run { editing = false; return }
+        status = t.status
+        totalEpisodesText = t.totalEpisodes?.toString() ?: ""
+        startDate = t.startDate
+        finishDate = t.finishDate
+        rewatches = t.totalRewatches
+        notesText = t.notes ?: ""
+        isPrivate = t.isPrivate
+        isFavorite = t.isFavorite
+        watchMode = t.watchMode
+        optSharedProgress = t.episodeProgress
+        optMyProgress = myProgressRow?.currentEpisode ?: 0
+        sharedTouched = false
+        myTouched = false
+        scoreDirty = false
+        locStory = null
+        locCharacters = null
+        locVisuals = null
+        locAudio = null
+        locEnjoyment = null
+        locManual = ""
+        editing = false
+    }
+    androidx.activity.compose.BackHandler(enabled = editing) {
+        if (isDraft) onBack() else discardEdits()
+    }
 
     fun buildChanges(): Map<String, Any?> {
         val t = loaded ?: return emptyMap()
@@ -244,7 +272,7 @@ fun DetailScreen(
                     yearText = yearText,
                     saving = saving,
                     onBack = {
-                        if (isDraft) onBack() else editing = false
+                        if (isDraft) onBack() else discardEdits()
                     },
                     onMoreOptions = if (!isDraft) { { showDeleteConfirm = true } } else null,
                 )
@@ -263,8 +291,9 @@ fun DetailScreen(
                 StatusCard(
                     selected = status,
                     onSelect = { newStatus ->
+                        val previous = status
                         status = newStatus
-                        if (newStatus == WatchStatus.REWATCHING.db) {
+                        if (newStatus == WatchStatus.REWATCHING.db && previous != WatchStatus.REWATCHING.db) {
                             rewatches = rewatches + 1
                         }
                         if ((newStatus == WatchStatus.WATCHING.db || newStatus == WatchStatus.REWATCHING.db) && startDate == null) {
@@ -291,16 +320,15 @@ fun DetailScreen(
                     onTotalEpisodes = { totalEpisodesText = it },
                     watchMode = watchMode,
                     onWatchMode = { watchMode = it },
-                    showPerProfile = watchMode == WatchMode.AYRI.db && isSeries,
                     myProfile = myProfile,
                     partnerProfile = partnerProfile,
                     myProgress = optMyProgress,
                     partnerProgress = partnerProgressRow?.currentEpisode ?: 0,
                     onMyProgress = { newValue ->
+                        // AYRI ilerleme "Kaydet"e kadar sadece yerel tutulur;
+                        // vazgeçilirse veritabanına yazılmaz (BUG-056).
                         myTouched = true
-                        val delta = newValue - optMyProgress
                         optMyProgress = newValue.coerceAtLeast(0)
-                        loaded?.let { vm.setProgress(it.id, profileId, newValue.coerceAtLeast(0), delta) }
                     },
                     typeColor = typeColor,
                     myColor = editMyColor,
@@ -308,15 +336,8 @@ fun DetailScreen(
                 )
 
                 ScoreCard(
-                    myName = myProfile?.displayName ?: "Sen",
-                    myEmoji = myProfile?.emoji ?: "😊",
-                    partnerName = partnerProfile?.displayName,
-                    partnerEmoji = partnerProfile?.emoji,
                     myScore = myScore,
-                    isAutoScore = computedAvg != null,
-                    manualScoreText = manualScoreText,
                     onManualScoreChange = { touchScore(); locManual = it },
-                    partnerScore = partnerScoreRow?.score,
                     advStory = advStory, onAdvStory = { touchScore(); locStory = it },
                     advCharacters = advCharacters, onAdvCharacters = { touchScore(); locCharacters = it },
                     advVisuals = advVisuals, onAdvVisuals = { touchScore(); locVisuals = it },
@@ -334,7 +355,6 @@ fun DetailScreen(
                 )
 
                 NotesCard(
-                    titleId = loaded?.id ?: "draft",
                     notes = titleNotes,
                     profiles = profiles,
                     onAddNote = { text, emoji ->
@@ -361,6 +381,10 @@ fun DetailScreen(
                 error = vm.error.collectAsStateWithLifecycle().value,
                 onSave = {
                 if (!isDraft && loaded == null) return@SaveBar
+                    if (!startDate.isNullOrBlank() && !finishDate.isNullOrBlank() && finishDate!! < startDate!!) {
+                        vm.error.value = "Bitiş tarihi başlangıçtan önce olamaz."
+                        return@SaveBar
+                    }
                     val autoComplete = isSeries && oldStatus == WatchStatus.WATCHING.db &&
                         totalEpisodes != null && optSharedProgress >= totalEpisodes
                     // Otomatik tamamlama yolu da bitiş tarihini damgalar (buildChanges'ten ÖNCE)
@@ -376,14 +400,21 @@ fun DetailScreen(
                         startDate = java.time.LocalDate.now().toString()
                     }
                     val changes = buildChanges()
-                    val scoreToSave = myScore?.let {
-                        TitleScore(
+                    // Puan alanları temizlendiyse kayıtlı satır da temizlenir (DS-BUG-02):
+                    // myScore null + kullanıcı puana dokunduysa tüm alanlar null yazılır.
+                    val scoreToSave = when {
+                        myScore != null -> TitleScore(
                             titleId = loaded?.id ?: "",
                             profileId = profileId,
-                            score = it,
+                            score = myScore,
                             story = advStory, characters = advCharacters,
                             visuals = advVisuals, audio = advAudio, enjoyment = advEnjoyment,
                         )
+                        scoreDirty && serverMyScore != null -> TitleScore(
+                            titleId = loaded?.id ?: "",
+                            profileId = profileId,
+                        )
+                        else -> null
                     }
                     if (isDraft) {
                         val newId = UUID.randomUUID().toString()
@@ -420,7 +451,13 @@ fun DetailScreen(
                             onSaved()
                         }
                     } else {
-                        val finalChanges = if (autoComplete) changes + ("status" to WatchStatus.COMPLETED.db) else changes
+                        // Değişikliği yapanı işaretle: partner cihazı bildirim alsın,
+                        // kendi cihazımız kendi değişikliğimiz için bildirim göstermesin.
+                        val baseChanges =
+                            if (autoComplete) changes + ("status" to WatchStatus.COMPLETED.db) else changes
+                        val finalChanges =
+                            if (baseChanges.isEmpty()) baseChanges
+                            else baseChanges + ("updated_by_profile_id" to profileId)
                         val tid = loaded!!.id
                         // Gerçek delta: sunucudaki eski değer ile kaydedilen yeni değer farkı
                         val watchLogDelta =
@@ -436,6 +473,10 @@ fun DetailScreen(
                             val eps = if (optSharedProgress > 0) optSharedProgress else (totalEpisodes ?: 1)
                             eps to (finishDate ?: java.time.LocalDate.now().toString())
                         } else null
+                        // AYRI modda kişisel ilerleme ancak kayıt onaylanınca yazılır.
+                        val ayriDelta = if (watchMode == WatchMode.AYRI.db && isSeries && myTouched) {
+                            optMyProgress - (myProgressRow?.currentEpisode ?: 0)
+                        } else 0
                         vm.updateWithScore(
                             tid,
                             finalChanges,
@@ -445,6 +486,9 @@ fun DetailScreen(
                             completionLog = completionLog,
                         ) {
                             scoreDirty = false
+                            if (watchMode == WatchMode.AYRI.db && isSeries && myTouched) {
+                                vm.setProgress(tid, profileId, optMyProgress, ayriDelta)
+                            }
                             if (autoComplete || (status == WatchStatus.COMPLETED.db && oldStatus != WatchStatus.COMPLETED.db)) {
                                 celebrate++
                             }
@@ -458,6 +502,18 @@ fun DetailScreen(
                 } else null,
             )
             } else {
+                // Okuma modunda da hata görünür olsun (BUG-023).
+                val readError = vm.error.collectAsStateWithLifecycle().value
+                if (readError != null) {
+                    Text(
+                        "Hata: $readError",
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 6.dp),
+                        fontSize = 12.sp,
+                    )
+                }
                 DetailViewContent(
                     titleText = titleText,
                     posterUrl = posterUrl,
@@ -1404,7 +1460,7 @@ private fun coupleColors(
 ): Pair<Color, Color> {
     val mine = myProfile?.avatarColor?.let { parseColorSafe(it) } ?: fallbackMine
     val partner = partnerProfile?.avatarColor?.let { parseColorSafe(it) } ?: fallbackPartner
-    return mine to partner
+    return if (mine == partner) fallbackMine to fallbackPartner else mine to partner
 }
 
 private fun voteText(n: Int): String = when {

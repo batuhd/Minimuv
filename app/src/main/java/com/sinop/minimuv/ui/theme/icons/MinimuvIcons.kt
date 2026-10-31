@@ -43,7 +43,6 @@ import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Movie
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Mood
-import androidx.compose.material.icons.filled.Nightlight
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.Pause
@@ -79,6 +78,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -87,10 +87,6 @@ import androidx.compose.ui.unit.sp
 
 object MinimuvIcons {
     // Alt navigasyon
-    val ListIcon: ImageVector = Icons.Filled.LocalMovies
-    val WheelIcon: ImageVector = Icons.Filled.Casino
-    val BadgeIcon: ImageVector = Icons.Filled.EmojiEvents
-    val ProfileIcon: ImageVector = Icons.Filled.Face
     val SettingsIcon: ImageVector = Icons.Filled.Settings
 
     // Tür / durum
@@ -137,7 +133,6 @@ object MinimuvIcons {
     val Flag: ImageVector = Icons.Filled.Flag
     val Dawn: ImageVector = Icons.Filled.WbTwilight
     val Dusk: ImageVector = Icons.Filled.WbSunny
-    val Nightlight: ImageVector = Icons.Filled.Nightlight
     val MovieReel: ImageVector = Icons.Filled.Movie
     val Chat: ImageVector = Icons.Filled.Forum
     val Sparkles: ImageVector = Icons.Filled.AutoAwesome
@@ -312,6 +307,9 @@ fun MinimuvEmojiIcon(
                 emoji,
                 style = MaterialTheme.typography.titleMedium.copy(
                     fontSize = (size.value * 0.8f).sp,
+                    // Fallback yolunda da istenen rengi uygula (BUG-067).
+                    color = tint.takeIf { it != Color.Unspecified }
+                        ?: MaterialTheme.colorScheme.onSurface,
                 ),
             )
         }
@@ -335,9 +333,10 @@ fun EmojiText(
         Text(label, modifier = modifier, style = style, color = color, maxLines = maxLines)
     } else {
         Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+            val fontScale = LocalDensity.current.fontScale
             MinimuvEmojiIcon(
                 emoji,
-                size = ((style.fontSize.takeIf { it != TextUnit.Unspecified }?.value ?: 14f) * 1.25f).dp,
+                size = ((style.fontSize.takeIf { it != TextUnit.Unspecified }?.value ?: 14f) * 1.25f * fontScale).dp,
                 tint = tint ?: color,
             )
             if (rest.isNotEmpty()) {

@@ -4,7 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.sinop.minimuv.core.RealtimeManager
 import com.sinop.minimuv.data.Achievement
-import com.sinop.minimuv.data.AchievementDef
+import com.sinop.minimuv.data.AchievementChecker
 import com.sinop.minimuv.data.Achievements
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.data.TitleRepository
@@ -48,24 +48,18 @@ class AchievementsViewModel : ViewModel() {
 
     private suspend fun checkNew(existing: List<Achievement>) {
         try {
-            val titles = repo.getTitles()
+            val titles = repo.getTitlesLite()
             val log = repo.getWatchLog()
             val scores = runCatching { repo.getAllTitleScores() }.getOrDefault(emptyList())
             val notes = runCatching { repo.getAllTitleNotes() }.getOrDefault(emptyList())
-            val s = Achievements.computeStats(titles, log, scores, notes)
+            val progress = runCatching { repo.getAllEpisodeProgress() }.getOrDefault(emptyList())
+            val s = Achievements.computeStats(titles, log, scores, notes, progress)
             stats.value = s
-            val existingKeys = existing.map { it.achievementKey }.toSet()
-            val fresh = Achievements.ALL
-                .filter { it.key !in existingKeys && it.progress(s) >= it.target }
-                .toList()
-            if (fresh.isNotEmpty()) {
-                fresh.forEach { def ->
-                    runCatching { repo.unlockAchievement(def.key, def.progress(s), def.target) }
-                }
-                newlyUnlocked.value = fresh.map { def ->
-                    Achievement(achievementKey = def.key, progressCurrent = def.progress(s), progressTarget = def.target)
-                }
-                unlocked.value = unlocked.value + newlyUnlocked.value
+            // Yalnızca DB'ye gerçekten yazılanlar kutlanır (BUG-042).
+            val inserted = AchievementChecker.unlockNew(repo, existing, s)
+            if (inserted.isNotEmpty()) {
+                newlyUnlocked.value = inserted
+                unlocked.value = unlocked.value + inserted
             }
         } catch (_: Exception) {
             // çevrimdışı — sessizce geç

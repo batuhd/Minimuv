@@ -37,11 +37,15 @@ class ListViewModel : ViewModel() {
             var attempt = 0
             while (attempt < 3) {
                 val result = runCatching {
-                    // Liste ve profiller paralel çekilir — sıralı iki ağ turu yerine bir tur
-                    val titlesDeferred = async { repo.getTitlesLite() }
-                    val profilesDeferred = async { profileRepo.getProfiles() }
-                    val progressDeferred = async { runCatching { repo.getAllEpisodeProgress() }.getOrDefault(emptyList()) }
-                    Triple(titlesDeferred.await(), profilesDeferred.await(), progressDeferred.await())
+                    // supervisorScope: bir istek patlarsa diğerleri iptal olmasın ve
+                    // hata uygulamayı çökertmek yerine runCatching'e düşsün.
+                    kotlinx.coroutines.supervisorScope {
+                        // Liste ve profiller paralel çekilir — sıralı iki ağ turu yerine bir tur
+                        val titlesDeferred = async { repo.getTitlesLite() }
+                        val profilesDeferred = async { profileRepo.getProfiles() }
+                        val progressDeferred = async { runCatching { repo.getAllEpisodeProgress() }.getOrDefault(emptyList()) }
+                        Triple(titlesDeferred.await(), profilesDeferred.await(), progressDeferred.await())
+                    }
                 }
                 result.onSuccess { (titlesList, profilesList, progressList) ->
                     titles.value = titlesList
@@ -74,22 +78,11 @@ class ListViewModel : ViewModel() {
         }
     }
 
-    fun deleteTitle(id: String, onDone: () -> Unit) {
-        viewModelScope.launch {
-            runCatching { repo.delete(id) }.onSuccess { onDone() }
-        }
-    }
-
-    fun setPriority(id: String, priority: Int) {
-        viewModelScope.launch {
-            runCatching { repo.updatePriority(id, priority) }
-        }
-    }
-
     fun reorderPlanList(orderedIds: List<String>) {
         val current = titles.value.orEmpty()
         android.util.Log.d("MinimuvOrder", "reorderPlanList -> ${orderedIds.joinToString()}")
         viewModelScope.launch {
+            var failed = false
             orderedIds.forEachIndexed { index, id ->
                 val title = current.firstOrNull { it.id == id } ?: return@forEachIndexed
                 val currentPriority = title.priorityOrder
@@ -101,9 +94,44 @@ class ListViewModel : ViewModel() {
                             titles.value = titles.value.orEmpty().map { if (it.id == id) updated else it }
                         }
                         .onFailure {
+                            failed = true
                             android.util.Log.e("MinimuvOrder", "priority FAILED $id -> ${index + 1}", it)
                         }
                 }
+            }
+            if (failed) {
+                error.value = "Sıralama kaydedilemedi — tekrar dene."
+                refresh() // sunucudaki gerçek sıraya dön
+            }
+        }
+    }
+
+    fun reorderWatchingList(orderedIds: List<String>) {
+        val current = titles.value.orEmpty()
+        viewModelScope.launch {
+            var failed = false
+            orderedIds.forEachIndexed { index, id ->
+                val title = current.firstOrNull { it.id == id } ?: return@forEachIndexed
+                if (title.watchOrder == index + 1) return@forEachIndexed
+                runCatching { repo.updateWatchOrder(id, index + 1) }
+                    .onSuccess {
+                        val updated = title.copy(watchOrder = index + 1)
+                        titles.value = titles.value.orEmpty().map { if (it.id == id) updated else it }
+                    }
+                    .onFailure {
+                        // Canlı DB'de watch_order sütunu henüz yoksa eski alanla devam et.
+                        runCatching { repo.updatePriority(id, index + 1) }
+                            .onSuccess {
+                                val updated = title.copy(priorityOrder = index + 1)
+                                titles.value = titles.value.orEmpty()
+                                    .map { t -> if (t.id == id) updated else t }
+                            }
+                            .onFailure { failed = true }
+                    }
+            }
+            if (failed) {
+                error.value = "Sıralama kaydedilemedi — tekrar dene."
+                refresh()
             }
         }
     }

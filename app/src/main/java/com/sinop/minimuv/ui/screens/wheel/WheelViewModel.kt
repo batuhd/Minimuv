@@ -25,7 +25,8 @@ class WheelViewModel : ViewModel() {
 
     fun refresh() {
         viewModelScope.launch {
-            runCatching { repo.getTitles() }
+            // Çark yalnızca hafif kolonlara ihtiyaç duyar (PERF-018).
+            runCatching { repo.getTitlesLite() }
                 .onSuccess { all ->
                     planTitles.value = all.filter { it.status == WatchStatus.PLAN.db }
                         .sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))

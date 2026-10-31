@@ -1,5 +1,6 @@
 package com.sinop.minimuv.ui.screens.studio
 
+import android.widget.Toast
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,6 +41,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,8 +52,6 @@ import com.sinop.minimuv.core.StudioDetails
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.Favorite
 import com.sinop.minimuv.data.FavoritesRepository
-import com.sinop.minimuv.data.TitleDraft
-import com.sinop.minimuv.ui.screens.add.DraftHolder
 import com.sinop.minimuv.ui.screens.detail.GlassCircleButton
 import com.sinop.minimuv.ui.screens.person.PersonWorkRow
 import com.sinop.minimuv.ui.theme.TextSecondary
@@ -77,6 +77,7 @@ fun StudioScreen(
     var isFav by remember { mutableStateOf(false) }
     var selectedFilter by remember { mutableStateOf("Hepsi") }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val favRepo = remember { FavoritesRepository() }
     val srcName = if (type == ContentType.ANIME) "anime" else "tmdb"
 
@@ -95,7 +96,10 @@ fun StudioScreen(
         scope.launch {
             if (isFav) {
                 runCatching { favRepo.removeFavorite(profileId, "studio", srcName, externalId) }
-                isFav = false
+                    .onSuccess { isFav = false }
+                    .onFailure {
+                        Toast.makeText(context, "Favoriden çıkarılamadı", Toast.LENGTH_SHORT).show()
+                    }
             } else {
                 runCatching {
                     favRepo.addFavorite(
@@ -109,7 +113,10 @@ fun StudioScreen(
                         ),
                     )
                 }
-                isFav = true
+                    .onSuccess { isFav = true }
+                    .onFailure {
+                        Toast.makeText(context, "Favoriye eklenemedi", Toast.LENGTH_SHORT).show()
+                    }
             }
         }
     }
@@ -165,6 +172,8 @@ fun StudioScreen(
                     when (selectedFilter) {
                         "2010 ve sonrası" -> s.works.filter { (it.year?.toIntOrNull() ?: 0) >= 2010 }
                         "2000'ler" -> s.works.filter { (it.year?.toIntOrNull() ?: 0) in 2000..2009 }
+                        "2000 öncesi" -> s.works.filter { (it.year?.toIntOrNull() ?: 0) in 1..1999 }
+                        "Yılı bilinmeyen" -> s.works.filter { (it.year?.toIntOrNull() ?: 0) == 0 }
                         else -> s.works
                     }
                 }
@@ -263,7 +272,7 @@ fun StudioScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        listOf("Hepsi", "2010 ve sonrası", "2000'ler").forEach { filter ->
+                        listOf("Hepsi", "2010 ve sonrası", "2000'ler", "2000 öncesi", "Yılı bilinmeyen").forEach { filter ->
                             val isSelected = selectedFilter == filter
                             Box(
                                 Modifier

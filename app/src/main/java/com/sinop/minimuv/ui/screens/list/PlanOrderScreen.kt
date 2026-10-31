@@ -19,6 +19,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -52,6 +53,8 @@ import sh.calvin.reorderable.rememberReorderableLazyColumnState
 fun PlanOrderScreen(onBack: () -> Unit) {
     val vm: ListViewModel = viewModel()
     val titles by vm.titles.collectAsStateWithLifecycle()
+    val loading by vm.loading.collectAsStateWithLifecycle()
+    val loadError by vm.error.collectAsStateWithLifecycle()
 
     val planItems = titles.orEmpty().filter { it.status == WatchStatus.PLAN.db }
 
@@ -101,7 +104,22 @@ fun PlanOrderScreen(onBack: () -> Unit) {
             }
         }
 
-        if (ordered.isEmpty()) {
+        if (titles == null) {
+            if (loadError != null && !loading) {
+                EmptyState(
+                    emoji = "📡",
+                    title = "Yüklenemedi",
+                    subtitle = loadError ?: "Bağlantını kontrol edip tekrar dene.",
+                    modifier = Modifier.fillMaxSize(),
+                    actionLabel = "Tekrar dene",
+                    onAction = { vm.refresh() },
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+            }
+        } else if (ordered.isEmpty()) {
             EmptyState(
                 emoji = "🗓️",
                 title = "Sırada kimse yok",

@@ -1,11 +1,7 @@
 package com.sinop.minimuv.ui.theme
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 
@@ -41,9 +37,6 @@ val MinimuvTokens.together: Brush
 val LocalMinimuvTokens = staticCompositionLocalOf {
     darkTokens(van = VanColor, sinop = SinopColor)
 }
-
-val MinimuvTokensFull: MinimuvTokens
-    @Composable @ReadOnlyComposable get() = LocalMinimuvTokens.current
 
 @Composable
 fun tokens(): MinimuvTokens = LocalMinimuvTokens.current

@@ -2,6 +2,7 @@ package com.sinop.minimuv.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
@@ -32,7 +33,7 @@ enum class ThemeAccent(val label: String, val hex: String) {
     GOLDEN("Kaya", "#9AA5B1"),
     AUBERGINE("Mürdüm", "#5C6BC0");
 
-    val primary: Color get() = Color(android.graphics.Color.parseColor(hex))
+    val primary: Color by lazy { Color(android.graphics.Color.parseColor(hex)) }
 }
 
 private fun buildDarkScheme(van: Color, sinop: Color) = darkColorScheme(
@@ -64,34 +65,37 @@ private fun buildDarkScheme(van: Color, sinop: Color) = darkColorScheme(
     scrim = Color(0xCC0A0C0F),
 )
 
-private fun buildLightScheme(van: Color, sinop: Color) = lightColorScheme(
-    primary = van,
-    onPrimary = readableOn(van),
-    secondary = sinop,
-    onSecondary = readableOn(sinop),
-    tertiary = Gold,
-    background = lightTokens(van, sinop).bg,
-    onBackground = lightTokens(van, sinop).text,
-    surface = lightTokens(van, sinop).bg,
-    onSurface = lightTokens(van, sinop).text,
-    surfaceVariant = lightTokens(van, sinop).surface1,
-    onSurfaceVariant = lightTokens(van, sinop).textMuted,
-    surfaceContainer = lightTokens(van, sinop).surface1,
-    surfaceContainerHigh = lightTokens(van, sinop).surface2,
-    surfaceContainerHighest = lightTokens(van, sinop).surface3,
-    surfaceContainerLow = lightTokens(van, sinop).surface1,
-    surfaceContainerLowest = lightTokens(van, sinop).bg,
-    surfaceBright = lightTokens(van, sinop).surface1,
-    surfaceDim = lightTokens(van, sinop).bg,
-    outline = lightTokens(van, sinop).surface3,
-    outlineVariant = lightTokens(van, sinop).surface3,
-    error = Color(0xFFB3436B),
-    onError = Color(0xFFF2F2F5),
-    inverseSurface = lightTokens(van, sinop).text,
-    inverseOnSurface = lightTokens(van, sinop).bg,
-    inversePrimary = sinop,
-    scrim = Color(0x66101420),
-)
+private fun buildLightScheme(van: Color, sinop: Color): ColorScheme {
+    val tk = lightTokens(van, sinop)
+    return lightColorScheme(
+        primary = van,
+        onPrimary = readableOn(van),
+        secondary = sinop,
+        onSecondary = readableOn(sinop),
+        tertiary = Gold,
+        background = tk.bg,
+        onBackground = tk.text,
+        surface = tk.bg,
+        onSurface = tk.text,
+        surfaceVariant = tk.surface1,
+        onSurfaceVariant = tk.textMuted,
+        surfaceContainer = tk.surface1,
+        surfaceContainerHigh = tk.surface2,
+        surfaceContainerHighest = tk.surface3,
+        surfaceContainerLow = tk.surface1,
+        surfaceContainerLowest = tk.bg,
+        surfaceBright = tk.surface1,
+        surfaceDim = tk.bg,
+        outline = tk.surface3,
+        outlineVariant = tk.surface3,
+        error = Color(0xFFB3436B),
+        onError = Color(0xFFF2F2F5),
+        inverseSurface = tk.text,
+        inverseOnSurface = tk.bg,
+        inversePrimary = sinop,
+        scrim = Color(0x66101420),
+    )
+}
 
 private val MinimuvShapes = Shapes(
     extraSmall = RoundedCornerShape(8.dp),
@@ -151,13 +155,4 @@ fun typeEmoji(type: String): String = when (ContentType.fromDb(type)) {
     ContentType.FILM -> "🎬"
     ContentType.DIZI -> "📺"
     ContentType.ANIME -> "🌸"
-}
-
-fun statusEmoji(status: String): String = when (WatchStatus.fromDb(status)) {
-    WatchStatus.WATCHING -> "▶️"
-    WatchStatus.PLAN -> "🗓️"
-    WatchStatus.COMPLETED -> "✅"
-    WatchStatus.REWATCHING -> "🔁"
-    WatchStatus.PAUSED -> "⏸️"
-    WatchStatus.DROPPED -> "🚫"
 }

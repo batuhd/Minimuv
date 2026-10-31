@@ -22,7 +22,12 @@ object ConnectionValidator {
         ) {
             install(Postgrest)
         }
-        val profiles = probe.postgrest.from("profiles").select().decodeList<Probe>()
-        if (profiles.isEmpty()) error("profiles tablosu boş — şemayı yüklediğine emin ol")
+        try {
+            val profiles = probe.postgrest.from("profiles").select().decodeList<Probe>()
+            if (profiles.isEmpty()) error("profiles tablosu boş — şemayı yüklediğine emin ol")
+        } finally {
+            // Geçici doğrulama istemcisi sızdırılmaz.
+            probe.close()
+        }
     }
 }

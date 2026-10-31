@@ -60,6 +60,7 @@ data class Profile(
 data class Title(
     val id: String,
     @SerialName("created_by_profile_id") val createdByProfileId: String? = null,
+    @SerialName("updated_by_profile_id") val updatedByProfileId: String? = null,
     val type: String,
     @SerialName("external_id") val externalId: String? = null,
     val title: String,
@@ -83,15 +84,11 @@ data class Title(
     @SerialName("is_private") val isPrivate: Boolean = false,
     @SerialName("watch_mode") val watchMode: String = "birlikte",
     @SerialName("priority_order") val priorityOrder: Int? = null,
+    @SerialName("watch_order") val watchOrder: Int? = null,
     @SerialName("is_favorite") val isFavorite: Boolean = false,
     @SerialName("created_at") val createdAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
 ) {
-    fun advancedScoreAverage(): Double? {
-        val values = listOfNotNull(story, characters, visuals, audio, enjoyment)
-        return if (values.isEmpty()) null else values.average()
-    }
-
     /** Görüntüleme dili ayarına göre başlık (EN seçiliyse İngilizce ad, boşsa TR). */
     fun displayTitle(lang: String?): String =
         if (lang == "EN") titleEn ?: title else title
@@ -112,12 +109,7 @@ data class TitleScore(
     val visuals: Double? = null,
     val audio: Double? = null,
     val enjoyment: Double? = null,
-) {
-    fun advancedAverage(): Double? {
-        val values = listOfNotNull(story, characters, visuals, audio, enjoyment)
-        return if (values.isEmpty()) null else values.average()
-    }
-}
+)
 
 @Serializable
 data class PartnerPing(

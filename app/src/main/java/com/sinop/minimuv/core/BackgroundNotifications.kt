@@ -7,11 +7,8 @@ import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleNote
 import com.sinop.minimuv.data.TitleRepository
+import com.sinop.minimuv.data.WatchMode
 import com.sinop.minimuv.data.WatchStatus
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.builtins.MapSerializer
@@ -29,6 +26,16 @@ import java.util.LinkedHashSet
  * DataStore'da kalıcı iz sayesinde aynı olay iki kez bildirilmez.
  */
 
+// ── Zaman damgası yardımcıları (dosya genelinde tek kopya) ────────────────
+
+private fun normalizeTs(raw: String?): String? {
+    val text = raw ?: return null
+    if (text.isBlank()) return null
+    return runCatching { Instant.parse(text).toString() }.getOrNull() ?: text
+}
+
+private fun nowIso(): String = Instant.now().toString()
+
 // ── Gizli not (partner ping) bildirimleri ─────────────────────────────────
 
 object PingNotifier {
@@ -36,7 +43,6 @@ object PingNotifier {
     private const val MAX_MEMORY_IDS = 200
     private val recentIds: MutableSet<String> =
         Collections.synchronizedSet(LinkedHashSet<String>())
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Son 20 ping'e bakar, yeni olanları (son görülenden sonra gelenleri) bildirir.
      *  Kalıcı son-görülen zaman damgası sayesinde uygulama yeniden açılsa da
@@ -63,6 +69,12 @@ object PingNotifier {
             if (recentIds.size > MAX_MEMORY_IDS) {
                 recentIds.take(MAX_MEMORY_IDS / 2).forEach(recentIds::remove)
             }
+            // Önce "son görülen"i kalıcı yaz, sonra göster: çökme/yeniden
+            // başlatma durumunda aynı ping ikinci kez bildirilmez (BUG-006).
+            if (ts > newLast) {
+                newLast = ts
+                runCatching { settings.saveLastPingAt(newLast) }
+            }
             if (ping.fromProfile == profileId) return@forEach
             val sender = runCatching { profileRepo.getProfile(ping.fromProfile) }.getOrNull()
             NotificationHelper.show(
@@ -71,21 +83,9 @@ object PingNotifier {
                 ping.message,
                 id = id.hashCode(),
             )
-            if (ts > newLast) newLast = ts
-        }
-        if (newLast != lastSeen) {
-            val finalLast = newLast
-            scope.launch { runCatching { settings.saveLastPingAt(finalLast) } }
         }
     }
 
-    private fun normalizeTs(raw: String?): String? {
-        val text = raw ?: return null
-        if (text.isBlank()) return null
-        return runCatching { Instant.parse(text).toString() }.getOrNull() ?: text
-    }
-
-    private fun nowIso(): String = Instant.now().toString()
 }
 
 // ── Başlık ekleme / durum geçişi bildirimleri ─────────────────────────────
@@ -96,8 +96,6 @@ object TitleTransitionTracker {
     private var initialized = false
     private var lastStatuses: Map<String, String> = emptyMap()
     private val json = Json { ignoreUnknownKeys = true }
-
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Mevcut başlık listesini son anlık görüntüyle karşılaştırır;
      *  gösterilecek bildirimleri (başlık, metin) listesi olarak döner.
@@ -123,22 +121,23 @@ object TitleTransitionTracker {
                     // Yeni eklenen başlık — kendi eklediğimiz için kendimize bildirim gitmez.
                     if (t.createdByProfileId != profileId) notes += newTitleNote(t)
                 } else if (old != t.status) {
-                    notes += statusNote(old, t)
+                    // Durumu kendi cihazımızda değiştirdiysek kendimize bildirim gösterme;
+                    // partnerin değişikliği ise bildir (updated_by_profile_id).
+                    if (t.updatedByProfileId != profileId) notes += statusNote(old, t)
                 }
             }
             persist(context, current)
             return notes
         }
 
-    private fun persist(context: Context, current: List<Title>) {
+    private suspend fun persist(context: Context, current: List<Title>) {
         lastStatuses = current.associate { it.id to it.status }
         val payload = runCatching {
             json.encodeToString(MapSerializer(String.serializer(), String.serializer()), lastStatuses)
         }.getOrNull()
         if (payload != null) {
-            scope.launch {
-                runCatching { SettingsStore(context).saveTitlesSnapshot(payload) }
-            }
+            // Bekleyerek yaz: worker dönmeden kalıcı olsun (BUG-006).
+            runCatching { SettingsStore(context).saveTitlesSnapshot(payload) }
         }
     }
 
@@ -167,15 +166,15 @@ object TitleTransitionTracker {
 
 object AnniversaryChecker {
 
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
     /** Bugün için henüz kontrol edilmediyse yıldönümlerini bildirir. */
     suspend fun process(context: Context) {
         val settings = SettingsStore(context)
         val today = LocalDate.now().toString()
         if (settings.lastAnnivDate() == today) return
         val repo = TitleRepository()
-        val titles = runCatching { repo.getTitles() }.getOrNull() ?: return
+        val titles = runCatching { repo.getTitlesLite() }
+            .onFailure { android.util.Log.w("MinimuvNotif", "Başlıklar yüklenemedi", it) }
+            .getOrNull() ?: return
         val todayDate = LocalDate.now()
         titles.forEach { t ->
             val date = t.startDate ?: return@forEach
@@ -191,7 +190,7 @@ object AnniversaryChecker {
                             context,
                             "💌 Tam $years yıl önce bugün",
                             "${t.title} dizisine başlamıştık… Ne günlerdi!",
-                            id = t.id.hashCode(),
+                            id = ("anniv_" + t.id).hashCode(),
                             channel = NotificationHelper.CHANNEL_ANNIVERSARY,
                         )
                     }
@@ -199,7 +198,7 @@ object AnniversaryChecker {
             }
         }
         val done = today
-        scope.launch { runCatching { settings.saveLastAnnivDate(done) } }
+        runCatching { settings.saveLastAnnivDate(done) }
     }
 }
 
@@ -208,7 +207,6 @@ object AnniversaryChecker {
 object MilestoneTracker {
 
     private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
     private var milestones: MutableMap<String, Int>? = null // null = henüz yüklenmedi
 
@@ -217,7 +215,9 @@ object MilestoneTracker {
      *  FCM/worker yolu çalışsa da aynı taş iki kez bildirilmez. */
     suspend fun process(context: Context, profileId: String) {
         val repo = TitleRepository()
-        val titles = runCatching { repo.getTitles() }.getOrNull() ?: return
+        val titles = runCatching { repo.getTitlesLite() }
+            .onFailure { android.util.Log.w("MinimuvNotif", "Başlıklar yüklenemedi", it) }
+            .getOrNull() ?: return
         mutex.withLock {
             if (milestones == null) {
                 val stored = runCatching { SettingsStore(context).milestonesSnapshot() }.getOrNull()
@@ -229,10 +229,15 @@ object MilestoneTracker {
                         .toMutableMap()
                 }
             }
+            val ayriTitles = titles.filter { it.watchMode == WatchMode.AYRI.db }
+            if (ayriTitles.isEmpty()) return@withLock
+            // Tek sorgu: başlık başına ayrı istek (N+1) yerine tüm ilerlemeler bir kez çekilir.
+            val progressByTitle = runCatching { repo.getAllEpisodeProgress() }
+                .getOrDefault(emptyList())
+                .groupBy { it.titleId }
             var changed = false
-            titles.forEach { title ->
-                if (title.watchMode != "ayri") return@forEach
-                val progress = runCatching { repo.getEpisodeProgress(title.id) }.getOrDefault(emptyList())
+            ayriTitles.forEach { title ->
+                val progress = progressByTitle[title.id].orEmpty()
                 val mine = progress.firstOrNull { it.profileId == profileId }?.currentEpisode ?: 0
                 val partner = progress.firstOrNull { it.profileId != profileId }?.currentEpisode ?: 0
                 val milestone = (minOf(mine, partner) / 10) * 10
@@ -255,10 +260,8 @@ object MilestoneTracker {
                     )
                 }.getOrNull()
                 if (payload != null) {
-                    val finalPayload = payload
-                    scope.launch {
-                        runCatching { SettingsStore(context).saveMilestonesSnapshot(finalPayload) }
-                    }
+                    // Bekleyerek yaz: worker dönmeden kalıcı olsun (BUG-006).
+                    runCatching { SettingsStore(context).saveMilestonesSnapshot(payload) }
                 }
             }
         }
@@ -270,7 +273,6 @@ object MilestoneTracker {
 object ScoreNotifier {
 
     private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
     private var snapshot: MutableMap<String, String>? = null // "titleId|profileId" -> puan
 
@@ -278,7 +280,9 @@ object ScoreNotifier {
     suspend fun process(context: Context, profileId: String) {
         val repo = TitleRepository()
         val scores = runCatching { repo.getAllTitleScores() }.getOrNull() ?: return
-        val titles = runCatching { repo.getTitles() }.getOrNull().orEmpty().associateBy { it.id }
+        val titles = runCatching { repo.getTitlesLite() }
+            .onFailure { android.util.Log.w("MinimuvNotif", "Başlıklar yüklenemedi", it) }
+            .getOrNull().orEmpty().associateBy { it.id }
         val profiles = runCatching { ProfileRepository().getProfiles() }.getOrNull().orEmpty()
 
         mutex.withLock {
@@ -341,7 +345,7 @@ object ScoreNotifier {
         }
     }
 
-    private fun persist(context: Context) {
+    private suspend fun persist(context: Context) {
         val payload = runCatching {
             json.encodeToString(
                 MapSerializer(String.serializer(), String.serializer()),
@@ -349,8 +353,8 @@ object ScoreNotifier {
             )
         }.getOrNull()
         if (payload != null) {
-            val finalPayload = payload
-            scope.launch { runCatching { SettingsStore(context).saveScoreSnapshot(finalPayload) } }
+            // Bekleyerek yaz: worker dönmeden kalıcı olsun (BUG-006).
+            runCatching { SettingsStore(context).saveScoreSnapshot(payload) }
         }
     }
 }
@@ -362,7 +366,6 @@ enum class NoteKind { TITLE, EPISODE }
 object NoteNotifier {
 
     private val mutex = Mutex()
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     /** Partnerin yeni notlarını bildirir. Bölüm notlarında spoiler kuralı
      *  geçerlidir: o bölüme gelmediysen bildirim hiç düşmez. */
@@ -388,16 +391,22 @@ object NoteNotifier {
         val lastSeen: String = settings.lastTitleNoteAt() ?: run {
             // İlk çalıştırma: eski notlar bildirilmesin, sadece iz bırak.
             val maxTs = notes.mapNotNull { normalizeTs(it.createdAt) }.maxOrNull()
-            scope.launch { runCatching { settings.saveLastTitleNoteAt(maxTs ?: nowIso()) } }
+            settings.saveLastTitleNoteAt(maxTs ?: nowIso())
             return
         }
-        val titles = runCatching { repo.getTitles() }.getOrNull().orEmpty().associateBy { it.id }
+        val titles = runCatching { repo.getTitlesLite() }
+            .onFailure { android.util.Log.w("MinimuvNotif", "Başlıklar yüklenemedi", it) }
+            .getOrNull().orEmpty().associateBy { it.id }
         val profiles = runCatching { ProfileRepository().getProfiles() }.getOrNull().orEmpty()
         var newLast: String = lastSeen
         notes.sortedBy { normalizeTs(it.createdAt) ?: "" }.forEach { note ->
             val ts = normalizeTs(note.createdAt) ?: return@forEach
             if (ts <= lastSeen || note.profileId == profileId) return@forEach
-            if (ts > newLast) newLast = ts
+            // Önce "son görülen"i kalıcı yaz, sonra göster (BUG-006).
+            if (ts > newLast) {
+                newLast = ts
+                runCatching { settings.saveLastTitleNoteAt(newLast) }
+            }
             val author = profiles.firstOrNull { it.id == note.profileId }
             val title = titles[note.titleId]
             NotificationHelper.show(
@@ -406,10 +415,6 @@ object NoteNotifier {
                 "${author?.displayName ?: "Partnerin"} “${title?.title ?: "bir yapım"}” başlığına not ekledi.",
                 id = note.id?.hashCode() ?: ts.hashCode(),
             )
-        }
-        if (newLast != lastSeen) {
-            val finalLast = newLast
-            scope.launch { runCatching { settings.saveLastTitleNoteAt(finalLast) } }
         }
     }
 
@@ -423,17 +428,18 @@ object NoteNotifier {
         val lastSeen: String = settings.lastEpisodeNoteAt() ?: run {
             // İlk çalıştırma: eski notlar bildirilmesin, sadece iz bırak.
             val maxTs = notes.mapNotNull { normalizeTs(it.createdAt) }.maxOrNull()
-            scope.launch { runCatching { settings.saveLastEpisodeNoteAt(maxTs ?: nowIso()) } }
+            settings.saveLastEpisodeNoteAt(maxTs ?: nowIso())
             return
         }
-        val titles = runCatching { repo.getTitles() }.getOrNull().orEmpty().associateBy { it.id }
+        val titles = runCatching { repo.getTitlesLite() }
+            .onFailure { android.util.Log.w("MinimuvNotif", "Başlıklar yüklenemedi", it) }
+            .getOrNull().orEmpty().associateBy { it.id }
         val profiles = runCatching { ProfileRepository().getProfiles() }.getOrNull().orEmpty()
         val myProgressCache = mutableMapOf<String, Int>()
         var newLast: String = lastSeen
         notes.sortedBy { normalizeTs(it.createdAt) ?: "" }.forEach { note ->
             val ts = normalizeTs(note.createdAt) ?: return@forEach
             if (ts <= lastSeen || note.profileId == profileId) return@forEach
-            if (ts > newLast) newLast = ts
             // Spoiler kilidi: o bölüme gelmediysem bildirim düşmez
             val myProgress = myProgressCache.getOrPut(note.titleId) {
                 runCatching { repo.getEpisodeProgress(note.titleId) }
@@ -442,6 +448,13 @@ object NoteNotifier {
                     ?.currentEpisode ?: 0
             }
             if (myProgress < note.episodeNumber) return@forEach
+            // Önce "son görülen"i kalıcı yaz, sonra göster (BUG-006).
+            // Su işareti yalnızca gerçekten gösterilen notta ilerler; spoiler
+            // nedeniyle atlanan not ileride tekrar değerlendirilir (BUG-033).
+            if (ts > newLast) {
+                newLast = ts
+                runCatching { settings.saveLastEpisodeNoteAt(newLast) }
+            }
             val author = profiles.firstOrNull { it.id == note.profileId }
             val title = titles[note.titleId]
             NotificationHelper.show(
@@ -451,16 +464,6 @@ object NoteNotifier {
                 id = note.id?.hashCode() ?: ts.hashCode(),
             )
         }
-        if (newLast != lastSeen) {
-            val finalLast = newLast
-            scope.launch { runCatching { settings.saveLastEpisodeNoteAt(finalLast) } }
-        }
     }
 
-    private fun normalizeTs(raw: String?): String? {
-        if (raw.isNullOrBlank()) return null
-        return runCatching { java.time.Instant.parse(raw).toString() }.getOrNull() ?: raw
-    }
-
-    private fun nowIso(): String = java.time.Instant.now().toString()
 }

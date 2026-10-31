@@ -159,17 +159,29 @@ object Achievements {
         watchLog: List<WatchLog>,
         titleScores: List<TitleScore> = emptyList(),
         titleNotes: List<TitleNote> = emptyList(),
+        episodeProgress: List<EpisodeProgress> = emptyList(),
     ): CoupleStats {
         val completed = titles.filter { it.status == WatchStatus.COMPLETED.db }
         val together = completed.filter { it.watchMode == WatchMode.BIRLIKTE.db }
+        // AYRI modda ilerleme başlıkta değil episode_progress_per_profile'da yaşar.
+        val progressByTitle = episodeProgress.groupBy { it.titleId }
         val animeEpisodes = titles.filter { it.type == ContentType.ANIME.db }
-            .sumOf { if (it.status == WatchStatus.COMPLETED.db) (it.totalEpisodes ?: it.episodeProgress) else it.episodeProgress }
+            .sumOf { t ->
+                val perProfile = progressByTitle[t.id]
+                when {
+                    t.watchMode == WatchMode.AYRI.db && !perProfile.isNullOrEmpty() ->
+                        perProfile.sumOf { it.currentEpisode }
+                    t.status == WatchStatus.COMPLETED.db -> (t.totalEpisodes ?: t.episodeProgress)
+                    else -> t.episodeProgress
+                }
+            }
         val films = completed.count { it.type == ContentType.FILM.db }
         val dizis = completed.count { it.type == ContentType.DIZI.db }
         val animes = completed.count { it.type == ContentType.ANIME.db }
         // Detaylı puanlar kişi bazlı title_scores tablosunda yaşar; eski başlık
         // kolonları (story/enjoyment...) artık yazılmıyor. Yine de geriye dönük
         // uyumluluk için ikisine de bakılır.
+        val titleById = titles.associateBy { it.id }
         val scoredTypeKeys = buildSet {
             addAll(
                 titleScores
@@ -177,7 +189,7 @@ object Achievements {
                         s.story != null || s.characters != null || s.visuals != null ||
                             s.audio != null || s.enjoyment != null
                     }
-                    .mapNotNull { s -> titles.firstOrNull { it.id == s.titleId }?.type },
+                    .mapNotNull { s -> titleById[s.titleId]?.type },
             )
             titles.forEach { t ->
                 if (t.story != null || t.enjoyment != null) add(t.type)
@@ -196,7 +208,7 @@ object Achievements {
         val rewatchCount = titles.sumOf { it.totalRewatches }
         val longSeriesCount = completed.count { it.type != ContentType.FILM.db && (it.totalEpisodes ?: 0) >= 100 }
         val separateWatchCount = titles.count { it.watchMode == WatchMode.AYRI.db }
-        val perfectScoreCount = titles.count { (it.score ?: 0.0) >= 9.95 }
+        val perfectScoreCount = titles.count { it.score == 10.0 }
         return CoupleStats(
             totalCompleted = completed.size,
             filmsCompleted = films,
@@ -204,11 +216,12 @@ object Achievements {
             animesCompleted = animes,
             animeEpisodes = animeEpisodes,
             scoredCount = titles.count { it.score != null },
-            // Eski tek-metin notlar + yeni tekil notlar birleşik sayılır
-            notesCount = (
-                titles.filter { !it.notes.isNullOrBlank() }.map { it.id } +
-                    titleNotes.map { it.titleId }
-                ).distinct().size,
+            // Not sayısı: tekil not satırları + henüz taşınmamış eski başlık notları.
+            // (Aynı başlığa birden çok not ayrı ayrı sayılır.)
+            notesCount = titleNotes.size + titles.count { t ->
+                !t.notes.isNullOrBlank() &&
+                    titleNotes.none { it.titleId == t.id && it.noteText == t.notes }
+            },
             streakDays = computeStreak(activeDays),
             togetherCompleted = together.size,
             allThreeTypes = minOf(films, dizis, animes),

@@ -1,7 +1,6 @@
 package com.sinop.minimuv.ui.theme
 
 import androidx.compose.material3.Typography
-import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -24,13 +23,6 @@ val Jakarta = FontFamily(
 // Eski adlar (eski ekranlar derlenmeye devam etsin) — serif başlık yerine sans
 val Fraunces = Jakarta
 val Baloo2 = Jakarta
-val Nunito = Jakarta
-
-// Tabular rakamlar: puan, sayaç, istatistik metinlerinde kullan
-fun TextStyle.tabular(): TextStyle = copy(
-    fontFeatureSettings = "tnum",
-    platformStyle = PlatformTextStyle(includeFontPadding = false),
-)
 
 val MinimuvTypography = Typography(
     displayLarge = TextStyle(

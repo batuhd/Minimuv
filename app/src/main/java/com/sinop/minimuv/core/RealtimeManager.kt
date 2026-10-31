@@ -47,4 +47,14 @@ object RealtimeManager {
         scope.launch { ch.subscribe() }
         channel = ch
     }
+
+    /** Supabase istemcisi yeniden yapılandırıldığında eski kanalı bırakıp
+     *  yeni istemciye abone olur; aksi halde kanal eski (kapanmış) istemciye
+     *  bağlı kalır ve olaylar sessizce durur (DS-BUG-21). */
+    fun onClientReplaced() {
+        val old = channel ?: return
+        channel = null
+        scope.launch { runCatching { old.unsubscribe() } }
+        start()
+    }
 }

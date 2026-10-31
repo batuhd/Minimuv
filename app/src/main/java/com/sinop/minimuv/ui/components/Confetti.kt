@@ -13,7 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -53,10 +55,14 @@ fun ConfettiOverlay(trigger: Int, modifier: Modifier = Modifier) {
         }
     }
     val progress = remember(trigger) { Animatable(0f) }
+    var finished by remember(trigger) { mutableStateOf(false) }
     LaunchedEffect(trigger) {
         progress.snapTo(0f)
         progress.animateTo(1f, tween(2600, easing = LinearEasing))
+        finished = true
     }
+    // Animasyon bitti: sonsuz salınımı ve her karede yeniden çizimi durdur.
+    if (finished) return
     val transition = rememberInfiniteTransition(label = "confetti")
     val swayT by transition.animateFloat(
         initialValue = 0f,
@@ -64,7 +70,7 @@ fun ConfettiOverlay(trigger: Int, modifier: Modifier = Modifier) {
         animationSpec = infiniteRepeatable(tween(900), RepeatMode.Reverse),
         label = "sway",
     )
-    Canvas(Modifier.fillMaxSize()) {
+    Canvas(modifier.fillMaxSize()) {
         val w = size.width
         val h = size.height
         val p = progress.value
@@ -85,12 +91,5 @@ fun ConfettiOverlay(trigger: Int, modifier: Modifier = Modifier) {
                 )
             }
         }
-    }
-}
-
-@Composable
-fun CelebrationOverlay(trigger: Int, emoji: String, modifier: Modifier = Modifier) {
-    Box(modifier.fillMaxSize()) {
-        ConfettiOverlay(trigger = trigger)
     }
 }

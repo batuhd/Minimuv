@@ -93,7 +93,7 @@ fun SvgPath(
     }
 }
 
-/** Bilinen tasarım path'leri (grunt: stroke; FLAME/STAR_FILL/HEART_FILL dolgulu). */
+/** Bilinen tasarım path'leri (grunt: stroke; STAR_FILL/HEART_FILL dolgulu). */
 object DcPaths {
     // Alt navigasyon
     const val LIBRARY = "M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z"
@@ -102,32 +102,18 @@ object DcPaths {
     const val HEART = "M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z"
 
     // Genel
-    const val GEAR = "M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1"
     const val PLUS = "M12 5v14M5 12h14"
-    const val MINUS = "M5 12h14"
     const val CHECK = "M5 12.5l4.5 4.5L19 7.5"
     const val CLOSE = "M6 6l12 12M18 6L6 18"
-    const val CHEVRON_UP = "M6 15l6-6 6 6"
     const val CHEVRON_DOWN = "M6 9l6 6 6-6"
-    const val BACK = "M15 5l-7 7 7 7"
-    const val PENCIL = "M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"
-    const val LOCK = "M6 11h12v9H6zM8.5 11V8a3.5 3.5 0 0 1 7 0v3"
-    const val FLAME = "M12 2c1 4 5 6 5 11a5 5 0 0 1-10 0c0-2 1-3 2-4 0 2 1 3 2 3 0-4-1-6 1-10z"
-    const val INFO = "M12 8v5M12 16.5v.01"
-    const val BOLT_REACT = "M13 3L5 14h6l-1 7 8-11h-6z"
     const val SPARKLE = "M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"
     const val FILTER = "M3 5h18l-7 8v5l-4 2v-7L3 5z"
-    const val DOTS = "M5 10.2a1.8 1.8 0 1 1 0 3.6a1.8 1.8 0 0 1 0-3.6M12 10.2a1.8 1.8 0 1 1 0 3.6a1.8 1.8 0 0 1 0-3.6M19 10.2a1.8 1.8 0 1 1 0 3.6a1.8 1.8 0 0 1 0-3.6"
 
     // Görünüm modları (Ayarlar)
     const val VIEW_COMPACT = "M4 6h16M4 12h16M4 18h16"
     const val VIEW_ROWS = "M4 5h4v6H4zM11 6h9M11 10h6M4 14h4v6H4zM11 15h9M11 19h6"
     const val VIEW_GRID3 = "M4 4h4v6H4zM10 4h4v6h-4zM16 4h4v6h-4zM4 13h4v6H4zM10 13h4v6h-4zM16 13h4v6h-4z"
     const val VIEW_GRID2 = "M4 4h7v10H4zM13 4h7v10h-7zM4 16h7v4H4zM13 16h7v4h-7z"
-
-    // Ses / titreşim
-    const val SOUND = "M4 9v6h4l5 4V5L8 9H4zM17 8a5 5 0 0 1 0 8"
-    const val VIBRATE = "M8 3h8v18H8zM4 8v8M20 8v8"
 }
 
 /** 44dp yuvarlak ikon düğmesi (zemin surface2). */
@@ -291,30 +277,6 @@ fun CollapsibleHeader(
             }
         }
         Text(trailing, style = MaterialTheme.typography.labelMedium, color = tk.textMuted)
-    }
-}
-
-/** 48×28 toggle: açık watching, kapalı surface3. */
-@Composable
-fun DcToggle(
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val tk = tokens()
-    Box(
-        modifier
-            .size(width = 48.dp, height = 28.dp)
-            .background(if (checked) tk.watching else tk.surface3, RoundedCornerShape(14.dp))
-            .clickable(MutableInteractionSource(), null, role = Role.Switch) { onCheckedChange(!checked) }
-            .padding(horizontal = 3.dp),
-        contentAlignment = if (checked) Alignment.CenterEnd else Alignment.CenterStart,
-    ) {
-        Box(
-            Modifier
-                .size(22.dp)
-                .background(if (checked) tk.bg else Color(0xFF8A8A98), CircleShape),
-        )
     }
 }
 

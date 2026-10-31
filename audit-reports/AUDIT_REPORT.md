@@ -1,4 +1,4 @@
-# Minimuv — Kapsamlı Kod Denetimi Raporu
+ #  Minimuv — Kapsamlı Kod Denetimi Raporu
 
 - **Tarih:** 2026-10-30
 - **Kapsam:** `app/` (Kotlin/Compose), `supabase/` (SQL + Edge Function), Gradle yapılandırması, manifest/kaynaklar, dokümantasyon

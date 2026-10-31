@@ -35,9 +35,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import coil3.compose.AsyncImage
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.Title
@@ -47,7 +51,6 @@ import com.sinop.minimuv.data.WatchStatus
 import com.sinop.minimuv.ui.theme.Gold
 import com.sinop.minimuv.ui.theme.MidnightCard
 import com.sinop.minimuv.ui.theme.MidnightElevated
-import com.sinop.minimuv.ui.theme.TextSecondary
 import com.sinop.minimuv.ui.theme.icons.EmojiText
 import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
 import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
@@ -66,12 +69,18 @@ fun WrappedScreen(onBack: () -> Unit) {
 
     LaunchedEffect(retryTick) {
         loadError = null
-        runCatching { repo.getTitles() to repo.getWatchLog() }
-            .onSuccess {
-                data = it
-                year = LocalDate.now().year.coerceAtMost(year)
+        try {
+            data = coroutineScope {
+                val titlesAsync = async { repo.getTitlesLite() }
+                val logAsync = async { repo.getWatchLog() }
+                titlesAsync.await() to logAsync.await()
             }
-            .onFailure { loadError = it.message ?: "Bilinmeyen hata" }
+            year = LocalDate.now().year.coerceAtMost(year)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            loadError = e.message ?: "Bilinmeyen hata"
+        }
     }
 
     Box(
@@ -94,13 +103,15 @@ fun WrappedScreen(onBack: () -> Unit) {
                 }
                 Text("Yıl Özetimiz", style = MaterialTheme.typography.titleLarge, color = Color.White, fontWeight = FontWeight.Bold)
                 Spacer(Modifier.weight(1f))
-                IconButton(onClick = {
-                    year = (year - 1).coerceAtLeast(2000)
-                }) { Text("◀", color = Color.White.copy(alpha = 0.7f)) }
+                IconButton(
+                    onClick = { year = (year - 1).coerceAtLeast(2000) },
+                    modifier = Modifier.semantics { contentDescription = "Önceki yıl" },
+                ) { Text("◀", color = Color.White.copy(alpha = 0.7f)) }
                 Text("$year", style = MaterialTheme.typography.titleMedium, color = Color.White, fontWeight = FontWeight.Bold)
-                IconButton(onClick = {
-                    year = (year + 1).coerceAtMost(LocalDate.now().year)
-                }) { Text("▶", color = Color.White.copy(alpha = 0.7f)) }
+                IconButton(
+                    onClick = { year = (year + 1).coerceAtMost(LocalDate.now().year) },
+                    modifier = Modifier.semantics { contentDescription = "Sonraki yıl" },
+                ) { Text("▶", color = Color.White.copy(alpha = 0.7f)) }
             }
 
             when {
@@ -184,7 +195,8 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
 
     val dailyEpisodes = yearLog.groupBy { it.date }
         .mapValues { it.value.sumOf { e -> e.episodesWatched } }
-    val longestBinge = dailyEpisodes.maxByOrNull { it.value }
+    // 0 bölümlük günü "En Uzun Binge" yapma (BUG-062).
+    val longestBinge = dailyEpisodes.filterValues { it > 0 }.maxByOrNull { it.value }
 
     // ── Yılın en değerlileri (top 3) ───────────────────────────────
     val top3 = completedThisYear.sortedWith(
@@ -193,10 +205,13 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
     ).take(3)
 
     // ── Aylık aktivite (12 ay, izlenen bölüm) ─────────────────────
-    val monthlyEpisodes = (1..12).map { month ->
-        val key = "%02d".format(month)
-        yearLog.filter { it.date.substring(5, 7) == key }.sumOf { it.episodesWatched }
+    // Bozuk/ISO olmayan tarihler ekranı çökertmesin (BUG-063).
+    val monthCounts = IntArray(12)
+    yearLog.forEach { entry ->
+        val month = runCatching { LocalDate.parse(entry.date).monthValue }.getOrNull()
+        if (month != null && month in 1..12) monthCounts[month - 1] += entry.episodesWatched
     }
+    val monthlyEpisodes = monthCounts.toList()
     val maxMonth = monthlyEpisodes.maxOrNull() ?: 1
 
     // ── Tür dağılımı ──────────────────────────────────────────────
@@ -219,7 +234,10 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
     val firstTitle = startedThisYear.minByOrNull { it.startDate ?: it.finishDate ?: "9999" }
     val lastTitle = startedThisYear.maxByOrNull { it.startDate ?: it.finishDate ?: "" }
 
-    val favorites = completedThisYear.filter { (it.score ?: 0.0) >= 9.0 }.take(5)
+    val favorites = completedThisYear
+        .filter { (it.score ?: 0.0) >= 9.0 }
+        .sortedByDescending { it.score ?: 0.0 }
+        .take(5)
 
     Column(
         Modifier
@@ -274,7 +292,7 @@ private fun WrappedBody(pair: Pair<List<Title>, List<WatchLog>>, year: Int) {
         }
         Spacer(Modifier.height(10.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            StatCard("⏱️", "${totalHours}h", "Ekran Saati", Modifier.weight(1f))
+            StatCard("⏱️", "${totalHours}sa", "Ekran Saati", Modifier.weight(1f))
             StatCard("🌪️", "${longestBinge?.value ?: 0}", "En Uzun Binge", Modifier.weight(1f))
         }
 

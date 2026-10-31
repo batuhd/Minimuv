@@ -55,22 +55,8 @@ fun ProfileSelectScreen(
 
     LaunchedEffect(Unit) {
         runCatching { repo.getProfiles() }
-            .onSuccess {
-                if (it.isNullOrEmpty()) {
-                    profiles = listOf(
-                        Profile(id = "van-id", name = "Van", emoji = "🌊", avatarColor = "#4EA8DE"),
-                        Profile(id = "sinop-id", name = "Sinop", emoji = "🦜", avatarColor = "#FF8FA3"),
-                    )
-                } else {
-                    profiles = it
-                }
-            }
-            .onFailure {
-                profiles = listOf(
-                    Profile(id = "van-id", name = "Van", emoji = "🌊", avatarColor = "#4EA8DE"),
-                    Profile(id = "sinop-id", name = "Sinop", emoji = "🦜", avatarColor = "#FF8FA3"),
-                )
-            }
+            .onSuccess { profiles = it }
+            .onFailure { error = it.message ?: "Bağlantı kurulamadı." }
     }
 
     Column(
@@ -148,7 +134,7 @@ fun ProfileSelectScreen(
                     Column {
                         Text(profile.displayName, style = MaterialTheme.typography.titleLarge)
                         Text(
-                            if (profile.name.lowercase() == "sinop") "Memleketim" else "Memleketim",
+                            "Memleketim",
                             style = MaterialTheme.typography.bodySmall,
                             color = TextSecondary,
                         )

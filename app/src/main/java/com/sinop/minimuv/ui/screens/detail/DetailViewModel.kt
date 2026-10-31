@@ -20,6 +20,8 @@ import com.sinop.minimuv.data.WatchMode
 import com.sinop.minimuv.data.WatchStatus
 import com.sinop.minimuv.ui.screens.add.DraftHolder
 import kotlinx.coroutines.FlowPreview
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.filter
@@ -42,6 +44,7 @@ class DetailViewModel : ViewModel() {
     val saving = MutableStateFlow(false)
 
     private var loadedId: String? = null
+    private var detailsLoadedFor: String? = null
 
     fun load(id: String) {
         if (loadedId == id) return
@@ -79,21 +82,34 @@ class DetailViewModel : ViewModel() {
 
     private suspend fun reload(id: String) {
         try {
-            title.value = repo.getTitle(id)
-            profiles.value = profileRepo.getProfiles()
-            progress.value = repo.getEpisodeProgress(id)
-            notes.value = repo.getEpisodeNotes(id)
-            scores.value = repo.getTitleScores(id)
-            titleNotes.value = runCatching { repo.getTitleNotes(id) }.getOrDefault(emptyList())
+            // Bağımsız sorgular paralel; toplam süre en yavaş sorguya bağlı (DS-PERF-08).
+            coroutineScope {
+                val titleDeferred = async { repo.getTitle(id) }
+                val profilesDeferred = async { profileRepo.getProfiles() }
+                val progressDeferred = async { repo.getEpisodeProgress(id) }
+                val notesDeferred = async { repo.getEpisodeNotes(id) }
+                val scoresDeferred = async { repo.getTitleScores(id) }
+                val titleNotesDeferred = async {
+                    runCatching { repo.getTitleNotes(id) }.getOrDefault(emptyList())
+                }
+                title.value = titleDeferred.await()
+                profiles.value = profilesDeferred.await()
+                progress.value = progressDeferred.await()
+                notes.value = notesDeferred.await()
+                scores.value = scoresDeferred.await()
+                titleNotes.value = titleNotesDeferred.await()
+            }
             // Eski kayıtlardan kalan bozuk ortalamaları kendiliğinden düzelt
             runCatching { repo.refreshCoupleScore(id) }
             // MAL / TMDB zengin detay (puan, tür, oyuncular, stüdyolar, fragman)
+            // Aynı başlık için her realtime yenilemesinde tekrar çekilmez.
             val t = title.value
-            if (t?.externalId != null) {
+            if (t?.externalId != null && detailsLoadedFor != t.externalId) {
                 viewModelScope.launch {
                     details.value = runCatching {
                         SearchApi.details(ContentType.fromDb(t.type), t.externalId)
                     }.getOrNull()
+                    if (details.value != null) detailsLoadedFor = t.externalId
                 }
             }
             error.value = null
@@ -136,21 +152,8 @@ class DetailViewModel : ViewModel() {
         }
     }
 
-    fun insert(t: Title, onDone: () -> Unit) {
-        viewModelScope.launch {
-            saving.value = true
-            runCatching { repo.insert(t) }
-                .onSuccess {
-                    DraftHolder.draft = null
-                    onDone()
-                }
-                .onFailure { error.value = it.message }
-            saving.value = false
-        }
-    }
-
     fun update(id: String, changes: Map<String, Any?>, onDone: () -> Unit) {
-        android.util.Log.d("MinimuvDetail", "update id=$id changes=$changes")
+        android.util.Log.d("MinimuvDetail", "update id=$id keys=${changes.keys}")
         viewModelScope.launch {
             saving.value = true
             runCatching { repo.update(id, changes) }
@@ -181,7 +184,7 @@ class DetailViewModel : ViewModel() {
         completionLog: Pair<Int, String>? = null,
         onDone: () -> Unit,
     ) {
-        android.util.Log.d("MinimuvDetail", "updateWithScore id=$id changes=$changes score=${score?.score} logDelta=$watchLogDelta")
+        android.util.Log.d("MinimuvDetail", "updateWithScore id=$id keys=${changes.keys} logDelta=$watchLogDelta")
         viewModelScope.launch {
             saving.value = true
             runCatching {
@@ -245,7 +248,7 @@ class DetailViewModel : ViewModel() {
             // Çift kayıt koruması: aynı harici id (ya da manuel girişte aynı isim)
             // zaten ekliyse kullanıcıya anlaşılır hata göster.
             val duplicate = runCatching {
-                val existing = repo.getTitles()
+                val existing = repo.getTitlesLite()
                 if (t.externalId != null) {
                     existing.firstOrNull { it.type == t.type && it.externalId == t.externalId }
                 } else {
@@ -291,6 +294,7 @@ class DetailViewModel : ViewModel() {
                     repo.refreshCoupleScore(t.id)
                 }
             }.onSuccess {
+                DraftHolder.draft = null
                 // Rozetleri kayıttan hemen sonra değerlendir
                 launch { com.sinop.minimuv.data.AchievementChecker.checkAndUnlock(repo) }
                 onDone()
@@ -305,13 +309,16 @@ class DetailViewModel : ViewModel() {
 
     fun delete(id: String, onDone: () -> Unit) {
         viewModelScope.launch {
-            runCatching { repo.delete(id) }.onSuccess { onDone() }
+            runCatching { repo.delete(id) }
+                .onSuccess { onDone() }
+                .onFailure { error.value = it.message }
         }
     }
 
     fun setProgress(titleId: String, profileId: String, episode: Int, delta: Int) {
         viewModelScope.launch {
             runCatching { repo.setEpisodeProgress(titleId, profileId, episode) }
+                .onFailure { error.value = it.message }
             if (delta > 0) {
                 runCatching {
                     repo.insertWatchLog(
@@ -322,37 +329,16 @@ class DetailViewModel : ViewModel() {
                             episodesWatched = delta,
                         )
                     )
-                }
+                }.onFailure { error.value = it.message }
             }
-        }
-    }
-
-    fun addNote(note: EpisodeNote, onDone: () -> Unit) {
-        viewModelScope.launch {
-            runCatching { repo.insertEpisodeNote(note) }
-                .onSuccess { onDone() }
-                .onFailure { error.value = it.message }
         }
     }
 
     fun deleteNote(id: String) {
         viewModelScope.launch {
             runCatching { repo.deleteEpisodeNote(id) }
+                .onFailure { error.value = it.message }
         }
     }
 
-    fun saveMyScore(titleId: String, score: TitleScore, onDone: () -> Unit) {
-        viewModelScope.launch {
-            saving.value = true
-            runCatching {
-                repo.upsertTitleScore(score)
-                repo.refreshCoupleScore(titleId)
-            }.onSuccess { onDone() }
-                .onFailure {
-                    android.util.Log.e("MinimuvDetail", "score FAIL", it)
-                    error.value = it.message
-                }
-            saving.value = false
-        }
-    }
 }

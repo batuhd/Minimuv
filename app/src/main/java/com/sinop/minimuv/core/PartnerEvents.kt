@@ -3,7 +3,9 @@ package com.sinop.minimuv.core
 import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.NotificationCompat
@@ -33,27 +35,26 @@ object NotificationHelper {
         )
     }
 
-    fun maybeRequestPermission(context: Context) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            val has = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-                PackageManager.PERMISSION_GRANTED
-            if (!has) {
-                // Aktivite üzerinden istenir; ana akışta yapılır.
-            }
-        }
-    }
-
     fun show(context: Context, title: String, text: String, id: Int, channel: String = CHANNEL_ID) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
         ) return
+        val openApp = PendingIntent.getActivity(
+            context,
+            0,
+            Intent(context, com.sinop.minimuv.MainActivity::class.java).apply {
+                flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP
+            },
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
         val notification = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_launcher_foreground)
             .setContentTitle(title)
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setContentIntent(openApp)
             .setAutoCancel(true)
             .build()
         runCatching {
@@ -76,6 +77,11 @@ class PartnerEventWatcher(
     suspend fun init() {
         // Uygulama kapalıyken gelen yeni olaylar açılır açılmaz bildirilir
         PingNotifier.process(context, profileId)
+        TitleTransitionTracker.diff(context, profileId, runCatching { repo.getTitlesLite() }.getOrDefault(emptyList()))
+            .forEach { (title, text) ->
+                NotificationHelper.show(context, title, text, (title.hashCode() + System.currentTimeMillis()).toInt())
+            }
+        MilestoneTracker.process(context, profileId)
         ScoreNotifier.process(context, profileId)
         NoteNotifier.process(context, profileId, NoteKind.TITLE)
         NoteNotifier.process(context, profileId, NoteKind.EPISODE)
@@ -87,14 +93,20 @@ class PartnerEventWatcher(
         scope.launch {
             RealtimeManager.events.collect { table ->
                 android.util.Log.d("MinimuvWatcher", "event: $table")
-                when (table) {
-                    "titles" -> onTitlesChanged()
-                    "episode_progress_per_profile" -> onProgressChanged()
-                    "partner_pings" -> onNewPings()
-                    "title_scores" -> onScoresChanged()
-                    "title_notes" -> onTitleNotesChanged()
-                    "episode_notes" -> onEpisodeNotesChanged()
-                    "profiles" -> Unit // profil yenileme ekranlarda yapılır
+                // DataStore/ağ hatası collect korutinini öldürüp uygulamayı çökertmesin.
+                try {
+                    when (table) {
+                        "titles" -> onTitlesChanged()
+                        "episode_progress_per_profile" -> onProgressChanged()
+                        "partner_pings" -> onNewPings()
+                        "title_scores" -> onScoresChanged()
+                        "title_notes" -> onTitleNotesChanged()
+                        "episode_notes" -> onEpisodeNotesChanged()
+                        "profiles" -> Unit // profil yenileme ekranlarda yapılır
+                    }
+                } catch (e: Exception) {
+                    if (e is kotlinx.coroutines.CancellationException) throw e
+                    android.util.Log.e("MinimuvWatcher", "olay işlenemedi: $table", e)
                 }
             }
         }
@@ -118,7 +130,7 @@ class PartnerEventWatcher(
 
     private suspend fun onTitlesChanged() {
         try {
-            val current = repo.getTitles()
+            val current = repo.getTitlesLite()
             TitleTransitionTracker.diff(context, profileId, current).forEach { (title, text) ->
                 notify(title, text)
             }

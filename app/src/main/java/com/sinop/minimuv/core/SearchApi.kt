@@ -21,6 +21,8 @@ import kotlinx.coroutines.delay
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 
 data class SearchResult(
     val externalId: String,
@@ -59,7 +61,12 @@ object TextNormalizer {
 
     /** Küçük harf + Türkçe/aksan katlama + noktalama temizliği + boşluk sıkıştırma. */
     fun fold(input: String): String {
-        val folded = input.lowercase().map { foldMap[it] ?: it }.joinToString("")
+        // 'İ'.lowercase() "i" + birleşik nokta (U+0307) üretir; nokta sonradan
+        // boşluğa dönüşüp kelimeyi bölerdi. Önce doğrudan 'i'ye çevir, kalan
+        // birleşik işaretleri at.
+        val lowered = input.replace('İ', 'i').lowercase()
+            .replace(Regex("\\p{Mn}+"), "")
+        val folded = lowered.map { foldMap[it] ?: it }.joinToString("")
         return folded
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
@@ -159,6 +166,8 @@ data class PersonWork(
     val year: String? = null,
     val posterUrl: String? = null,
     val role: String? = null,
+    /** TMDB tarafında cast/crew ayrımı; AniList'te karakter rolü. */
+    val creditType: String? = null,
 )
 
 /** Kişi sayfası: biyografi + yapımları. */
@@ -256,7 +265,8 @@ object SearchApi {
         val strategies = buildList {
             add(raw to lang)
             if (normalized.isNotBlank() && normalized != raw.lowercase()) add(normalized to lang)
-            if (altLang != lang) {
+            // AniList sorgusu dil bağımsızdır; anime için alt-dil stratejisi gereksiz ağ turu.
+            if (type != ContentType.ANIME && altLang != lang) {
                 add(raw to altLang)
                 if (normalized.isNotBlank() && normalized != raw.lowercase()) add(normalized to altLang)
             }
@@ -277,16 +287,23 @@ object SearchApi {
 
         val merged = mutableListOf<SearchResult>()
         val seen = mutableSetOf<String>()
+        var hadSuccess = false
+        var lastError: Exception? = null
         for ((index, strategy) in strategies.withIndex()) {
             val (q, qLang) = strategy
-            val page = runCatching {
+            val page = try {
                 searchWithRetry {
                     when (type) {
                         ContentType.ANIME -> searchAniList(q, qLang)
                         else -> searchTmdb(type, q, qLang)
                     }
-                }
-            }.getOrDefault(emptyList())
+                }.also { hadSuccess = true }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e // İptal edilen arama önbelleğe/UI'ya yazmaz
+            } catch (e: Exception) {
+                lastError = e
+                emptyList()
+            }
             for (result in page) {
                 if (seen.add(result.externalId)) merged += result
             }
@@ -295,6 +312,9 @@ object SearchApi {
         }
 
         val ranked = rankResults(merged, normalized)
+        // Hiçbir strateji başarılı olamadıysa "sonuç yok" diye önbelleğe yazma;
+        // çağırana hatayı ilet (AddScreen "Bağlantı sorunu" gösterir).
+        if (!hadSuccess && lastError != null) throw lastError!!
         synchronized(cache) { cache[key] = ranked }
         return ranked
     }
@@ -305,10 +325,13 @@ object SearchApi {
         val key = "all|${lang.name}|${query.trim().lowercase()}"
         synchronized(cache) { cache[key] }?.let { return it }
         val results = coroutineScope {
-            val film = async { runCatching { search(ContentType.FILM, query, lang) }.getOrDefault(emptyList()) }
-            val dizi = async { runCatching { search(ContentType.DIZI, query, lang) }.getOrDefault(emptyList()) }
-            val anime = async { runCatching { search(ContentType.ANIME, query, lang) }.getOrDefault(emptyList()) }
-            film.await() + dizi.await() + anime.await()
+            val film = async { runCatching { search(ContentType.FILM, query, lang) } }
+            val dizi = async { runCatching { search(ContentType.DIZI, query, lang) } }
+            val anime = async { runCatching { search(ContentType.ANIME, query, lang) } }
+            val all = listOf(film.await(), dizi.await(), anime.await())
+            // Üçü de başarısızsa "sonuç yok" deme; hatayı çağırana ilet.
+            if (all.all { it.isFailure }) throw all.first().exceptionOrNull()!!
+            all.flatMap { it.getOrDefault(emptyList()) }
         }.distinctBy { it.type.db to it.externalId }
         val ranked = rankResults(results, TextNormalizer.fold(query.trim())).take(30)
         synchronized(cache) { cache[key] = ranked }
@@ -358,14 +381,10 @@ object SearchApi {
                   }
                 }
             """.trimIndent()
-            val response = client.post("https://graphql.anilist.co") {
-                contentType(KtorContentType.Application.Json)
-                header("Accept", "application/json")
-                header("Origin", "https://anilist.co")
-                header("Referer", "https://anilist.co/")
-                header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-                setBody(AniListRequest(graphQl, mapOf("search" to query)))
-            }.body<AniListStudioSearchResponse>()
+            val response = anilistPost<AniListStudioSearchResponse>(
+                graphQl,
+                mapOf("search" to JsonPrimitive(query)),
+            )
             response.data?.page?.studios.orEmpty().forEach { s ->
                 if (seen.add("anime${s.id}")) {
                     results += StudioSearchResult(
@@ -410,14 +429,10 @@ object SearchApi {
                   }
                 }
             """.trimIndent()
-            val response = client.post("https://graphql.anilist.co") {
-                contentType(KtorContentType.Application.Json)
-                header("Accept", "application/json")
-                header("Origin", "https://anilist.co")
-                header("Referer", "https://anilist.co/")
-                header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-                setBody(AniListRequest(graphQl, mapOf("search" to query)))
-            }.body<AniListCharacterSearchResponse>()
+            val response = anilistPost<AniListCharacterSearchResponse>(
+                graphQl,
+                mapOf("search" to JsonPrimitive(query)),
+            )
             response.data?.page?.characters.orEmpty().forEach { ch ->
                 if (seen.add("anime${ch.id}")) {
                     results += PersonSearchResult(
@@ -446,8 +461,39 @@ object SearchApi {
             .map { it.first }
     }
 
+    /** AniList GraphQL POST kurulumu — tüm çağrılar tek yerden geçer. */
+    private suspend inline fun <reified T> anilistPost(
+        graphQl: String,
+        variables: Map<String, JsonElement>,
+    ): T = client.post("https://graphql.anilist.co") {
+        contentType(KtorContentType.Application.Json)
+        header("Accept", "application/json")
+        // Cloudflare tarayıcı dışı istekleri engelliyor — tarayıcı başlıkları şart
+        header("Origin", "https://anilist.co")
+        header("Referer", "https://anilist.co/")
+        header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+        setBody(AniListRequest(graphQl, variables))
+    }.body<T>()
+
+    /** AniList başlık alanlarından görüntüleme diline göre (başlık, alternatif) seçer. */
+    private fun anilistTitle(
+        title: AniListTitle?,
+        lang: TitleLanguage,
+    ): Pair<String, String?> {
+        val primary = when (lang) {
+            TitleLanguage.EN -> title?.english ?: title?.romaji
+            TitleLanguage.TR -> title?.romaji ?: title?.english
+        } ?: "?"
+        val alt = when (lang) {
+            TitleLanguage.EN -> title?.romaji
+            TitleLanguage.TR -> title?.english
+        }?.takeIf { it.isNotBlank() && !it.equals(primary, ignoreCase = true) }
+        return primary to alt
+    }
+
     /** Geçici hatalarda üstel beklemeyle yeniden dener (toplam 3 deneme).
-     *  429 rate-limit durumunda Retry-After'a saygı duyar. */
+     *  429 rate-limit durumunda Retry-After'a saygı duyar. Kalıcı 4xx hataları
+     *  (400..499, 429 hariç) yeniden denemeden hemen fırlatır. */
     private suspend fun <T> searchWithRetry(block: suspend () -> T): T {
         var lastError: Exception? = null
         repeat(3) { attempt ->
@@ -457,8 +503,9 @@ object SearchApi {
                 throw e
             } catch (e: Exception) {
                 lastError = e
-                val isRateLimit = e.message?.contains("429") == true ||
-                    (e as? io.ktor.client.plugins.ClientRequestException)?.response?.status?.value == 429
+                val status = (e as? io.ktor.client.plugins.ClientRequestException)?.response?.status?.value
+                if (status != null && status in 400..499 && status != 429) throw e
+                val isRateLimit = e.message?.contains("429") == true || status == 429
                 if (attempt < 2) {
                     val base = if (isRateLimit) 2000L else 600L
                     delay(base * (attempt + 1))
@@ -494,29 +541,17 @@ object SearchApi {
               }
             }
         """.trimIndent()
-        val response = client.post("https://graphql.anilist.co") {
-            contentType(KtorContentType.Application.Json)
-            header("Accept", "application/json")
-            // Cloudflare tarayıcı dışı istekleri engelliyor — tarayıcı başlıkları şart
-            header("Origin", "https://anilist.co")
-            header("Referer", "https://anilist.co/")
-            header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-            setBody(AniListRequest(graphQl, mapOf("search" to query)))
-        }.body<AniListResponse>()
+        val response = anilistPost<AniListResponse>(
+            graphQl,
+            mapOf("search" to JsonPrimitive(query)),
+        )
         // GraphQL hataları HTTP 200 ile dönebilir — sessizce boş liste döndürme!
         val firstError = response.errors.firstOrNull()?.message
         if (!firstError.isNullOrBlank()) {
             throw IllegalStateException("AniList: $firstError")
         }
         return response.data?.page?.media.orEmpty().mapNotNull { media ->
-            val title = when (lang) {
-                TitleLanguage.EN -> media.title.english ?: media.title.romaji
-                TitleLanguage.TR -> media.title.romaji ?: media.title.english
-            } ?: "?"
-            val alt = when (lang) {
-                TitleLanguage.EN -> media.title.romaji
-                TitleLanguage.TR -> media.title.english
-            }?.takeIf { it.isNotBlank() && !it.equals(title, ignoreCase = true) }
+            val (title, alt) = anilistTitle(media.title, lang)
             SearchResult(
                 externalId = media.id.toString(),
                 type = ContentType.ANIME,
@@ -535,6 +570,10 @@ object SearchApi {
 
     suspend fun searchTmdb(type: ContentType, query: String, lang: TitleLanguage): List<SearchResult> {
         if (query.isBlank()) return emptyList()
+        if (TMDB_API_KEY.isBlank()) {
+            // API'siz GitHub derlemesi: sessiz boş sonuç yerine açık hata.
+            error("TMDB araması bu sürümde kapalı (API anahtarı yok).")
+        }
         val endpoint = if (type == ContentType.FILM) "search/movie" else "search/tv"
         val response = client.get("https://api.themoviedb.org/3/$endpoint") {
             parameter("api_key", TMDB_API_KEY)
@@ -729,14 +768,10 @@ object SearchApi {
               }
             }
         """.trimIndent()
-        val response = client.post("https://graphql.anilist.co") {
-            contentType(KtorContentType.Application.Json)
-            header("Accept", "application/json")
-            header("Origin", "https://anilist.co")
-            header("Referer", "https://anilist.co/")
-            header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-            setBody(AniListRequest(graphQl, mapOf("id" to externalId)))
-        }.body<AniListDetailsResponse>()
+        val response = anilistPost<AniListDetailsResponse>(
+            graphQl,
+            mapOf("id" to (externalId.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(externalId))),
+        )
         val media = response.data?.media ?: throw IllegalStateException("AniList detayı boş")
 
         val formatTr = when (media.format) {
@@ -873,6 +908,7 @@ object SearchApi {
                         year = (c.releaseDate ?: c.firstAirDate)?.take(4),
                         posterUrl = c.posterPath?.let { "https://image.tmdb.org/t/p/w185$it" },
                         role = c.character,
+                        creditType = "cast",
                     ),
                 )
             }
@@ -886,6 +922,7 @@ object SearchApi {
                         year = (c.releaseDate ?: c.firstAirDate)?.take(4),
                         posterUrl = c.posterPath?.let { "https://image.tmdb.org/t/p/w185$it" },
                         role = c.job,
+                        creditType = "crew",
                     ),
                 )
             }
@@ -905,7 +942,7 @@ object SearchApi {
                 name { full }
                 image { large }
                 description(asHtml: false)
-                media(perPage: 50) {
+                media(perPage: 50, type: ANIME) {
                   edges {
                     characterRole
                     node {
@@ -920,14 +957,10 @@ object SearchApi {
               }
             }
         """.trimIndent()
-        val response = client.post("https://graphql.anilist.co") {
-            contentType(KtorContentType.Application.Json)
-            header("Accept", "application/json")
-            header("Origin", "https://anilist.co")
-            header("Referer", "https://anilist.co/")
-            header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-            setBody(AniListRequest(graphQl, mapOf("id" to characterId)))
-        }.body<AniListPersonResponse>()
+        val response = anilistPost<AniListPersonResponse>(
+            graphQl,
+            mapOf("id" to (characterId.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(characterId))),
+        )
         val character = response.data?.character ?: throw IllegalStateException("AniList karakteri boş")
         val works = character.media?.edges.orEmpty().mapNotNull { edge ->
             val node = edge.node ?: return@mapNotNull null
@@ -941,7 +974,7 @@ object SearchApi {
             }
             PersonWork(
                 externalId = node.id.toString(),
-                type = if (node.type == "MOVIE") ContentType.FILM.db else ContentType.ANIME.db,
+                type = ContentType.ANIME.db,
                 title = title,
                 titleEn = titleEn,
                 year = node.seasonYear?.toString(),
@@ -1004,6 +1037,9 @@ object SearchApi {
     }
 
     private suspend fun anilistStudioDetails(studioId: String, lang: TitleLanguage): StudioDetails {
+        // AniList'te Studio.media "type" argümanı kabul etmez; eskiden
+        // type: ANIME gönderiliyordu ve API GraphQL hatası döndürünce sayfa
+        // "Bu stüdyo bulunamadı" gösteriyordu (BUG-086).
         val graphQl = """
             query (${'$'}id: Int) {
               Studio(id: ${'$'}id) {
@@ -1022,14 +1058,10 @@ object SearchApi {
               }
             }
         """.trimIndent()
-        val response = client.post("https://graphql.anilist.co") {
-            contentType(KtorContentType.Application.Json)
-            header("Accept", "application/json")
-            header("Origin", "https://anilist.co")
-            header("Referer", "https://anilist.co/")
-            header("User-Agent", "Mozilla/5.0 (Linux; Android 13) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
-            setBody(AniListRequest(graphQl, mapOf("id" to studioId)))
-        }.body<AniListStudioResponse>()
+        val response = anilistPost<AniListStudioResponse>(
+            graphQl,
+            mapOf("id" to (studioId.toIntOrNull()?.let { JsonPrimitive(it) } ?: JsonPrimitive(studioId))),
+        )
         val studio = response.data?.studio ?: throw IllegalStateException("AniList stüdyosu boş")
         val works = studio.media?.edges.orEmpty().mapNotNull { edge ->
             val node = edge.node ?: return@mapNotNull null
@@ -1043,7 +1075,7 @@ object SearchApi {
             }
             PersonWork(
                 externalId = node.id.toString(),
-                type = if (node.type == "MOVIE") ContentType.FILM.db else ContentType.ANIME.db,
+                type = ContentType.ANIME.db,
                 title = title,
                 titleEn = titleEn,
                 year = node.seasonYear?.toString(),
@@ -1057,7 +1089,7 @@ object SearchApi {
 // ── DTO'lar ──────────────────────────────────────────────────────────────
 
 @Serializable
-private data class AniListRequest(val query: String, val variables: Map<String, String>)
+private data class AniListRequest(val query: String, val variables: Map<String, JsonElement>)
 
 @Serializable
 private data class AniListResponse(val data: AniListData? = null, val errors: List<AniListError> = emptyList())

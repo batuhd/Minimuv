@@ -2,6 +2,7 @@ package com.sinop.minimuv.ui.screens.profile
 
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -27,12 +29,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -48,6 +55,9 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -66,8 +76,7 @@ import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
-import com.sinop.minimuv.ui.theme.MidnightCard
-import com.sinop.minimuv.ui.theme.TextSecondary
+import com.sinop.minimuv.ui.components.DcButton
 import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import com.sinop.minimuv.ui.theme.tokens
 import java.io.ByteArrayOutputStream
@@ -87,13 +96,9 @@ private val COLOR_CHOICES = listOf("#3D8BFF", "#9B5DE5", "#2ED573", "#FF6FA5", "
 fun ProfileScreen(
     settings: SettingsStore,
     onSwitchProfile: () -> Unit,
-    onOpenHeatmap: () -> Unit = {},
     onOpenWrapped: () -> Unit = {},
     onOpenBadges: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
-    onOpenTitle: (String) -> Unit = {},
-    onOpenPerson: (com.sinop.minimuv.core.PersonSource, String) -> Unit = { _, _ -> },
-    onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val tk = tokens()
@@ -101,15 +106,15 @@ fun ProfileScreen(
     val scope = rememberCoroutineScope()
     val repo = remember { ProfileRepository() }
     val titleRepo = remember { TitleRepository() }
-    val favRepo = remember { com.sinop.minimuv.data.FavoritesRepository() }
 
     var profiles by remember { mutableStateOf<List<Profile>>(emptyList()) }
     var stats by remember { mutableStateOf<CoupleStats?>(null) }
     var titles by remember { mutableStateOf<List<com.sinop.minimuv.data.Title>>(emptyList()) }
     var watchLogs by remember { mutableStateOf<List<com.sinop.minimuv.data.WatchLog>>(emptyList()) }
-    var savedFavorites by remember { mutableStateOf<List<com.sinop.minimuv.data.Favorite>>(emptyList()) }
     var editing by remember { mutableStateOf<Profile?>(null) }
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
+    var uploadingPhoto by remember { mutableStateOf(false) }
+    var editError by remember { mutableStateOf<String?>(null) }
 
     fun reload() {
         scope.launch {
@@ -118,14 +123,18 @@ fun ProfileScreen(
                 val t = titleRepo.getTitles()
                 val log = titleRepo.getWatchLog()
                 val sc = runCatching { titleRepo.getAllTitleScores() }.getOrDefault(emptyList())
-                val favs = runCatching { favRepo.getFavorites() }.getOrDefault(emptyList())
-                StatsBundle(p, t, log, sc) to favs
-            }.onSuccess { (bundle, favs) ->
+                val prog = runCatching { titleRepo.getAllEpisodeProgress() }.getOrDefault(emptyList())
+                val notes = runCatching { titleRepo.getAllTitleNotes() }.getOrDefault(emptyList())
+                StatsBundle(p, t, log, sc, prog, notes)
+            }.onSuccess { bundle ->
                 profiles = bundle.profiles
                 titles = bundle.titles
                 watchLogs = bundle.log
-                stats = Achievements.computeStats(bundle.titles, bundle.log, bundle.scores)
-                savedFavorites = favs
+                stats = Achievements.computeStats(
+                    bundle.titles, bundle.log, bundle.scores, bundle.notes, bundle.progress,
+                )
+            }.onFailure {
+                Log.w("ProfileScreen", "Profil verileri yüklenemedi", it)
             }
         }
     }
@@ -140,17 +149,30 @@ fun ProfileScreen(
 
     fun handlePickedImage(uri: android.net.Uri) {
         val target = editing ?: return
+        editError = null
+        uploadingPhoto = true
         scope.launch {
             try {
-                val bytes = decodeScaledJpeg(context, uri) ?: return@launch
+                val bytes = decodeScaledJpeg(context, uri)
+                if (bytes == null) {
+                    editError = "Fotoğraf okunamadı. Başka bir fotoğraf seç."
+                    return@launch
+                }
                 runCatching {
                     val url = repo.uploadAvatar(target.id, bytes)
                     repo.updateProfile(target.id, avatarUrl = url)
+                }.onSuccess {
+                    reload()
+                    editing = null
+                }.onFailure {
+                    Log.w("ProfileScreen", "Avatar yüklenemedi", it)
+                    editError = "Fotoğraf yüklenemedi. İnternetini kontrol edip tekrar dene."
                 }
-                reload()
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                Log.w("ProfileScreen", "Fotoğraf işlenemedi", t)
+                editError = "Fotoğraf işlenemedi. Tekrar dene."
             } finally {
-                editing = null
+                uploadingPhoto = false
             }
         }
     }
@@ -160,10 +182,9 @@ fun ProfileScreen(
     }
     val cropImage = rememberLauncherForActivityResult(CropImageContract()) { result ->
         pendingCropUri = null
+        // Kırpma iptal edilirse düzenleme ekranı açık kalsın; kullanıcı yeniden deneyebilsin.
         if (result.isSuccessful) {
-            result.uriContent?.let { handlePickedImage(it) } ?: run { editing = null }
-        } else {
-            editing = null
+            result.uriContent?.let { handlePickedImage(it) }
         }
     }
 
@@ -172,7 +193,6 @@ fun ProfileScreen(
 
     val myColor = myProfile?.avatarColor?.let { parseColorSafe(it) } ?: tk.van
     val partnerColor = partnerProfile?.avatarColor?.let { parseColorSafe(it) } ?: tk.sinop
-    val currentThemeMode by settings.themeMode.collectAsState(initial = "dark")
 
     // İstatistik Hesaplamaları
     val currentYear = LocalDate.now().year
@@ -224,19 +244,16 @@ fun ProfileScreen(
                 color = Color.White,
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                GlassCircleButton(onClick = {
-                    scope.launch {
-                        val nextMode = if (currentThemeMode == "light") "dark" else "light"
-                        settings.setThemeMode(nextMode)
-                    }
-                }) {
+                // Profiller arası hızlı geçiş: profil seçim ekranına döner.
+                GlassCircleButton(onClick = onSwitchProfile) {
                     Icon(
-                        MinimuvIcons.Dusk,
-                        contentDescription = "Tema",
+                        MinimuvIcons.People,
+                        contentDescription = "Profil değiştir",
                         tint = Color.White,
                         modifier = Modifier.size(20.dp),
                     )
                 }
+                // K4: açık tema geçici olarak kapalı — tema değiştirme düğmesi gizlendi.
                 GlassCircleButton(onClick = onOpenSettings) {
                     Icon(
                         MinimuvIcons.SettingsIcon,
@@ -255,8 +272,28 @@ fun ProfileScreen(
             myColor = myColor,
             partnerColor = partnerColor,
             streakDays = stats?.streakDays ?: 0,
-            onEditMyProfile = { editing = myProfile },
-            onEditPartnerProfile = { editing = partnerProfile },
+            onEditMyProfile = {
+                editError = null
+                editing = myProfile
+            },
+            onEditPartnerProfile = {
+                editError = null
+                editing = partnerProfile
+            },
+            onEditMyPhoto = {
+                editError = null
+                myProfile?.let {
+                    editing = it
+                    pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+            },
+            onEditPartnerPhoto = {
+                editError = null
+                partnerProfile?.let {
+                    editing = it
+                    pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                }
+            },
             onSwitchProfile = onSwitchProfile,
         )
 
@@ -368,24 +405,44 @@ fun ProfileScreen(
     }
 
     editing?.let { target ->
-        ProfileEditDialog(
+        ProfileEditSheet(
             profile = target,
-            onDismiss = { editing = null },
-            onSave = { name, emoji, color ->
+            uploading = uploadingPhoto,
+            error = editError,
+            onDismiss = { if (!uploadingPhoto) editing = null },
+            onSave = save@{ name, emoji, color ->
+                if (name.isBlank()) {
+                    editError = "İsim boş olamaz."
+                    return@save
+                }
+                editError = null
                 scope.launch {
-                    repo.updateProfile(target.id, name = name, emoji = emoji, avatarColor = color)
-                    reload()
-                    editing = null
+                    runCatching {
+                        repo.updateProfile(target.id, name = name, emoji = emoji, avatarColor = color)
+                    }.onSuccess {
+                        reload()
+                        editing = null
+                    }.onFailure {
+                        Log.w("ProfileScreen", "Profil kaydedilemedi", it)
+                        editError = "Kaydedilemedi. Bağlantını kontrol edip tekrar dene."
+                    }
                 }
             },
             onPickPhoto = {
+                editError = null
                 pickMedia.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
             },
             onRemovePhoto = {
+                editError = null
                 scope.launch {
-                    repo.updateProfile(target.id, clearAvatar = true)
-                    reload()
-                    editing = null
+                    runCatching { repo.updateProfile(target.id, clearAvatar = true) }
+                        .onSuccess {
+                            reload()
+                            editing = null
+                        }.onFailure {
+                            Log.w("ProfileScreen", "Avatar kaldırılamadı", it)
+                            editError = "Fotoğraf kaldırılamadı. Tekrar dene."
+                        }
                 }
             },
         )
@@ -403,6 +460,8 @@ private fun CoupleHeaderBanner(
     streakDays: Int,
     onEditMyProfile: () -> Unit,
     onEditPartnerProfile: () -> Unit,
+    onEditMyPhoto: () -> Unit,
+    onEditPartnerPhoto: () -> Unit,
     onSwitchProfile: () -> Unit,
 ) {
     val tk = tokens()
@@ -413,19 +472,27 @@ private fun CoupleHeaderBanner(
     ) {
         // Sol Profil
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .border(3.dp, myColor, CircleShape)
-                    .clickable(onClick = onEditMyProfile),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (myProfile != null) {
-                    AvatarView(profile = myProfile, size = 80.dp)
-                } else {
-                    Text("V", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+            Box {
+                Box(
+                    Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .border(3.dp, myColor, CircleShape)
+                        .clickable(role = Role.Button, onClick = onEditMyProfile)
+                        .semantics { contentDescription = "Profilini düzenle" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (myProfile != null) {
+                        AvatarView(profile = myProfile, size = 80.dp)
+                    } else {
+                        Text("V", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+                    }
                 }
+                EditBadge(
+                    modifier = Modifier.align(Alignment.BottomEnd),
+                    onClick = onEditMyPhoto,
+                    contentDescription = "Profil fotoğrafını değiştir",
+                )
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -466,19 +533,27 @@ private fun CoupleHeaderBanner(
 
         // Sağ Profil
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(
-                Modifier
-                    .size(80.dp)
-                    .clip(CircleShape)
-                    .border(3.dp, partnerColor, CircleShape)
-                    .clickable(onClick = onEditPartnerProfile),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (partnerProfile != null) {
-                    AvatarView(profile = partnerProfile, size = 80.dp)
-                } else {
-                    Text("S", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+            Box {
+                Box(
+                    Modifier
+                        .size(80.dp)
+                        .clip(CircleShape)
+                        .border(3.dp, partnerColor, CircleShape)
+                        .clickable(role = Role.Button, onClick = onEditPartnerProfile)
+                        .semantics { contentDescription = "Partner profilini düzenle" },
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (partnerProfile != null) {
+                        AvatarView(profile = partnerProfile, size = 80.dp)
+                    } else {
+                        Text("S", fontWeight = FontWeight.Bold, fontSize = 28.sp, color = Color.White)
+                    }
                 }
+                EditBadge(
+                    modifier = Modifier.align(Alignment.BottomEnd),
+                    onClick = onEditPartnerPhoto,
+                    contentDescription = "Partner fotoğrafını değiştir",
+                )
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -917,6 +992,8 @@ private data class StatsBundle(
     val titles: List<com.sinop.minimuv.data.Title>,
     val log: List<com.sinop.minimuv.data.WatchLog>,
     val scores: List<com.sinop.minimuv.data.TitleScore>,
+    val progress: List<com.sinop.minimuv.data.EpisodeProgress> = emptyList(),
+    val notes: List<com.sinop.minimuv.data.TitleNote> = emptyList(),
 )
 
 @Composable
@@ -936,6 +1013,9 @@ internal fun GlassCircleButton(onClick: () -> Unit, content: @Composable () -> U
 
 @Composable
 internal fun AvatarView(profile: Profile, size: Dp, onClick: (() -> Unit)? = null) {
+    // onClick yokken clickable EKLEME: devre dışı clickable dokunuşu yutuyor ve
+    // avatarın üstündeki "Profili düzenle" tıklamasının çalışmasını engelliyordu.
+    val clickMod = if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier
     if (profile.avatarUrl != null) {
         AsyncImage(
             model = profile.avatarUrl,
@@ -943,7 +1023,7 @@ internal fun AvatarView(profile: Profile, size: Dp, onClick: (() -> Unit)? = nul
             modifier = Modifier
                 .size(size)
                 .clip(CircleShape)
-                .clickable(enabled = onClick != null, onClick = onClick ?: {}),
+                .then(clickMod),
             contentScale = ContentScale.Crop,
         )
     } else {
@@ -952,7 +1032,7 @@ internal fun AvatarView(profile: Profile, size: Dp, onClick: (() -> Unit)? = nul
                 .size(size)
                 .clip(CircleShape)
                 .background(profile.avatarColor?.let { parseColorSafe(it) }?.copy(alpha = 0.25f) ?: Color(0xFF3A2F14))
-                .clickable(enabled = onClick != null, onClick = onClick ?: {}),
+                .then(clickMod),
             contentAlignment = Alignment.Center,
         ) {
             Text(profile.emoji ?: "😊", fontSize = (size.value * 0.45f).sp)
@@ -964,79 +1044,178 @@ internal fun parseColorSafe(hex: String): Color =
     runCatching { Color(android.graphics.Color.parseColor(hex)) }.getOrElse { Color(0xFF3D8BFF) }
 
 @Composable
-private fun ProfileEditDialog(
+private fun EditBadge(
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit,
+    contentDescription: String,
+) {
+    val tk = tokens()
+    Box(
+        modifier
+            .size(28.dp)
+            .clip(CircleShape)
+            .background(tk.surface2)
+            .border(2.dp, tk.bg, CircleShape)
+            .clickable(role = Role.Button, onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            MinimuvIcons.Camera,
+            contentDescription = null,
+            tint = tk.text,
+            modifier = Modifier.size(14.dp),
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable
+private fun ProfileEditSheet(
     profile: Profile,
+    uploading: Boolean,
+    error: String?,
     onDismiss: () -> Unit,
     onSave: (String, String, String) -> Unit,
     onPickPhoto: () -> Unit,
     onRemovePhoto: () -> Unit,
 ) {
-    var name by remember { mutableStateOf(profile.displayName) }
-    var emoji by remember { mutableStateOf(profile.emoji ?: "😊") }
-    var color by remember { mutableStateOf(profile.avatarColor ?: COLOR_CHOICES[0]) }
+    val tk = tokens()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var name by remember(profile.id) { mutableStateOf(profile.displayName) }
+    var emoji by remember(profile.id) { mutableStateOf(profile.emoji ?: "😊") }
+    var color by remember(profile.id) { mutableStateOf(profile.avatarColor ?: COLOR_CHOICES[0]) }
 
-    AlertDialog(
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        title = { Text("Profili düzenle", fontWeight = FontWeight.Bold) },
-        text = {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Box(contentAlignment = Alignment.BottomEnd) {
-                    AvatarView(profile.copy(emoji = emoji), size = 72.dp)
-                    Icon(
-                        MinimuvIcons.Camera,
-                        contentDescription = "Fotoğraf seç",
-                        tint = MaterialTheme.colorScheme.onPrimary,
-                        modifier = Modifier
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary)
-                            .padding(6.dp)
-                            .size(16.dp)
-                            .clickable(onClick = onPickPhoto),
+        sheetState = sheetState,
+        containerColor = tk.surface1,
+        contentColor = tk.text,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = tk.textMuted) },
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 22.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Profili düzenle", style = MaterialTheme.typography.headlineSmall, color = tk.text)
+                    Text(
+                        profile.displayName,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = tk.textMuted,
                     )
                 }
-                if (profile.avatarUrl != null) {
-                    TextButton(onClick = onRemovePhoto) { Text("Fotoğrafı kaldır") }
-                }
-                Spacer(Modifier.height(10.dp))
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    singleLine = true,
-                    label = { Text("İsim") },
-                )
-                Spacer(Modifier.height(12.dp))
-                Text("Emoji", style = MaterialTheme.typography.labelMedium, color = TextSecondary, modifier = Modifier.fillMaxWidth())
-                FlowRowOfEmojis(emoji) { emoji = it }
-                Spacer(Modifier.height(12.dp))
-                Text("Renk", style = MaterialTheme.typography.labelMedium, color = TextSecondary, modifier = Modifier.fillMaxWidth())
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    COLOR_CHOICES.forEach { c ->
-                        Box(
-                            Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(parseColorSafe(c))
-                                .border(
-                                    width = if (color == c) 3.dp else 0.dp,
-                                    color = Color.White,
-                                    shape = CircleShape,
-                                )
-                                .clickable { color = c },
+                TextButton(onClick = onDismiss, enabled = !uploading) { Text("Kapat") }
+            }
+            Spacer(Modifier.height(8.dp))
+            Box(contentAlignment = Alignment.Center) {
+                AvatarView(profile.copy(emoji = emoji), size = 96.dp)
+                if (uploading) {
+                    Box(
+                        Modifier
+                            .size(96.dp)
+                            .clip(CircleShape)
+                            .background(tk.bg.copy(alpha = 0.65f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(28.dp),
+                            color = tk.van,
+                            strokeWidth = 3.dp,
                         )
                     }
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { onSave(name.trim(), emoji, color) }) { Text("Kaydet") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("İptal") } },
-    )
+            Spacer(Modifier.height(12.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                OutlinedButton(onClick = onPickPhoto, enabled = !uploading) {
+                    Icon(MinimuvIcons.Camera, contentDescription = null, modifier = Modifier.size(17.dp))
+                    Spacer(Modifier.width(7.dp))
+                    Text("Fotoğraf değiştir")
+                }
+                if (profile.avatarUrl != null) {
+                    TextButton(onClick = onRemovePhoto, enabled = !uploading) {
+                        Text("Fotoğrafı kaldır", color = MaterialTheme.colorScheme.error)
+                    }
+                }
+            }
+            if (error != null) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            OutlinedTextField(
+                value = name,
+                onValueChange = { if (it.length <= 40) name = it },
+                singleLine = true,
+                enabled = !uploading,
+                label = { Text("İsim") },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Emoji",
+                style = MaterialTheme.typography.labelMedium,
+                color = tk.textMuted,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            FlowRowOfEmojis(emoji) { emoji = it }
+            Spacer(Modifier.height(14.dp))
+            Text(
+                "Renk",
+                style = MaterialTheme.typography.labelMedium,
+                color = tk.textMuted,
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                COLOR_CHOICES.forEach { c ->
+                    Box(
+                        Modifier
+                            .size(32.dp)
+                            .clip(CircleShape)
+                            .background(parseColorSafe(c))
+                            .border(
+                                width = if (color == c) 3.dp else 0.dp,
+                                color = tk.text,
+                                shape = CircleShape,
+                            )
+                            .clickable(role = Role.Button) { color = c },
+                    )
+                }
+            }
+            Spacer(Modifier.height(20.dp))
+            DcButton(
+                label = if (uploading) "Yükleniyor…" else "Kaydet",
+                onClick = { if (!uploading) onSave(name.trim(), emoji, color) },
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
 }
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FlowRowOfEmojis(selected: String, onSelect: (String) -> Unit) {
+    val tk = tokens()
     FlowRow(
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -1046,8 +1225,13 @@ private fun FlowRowOfEmojis(selected: String, onSelect: (String) -> Unit) {
                 Modifier
                     .size(36.dp)
                     .clip(CircleShape)
-                    .background(if (selected == e) Color(0xFF2B333F) else MidnightCard)
-                    .clickable { onSelect(e) },
+                    .background(if (selected == e) tk.surface3 else tk.surface2)
+                    .border(
+                        width = if (selected == e) 2.dp else 0.dp,
+                        color = tk.van,
+                        shape = CircleShape,
+                    )
+                    .clickable(role = Role.Button) { onSelect(e) },
                 contentAlignment = Alignment.Center,
             ) {
                 Text(e)

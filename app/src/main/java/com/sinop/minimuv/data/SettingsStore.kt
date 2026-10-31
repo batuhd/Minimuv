@@ -20,7 +20,6 @@ class SettingsStore(private val context: Context) {
         val KEY_THEME_ACCENT = stringPreferencesKey("theme_accent")
         val KEY_THEME_ACCENT_VAN = stringPreferencesKey("theme_accent_van")
         val KEY_THEME_ACCENT_SINOP = stringPreferencesKey("theme_accent_sinop")
-        val KEY_THEME_MODE = stringPreferencesKey("theme_mode")
         val KEY_LAST_PING_AT = stringPreferencesKey("last_ping_at")
         val KEY_TITLES_SNAPSHOT = stringPreferencesKey("titles_snapshot")
         val KEY_LAST_ANNIV_DATE = stringPreferencesKey("last_anniv_date")
@@ -37,15 +36,11 @@ class SettingsStore(private val context: Context) {
     val anonKey: Flow<String?> = context.dataStore.data.map { it[KEY_ANON_KEY] }
     val profileId: Flow<String?> = context.dataStore.data.map { it[KEY_PROFILE_ID] }
     val onboardingDone: Flow<Boolean> = context.dataStore.data.map { it[KEY_ONBOARDING_DONE] == "true" }
-    val themeAccent: Flow<String?> = context.dataStore.data.map { it[KEY_THEME_ACCENT] }
-    // Eski tek accent anahtarından geçiş: yeni anahtar yoksa eski değer kullanılır.
-    val themeAccentVan: Flow<String?> = context.dataStore.data.map {
-        it[KEY_THEME_ACCENT_VAN] ?: it[KEY_THEME_ACCENT]
-    }
-    val themeAccentSinop: Flow<String?> = context.dataStore.data.map {
-        it[KEY_THEME_ACCENT_SINOP] ?: it[KEY_THEME_ACCENT]
-    }
-    val themeMode: Flow<String?> = context.dataStore.data.map { it[KEY_THEME_MODE] }
+    // Eski tek vurgu anahtarı, iki ayrı renk ilk kez seçilene kadar fallback olarak okunur.
+    val themeAccentVan: Flow<String?> =
+        context.dataStore.data.map { it[KEY_THEME_ACCENT_VAN] ?: it[KEY_THEME_ACCENT] }
+    val themeAccentSinop: Flow<String?> =
+        context.dataStore.data.map { it[KEY_THEME_ACCENT_SINOP] ?: it[KEY_THEME_ACCENT] }
     val listView: Flow<String?> = context.dataStore.data.map { it[KEY_LIST_VIEW] }
     val searchLang: Flow<String?> = context.dataStore.data.map { it[KEY_SEARCH_LANG] }
     val displayLang: Flow<String?> = context.dataStore.data.map { it[KEY_DISPLAY_LANG] }
@@ -73,16 +68,8 @@ class SettingsStore(private val context: Context) {
         context.dataStore.edit { it[KEY_PROFILE_ID] = profileId }
     }
 
-    suspend fun clearProfile() {
-        context.dataStore.edit { it.remove(KEY_PROFILE_ID) }
-    }
-
     suspend fun setOnboardingDone() {
         context.dataStore.edit { it[KEY_ONBOARDING_DONE] = "true" }
-    }
-
-    suspend fun setThemeAccent(value: String) {
-        context.dataStore.edit { it[KEY_THEME_ACCENT] = value }
     }
 
     suspend fun setThemeAccentVan(value: String) {
@@ -91,10 +78,6 @@ class SettingsStore(private val context: Context) {
 
     suspend fun setThemeAccentSinop(value: String) {
         context.dataStore.edit { it[KEY_THEME_ACCENT_SINOP] = value }
-    }
-
-    suspend fun setThemeMode(value: String) {
-        context.dataStore.edit { it[KEY_THEME_MODE] = value }
     }
 
     suspend fun saveListView(value: String) {
@@ -107,6 +90,10 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveDisplayLang(value: String) {
         context.dataStore.edit { it[KEY_DISPLAY_LANG] = value }
+    }
+
+    suspend fun clearProfile() {
+        context.dataStore.edit { it.remove(KEY_PROFILE_ID) }
     }
 
     suspend fun clearConnection() {

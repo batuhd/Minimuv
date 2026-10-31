@@ -15,8 +15,10 @@ import kotlinx.coroutines.launch
  * bu servis Supabase'deki gerçek durumu kontrol edip (çift bildirim korumalı)
  * bildirimi kendisi gösterir.
  *
- * Uygulama AÇIKSA realtime watcher olayı zaten anında bildirir; FCM yolu
- * çifte bildirim yapmasın diye sessizce geçer.
+ * Uygulama açıkken realtime watcher olayı zaten bildirir; FCM yolu da
+ * işlenir çünkü realtime bağlantısı sessizce kopmuş olabilir (BUG-008).
+ * Çifte bildirim, tracker'ların kalıcı dedup durumu (snapshot/watermark)
+ * sayesinde engellenir: aynı olay ikinci kez diff üretmez.
  */
 class MinimuvMessagingService : FirebaseMessagingService() {
 
@@ -39,9 +41,6 @@ class MinimuvMessagingService : FirebaseMessagingService() {
         val profileId = settings.profileFrom(prefs) ?: return
         SupabaseProvider.configure(url, key)
         NotificationHelper.ensureChannels(context)
-
-        // Realtime bağlantısı aktifse (uygulama açık) olay zaten bildirildi.
-        if (PartnerEventsRuntime.isRunning()) return
 
         when (type) {
             "ping" -> PingNotifier.process(context, profileId)

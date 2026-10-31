@@ -40,10 +40,12 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RangeSlider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -64,9 +66,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.layout.offset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil3.compose.AsyncImage
+import com.sinop.minimuv.core.TextNormalizer
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.Title
@@ -75,6 +77,7 @@ import com.sinop.minimuv.data.WatchStatus
 import com.sinop.minimuv.ui.components.CollapsibleHeader
 import com.sinop.minimuv.ui.components.DcIconButton
 import com.sinop.minimuv.ui.components.DcPaths
+import com.sinop.minimuv.ui.components.EmptyState
 import com.sinop.minimuv.ui.components.FilterPill
 import com.sinop.minimuv.ui.components.SvgPath
 import com.sinop.minimuv.ui.components.SearchPill
@@ -123,9 +126,11 @@ fun LibraryScreen(
     onOpenTitle: (String) -> Unit,
     onEditTitle: (String) -> Unit = {},
     onViewModeChange: (ViewMode) -> Unit = {},
+    onOpenPlanOrder: () -> Unit = {},
 ) {
     val titles by vm.titles.collectAsStateWithLifecycle()
     val loading by vm.loading.collectAsStateWithLifecycle()
+    val error by vm.error.collectAsStateWithLifecycle()
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val progressRows by vm.perProfileProgress.collectAsStateWithLifecycle()
     val tk = tokens()
@@ -142,22 +147,40 @@ fun LibraryScreen(
             .screenGlow(vanAlpha = 0.28f, sinopAlpha = 0.30f),
     ) {
         if (titles == null) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator(color = tk.van)
+            if (error != null) {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    EmptyState(
+                        emoji = "📡",
+                        title = "Kütüphane yüklenemedi",
+                        subtitle = error ?: "Bağlantını kontrol edip tekrar dene.",
+                        actionLabel = "Tekrar dene",
+                        onAction = { vm.refresh() },
+                    )
+                }
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(color = tk.van)
+                }
             }
         } else {
             val all = titles.orEmpty()
-            val progressByTitle = progressRows.groupBy({ it.titleId }, { it.profileId to it.currentEpisode })
-                .mapValues { entry -> entry.value.associate { it.first to it.second } }
             val typeDb = filters.type?.db
             val typeOk: (Title) -> Boolean = { typeDb == null || it.type == typeDb }
-            val watching = all.filter { statusGroup(it.status) == WatchStatus.WATCHING.db && typeOk(it) }
-                .sortedBy { it.priorityOrder ?: Int.MAX_VALUE }
+            val progressByTitle = remember(progressRows) {
+                progressRows.groupBy({ it.titleId }, { it.profileId to it.currentEpisode })
+                    .mapValues { entry -> entry.value.associate { it.first to it.second } }
+            }
+            val watching = remember(all, filters, progressRows) {
+                all.filter { statusGroup(it.status) == WatchStatus.WATCHING.db && typeOk(it) }
+                    .sortedBy { it.watchOrder ?: it.priorityOrder ?: Int.MAX_VALUE }
+            }
             val specialFiltered = remember(all, filters) { libraryFilterAndSort(all, filters) }
-            val watchingIds = watching.map { it.id }
-            val planIds = all.filter { it.status == WatchStatus.PLAN.db }
-                .sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
-                .map { it.id }
+            val watchingIds = remember(watching) { watching.map { it.id } }
+            val planIds = remember(all) {
+                all.filter { it.status == WatchStatus.PLAN.db }
+                    .sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
+                    .map { it.id }
+            }
 
             // Sıralamayı lokal tut: sürükleme sırasında realtime zıplamasın
             val gridState = rememberLazyGridState()
@@ -212,10 +235,11 @@ fun LibraryScreen(
             val planOrdered = planOrder.mapNotNull { byId[it] }.filter(typeOk)
             val q = query.trim()
             val searching = q.isNotEmpty()
-            val searchResults = remember(all, filters, q) {
-                libraryFilterAndSort(all, filters).filter { t ->
-                    t.title.contains(q, ignoreCase = true) ||
-                        (t.titleEn?.contains(q, ignoreCase = true) == true)
+            val searchResults = remember(specialFiltered, q) {
+                val folded = TextNormalizer.fold(q)
+                specialFiltered.filter { t ->
+                    TextNormalizer.fold(t.title).contains(folded) ||
+                        (t.titleEn?.let { TextNormalizer.fold(it).contains(folded) } == true)
                 }
             }
 
@@ -288,15 +312,15 @@ fun LibraryScreen(
                     if (filtered.isEmpty()) {
                         item(span = { GridItemSpan(maxLineSpan) }) { EmptyHint("Bu filtrelere uyan bir şey yok") }
                     } else if (viewMode == ViewMode.COMPACT || viewMode == ViewMode.ROWS) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
-                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                filtered.forEach { t ->
-                                    RowLibrary(
-                                        t, displayLang, viewMode == ViewMode.ROWS, onOpenTitle,
-                                        onEditTitle = { onEditTitle(t.id) },
-                                    )
-                                }
-                            }
+                        items(
+                            filtered,
+                            key = { it.id },
+                            span = { GridItemSpan(maxLineSpan) },
+                        ) { t ->
+                            RowLibrary(
+                                t, displayLang, viewMode == ViewMode.ROWS, onOpenTitle,
+                                onEditTitle = { onEditTitle(t.id) },
+                            )
                         }
                     } else {
                         items(filtered, key = { it.id }) { t ->
@@ -350,7 +374,7 @@ fun LibraryScreen(
                                                         onDragStarted = { draggingContinue = true },
                                                         onDragStopped = {
                                                             draggingContinue = false
-                                                            vm.reorderPlanList(continueOrder.toList())
+                                                            vm.reorderWatchingList(continueOrder.toList())
                                                         },
                                                     ),
                                             )
@@ -364,15 +388,23 @@ fun LibraryScreen(
                     if (planOrdered.isNotEmpty()) {
                         val secOpen = "Sırada" !in collapsedSecs
                         item(span = { GridItemSpan(maxLineSpan) }) {
-                            CollapsibleHeader(
-                                title = "Sırada",
-                                trailing = "${planOrdered.size} yapım",
-                                collapsed = !secOpen,
-                                modifier = Modifier.padding(top = 14.dp),
-                                onToggle = {
-                                    if (secOpen) collapsedSecs.add("Sırada") else collapsedSecs.remove("Sırada")
-                                },
-                            )
+                            Row(
+                                Modifier.fillMaxWidth().padding(top = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                CollapsibleHeader(
+                                    title = "Sırada",
+                                    trailing = "${planOrdered.size} yapım",
+                                    collapsed = !secOpen,
+                                    modifier = Modifier.weight(1f),
+                                    onToggle = {
+                                        if (secOpen) collapsedSecs.add("Sırada") else collapsedSecs.remove("Sırada")
+                                    },
+                                )
+                                TextButton(onClick = onOpenPlanOrder) {
+                                    Text("Sırala", color = tk.van, style = MaterialTheme.typography.labelLarge)
+                                }
+                            }
                         }
                         if (secOpen) {
                             if (viewMode == ViewMode.COMPACT || viewMode == ViewMode.ROWS) {
@@ -448,15 +480,15 @@ fun LibraryScreen(
                         }
                         if (secOpen) {
                             if (viewMode == ViewMode.COMPACT || viewMode == ViewMode.ROWS) {
-                                item(span = { GridItemSpan(maxLineSpan) }) {
-                                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        secItems.forEach { t ->
-                                            RowLibrary(
-                                                t, displayLang, viewMode == ViewMode.ROWS, onOpenTitle,
-                                                onEditTitle = { onEditTitle(t.id) },
-                                            )
-                                        }
-                                    }
+                                items(
+                                    secItems,
+                                    key = { it.id },
+                                    span = { GridItemSpan(maxLineSpan) },
+                                ) { t ->
+                                    RowLibrary(
+                                        t, displayLang, viewMode == ViewMode.ROWS, onOpenTitle,
+                                        onEditTitle = { onEditTitle(t.id) },
+                                    )
                                 }
                             } else {
                                 items(secItems, key = { it.id }) { t ->
@@ -515,51 +547,6 @@ fun LibraryScreen(
     }
 }
 
-@Composable
-private fun LibraryChipRow(
-    filters: ListFilters,
-    onChange: (ListFilters) -> Unit,
-    onPanelOpen: () -> Unit,
-) {
-    val tk = tokens()
-    Column(Modifier.padding(top = 6.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FilterPill("Hepsi", filters.status == null, onClick = { onChange(filters.copy(status = null)) })
-            FilterPill("İzliyoruz", filters.status == WatchStatus.WATCHING, onClick = {
-                onChange(filters.copy(status = if (filters.status == WatchStatus.WATCHING) null else WatchStatus.WATCHING))
-            })
-            FilterPill("Sırada", filters.status == WatchStatus.PLAN, onClick = {
-                onChange(filters.copy(status = if (filters.status == WatchStatus.PLAN) null else WatchStatus.PLAN))
-            })
-            FilterPill("Tamamlandı", filters.status == WatchStatus.COMPLETED, onClick = {
-                onChange(filters.copy(status = if (filters.status == WatchStatus.COMPLETED) null else WatchStatus.COMPLETED))
-            })
-            DcIconButton(onClick = onPanelOpen, contentDescription = "Filtreler", size = 36.dp, background = tk.surface2) {
-                SvgPath(DcPaths.FILTER, null, viewportSize = 16.dp)
-            }
-        }
-        Row(
-            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            ContentType.entries.forEach { type ->
-                FilterPill(
-                    type.label,
-                    filters.type == type,
-                    onClick = {
-                        onChange(filters.copy(type = if (filters.type == type) null else type))
-                    },
-                )
-            }
-        }
-    }
-}
-
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun LibraryFilterPanel(
@@ -567,7 +554,8 @@ private fun LibraryFilterPanel(
     onChange: (ListFilters) -> Unit,
 ) {
     val tk = tokens()
-    var yearRange by remember { mutableStateOf(filters.yearRange ?: 1960f..2026f) }
+    val maxYear = remember { java.time.Year.now().value + 1f }
+    var yearRange by remember { mutableStateOf(filters.yearRange ?: 1960f..maxYear) }
     Column(
         Modifier
             .padding(horizontal = 20.dp, vertical = 18.dp)
@@ -592,7 +580,7 @@ private fun LibraryFilterPanel(
                     modifier = Modifier
                         .clip(RoundedCornerShape(50))
                         .clickable {
-                            yearRange = 1960f..2026f
+                            yearRange = 1960f..maxYear
                             onChange(ListFilters())
                         }
                         .padding(horizontal = 10.dp, vertical = 4.dp),
@@ -643,7 +631,7 @@ private fun LibraryFilterPanel(
                     yearRange = it
                     onChange(filters.copy(yearRange = it))
                 },
-                valueRange = 1960f..2026f,
+                valueRange = 1960f..maxYear,
                 colors = SliderDefaults.colors(
                     thumbColor = tk.text,
                     activeTrackColor = tk.van,
@@ -800,11 +788,9 @@ private fun companionNames(profiles: List<Profile>): String {
     }
 }
 
-private fun isAyri(watchMode: String?): Boolean {
-    if (watchMode.isNullOrBlank()) return false
-    val mode = watchMode.trim().lowercase()
-    return mode == "ayri" || mode == "ayrı"
-}
+/** Tek doğruluk kaynağı DB sözleşmesidir: yalnızca 'ayri' (DS-BUG-13). */
+private fun isAyri(watchMode: String?): Boolean =
+    watchMode?.trim() == WatchMode.AYRI.db
 /* ---------- Devam kartı (300×168) ---------- */
 
 @Composable
@@ -1116,12 +1102,17 @@ private fun PosterTile(
 
 private fun tileSub(t: Title): String {
     val label = ContentType.fromDb(t.type).label
-    val year = t.startDate?.take(4)
+    // Yıl yoksa " · null" basma (BUG-059).
+    val year = t.startDate?.take(4)?.takeIf { it.isNotBlank() }
     return when (t.type) {
-        "film" -> "$label · $year"
+        "film" -> if (year != null) "$label · $year" else label
         else -> {
             val total = t.totalEpisodes
-            if (total != null && total > 0) "$label · $total bölüm" else "$label · $year"
+            when {
+                total != null && total > 0 -> "$label · $total bölüm"
+                year != null -> "$label · $year"
+                else -> label
+            }
         }
     }
 }

@@ -89,8 +89,14 @@ import com.sinop.minimuv.ui.theme.typeColor
 import com.sinop.minimuv.ui.theme.typeEmoji
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import java.util.Locale
+
+/** Film süresi isteklerinde eşzamanlılık sınırı (PERF-015). */
+private val runtimeSemaphore = Semaphore(4)
 
 object DraftHolder {
     var draft: TitleDraft? = null
@@ -175,6 +181,8 @@ fun AddScreen(
                 results = emptyList()
                 searchError = true
             }
+        // Yeni sorgu başladıysa eski (iptal edilmiş) effect durum yazmasın (BUG-017).
+        if (!isActive) return@LaunchedEffect
         searching = false
     }
 
@@ -444,7 +452,10 @@ private fun SearchResultRow(
     var runtimeText by remember(result.externalId) { mutableStateOf<String?>(null) }
     LaunchedEffect(result.externalId) {
         if (result.type == ContentType.FILM) {
-            runtimeText = SearchApi.movieRuntime(result.externalId)?.let { formatRuntime(it) }
+            // Aynı anda en fazla 4 film süresi isteği — liste kaydırırken API'yi boğmaz.
+            runtimeText = runtimeSemaphore.withPermit {
+                SearchApi.movieRuntime(result.externalId)?.let { formatRuntime(it) }
+            }
         }
     }
     val meta = listOfNotNull(
@@ -664,8 +675,15 @@ private fun SearchPreviewSheet(
     onOpenStudio: (com.sinop.minimuv.data.ContentType, String) -> Unit = { _, _ -> },
 ) {
     var details by remember { mutableStateOf<TitleDetails?>(null) }
+    var detailsLoading by remember { mutableStateOf(true) }
+    var detailsError by remember { mutableStateOf(false) }
     LaunchedEffect(result.externalId) {
-        details = runCatching { SearchApi.details(result.type, result.externalId) }.getOrNull()
+        detailsLoading = true
+        detailsError = false
+        details = runCatching { SearchApi.details(result.type, result.externalId) }
+            .onFailure { detailsError = true }
+            .getOrNull()
+        detailsLoading = false
     }
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
@@ -719,6 +737,22 @@ private fun SearchPreviewSheet(
                         color = typeColor(result.type.db),
                     )
                 }
+            }
+
+            if (detailsLoading) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Detaylar yükleniyor…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TextSecondary,
+                )
+            } else if (detailsError) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Detaylar yüklenemedi",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error,
+                )
             }
 
             val rating = details?.rating

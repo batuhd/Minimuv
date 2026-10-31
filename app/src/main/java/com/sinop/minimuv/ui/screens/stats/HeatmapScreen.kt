@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -30,6 +31,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.sinop.minimuv.data.TitleRepository
@@ -53,12 +56,16 @@ fun HeatmapScreen(onBack: () -> Unit) {
 
     LaunchedEffect(retryTick) {
         loadError = null
-        runCatching { repo.getWatchLog() }
-            .onSuccess { log = it }
-            .onFailure { loadError = it.message ?: "Bilinmeyen hata" }
+        try {
+            log = repo.getWatchLog()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            loadError = e.message ?: "Bilinmeyen hata"
+        }
     }
 
-    Column(Modifier.fillMaxSize()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
@@ -132,8 +139,8 @@ private fun HeatmapContent(entries: List<WatchLog>) {
                     .padding(16.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
             ) {
-                Stat("📺", "$totalEpisodes", "İzlenen Bölüm")
-                Stat("📅", "$totalDays", "Aktif Gün")
+                Stat("📺", "$totalEpisodes", "Toplam İzlenen Bölüm")
+                Stat("📅", "$totalDays", "Toplam Aktif Gün")
                 Stat("🎬", "${entries.size}", "Kayıt")
             }
         }
@@ -145,7 +152,7 @@ private fun HeatmapContent(entries: List<WatchLog>) {
                 Text("Az", style = MaterialTheme.typography.labelSmall, color = TextSecondary)
                 Spacer(Modifier.size(6.dp))
                 // Gerçek kuartil doygunlukları: 0 ve max'ın %20/50/80'i ile tam doygunluk
-                listOf(0f, 0.2f, 0.5f, 0.8f, 1f).forEach { fraction ->
+                listOf(0f, 0.15f, 0.4f, 0.65f, 1f).forEach { fraction ->
                     Box(
                         Modifier
                             .padding(1.dp)
@@ -196,7 +203,7 @@ private fun HeatmapGrid(byDate: Map<String, Int>, maxCount: Int) {
             val monday = start.plusWeeks(w.toLong())
             if (monday.monthValue != lastMonth) {
                 lastMonth = monday.monthValue
-                add(w to monday.month.getDisplayName(java.time.format.TextStyle.NARROW, java.util.Locale.getDefault()))
+                add(w to monday.month.getDisplayName(java.time.format.TextStyle.NARROW, java.util.Locale("tr")))
             } else {
                 add(w to null)
             }
@@ -254,7 +261,14 @@ private fun HeatmapGrid(byDate: Map<String, Int>, maxCount: Int) {
                                 Modifier
                                     .size(cell)
                                     .clip(RoundedCornerShape(3.dp))
-                                    .background(heatColor(count, maxCount)),
+                                    .background(heatColor(count, maxCount))
+                                    .semantics {
+                                        contentDescription = if (count > 0) {
+                                            "$date: $count bölüm"
+                                        } else {
+                                            "$date: kayıt yok"
+                                        }
+                                    },
                             )
                         }
                     }

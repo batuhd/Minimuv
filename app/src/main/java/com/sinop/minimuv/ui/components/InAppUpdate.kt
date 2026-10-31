@@ -40,6 +40,7 @@ fun InAppUpdateHost() {
 
     var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
     var progress by remember { mutableFloatStateOf(0f) }
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(Unit) {
         val fad = FirebaseAppDistribution.getInstance()
@@ -56,16 +57,25 @@ fun InAppUpdateHost() {
         if (fad.isTesterSignedIn()) {
             doCheck()
         } else {
-            fad.signInTester()
-                .addOnSuccessListener { doCheck() }
-                .addOnFailureListener { Log.w("MinimuvUpdate", "Tester girişi yapılmadı", it) }
+            // Tester girişi Custom Tab açar; her açılışta kullanıcıyı rahatsız
+            // etmemek için yalnızca kurulumdan sonraki ilk açılışta sorulur.
+            // Kullanıcı vazgeçerse bir daha kendiliğinden açılmaz.
+            val prefs = context.getSharedPreferences("minimuv_update", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("signin_asked", false)) {
+                prefs.edit().putBoolean("signin_asked", true).apply()
+                fad.signInTester()
+                    .addOnSuccessListener { doCheck() }
+                    .addOnFailureListener { Log.w("MinimuvUpdate", "Tester girişi yapılmadı", it) }
+            } else {
+                Log.d("MinimuvUpdate", "Tester girişi daha önce soruldu; atlandı")
+            }
         }
     }
 
     when (val s = state) {
         is UpdateUiState.Available -> AlertDialog(
             onDismissRequest = { state = UpdateUiState.Idle },
-            title = { EmojiText("Yeni sürüm var 🎉", style = androidx.compose.material3.MaterialTheme.typography.headlineSmall) },
+            title = { EmojiText("Yeni sürüm var 🎉", style = MaterialTheme.typography.headlineSmall) },
             text = { Text("Minimuv v${s.release.displayVersion} hazır.\nGüncellemeyi şimdi indirip kuralım mı?") },
             confirmButton = {
                 TextButton(onClick = {
@@ -82,9 +92,9 @@ fun InAppUpdateHost() {
                             Log.w("MinimuvUpdate", "Güncelleme başarısız", e)
                             state = UpdateUiState.Error(
                                 if (e is FirebaseAppDistributionException) {
-                                    "Güncelleme başarısız (${e.errorCode})."
+                                    "Güncelleme indirilemedi. İnternet bağlantını kontrol edip tekrar dene. (${e.errorCode})"
                                 } else {
-                                    "Güncelleme başarısız."
+                                    "Güncelleme indirilemedi. Lütfen tekrar dene."
                                 }
                             )
                         }
@@ -109,6 +119,10 @@ fun InAppUpdateHost() {
                 }
             },
             confirmButton = {},
+            dismissButton = {
+                // İndirme arka planda sürer; kullanıcı pencerede kilitli kalmasın.
+                TextButton(onClick = { state = UpdateUiState.Idle }) { Text("Gizle") }
+            },
         )
 
         is UpdateUiState.Error -> AlertDialog(

@@ -115,9 +115,12 @@ fun SupabaseSetupScreen(
                     scope.launch {
                         saving = true
                         error = null
-                        try {
-                            ConnectionValidator.test(url, key)
-                        } catch (_: Exception) {
+                        val failure = ConnectionValidator.test(url, key).exceptionOrNull()
+                        if (failure != null) {
+                            error = failure.message
+                                ?: "Bağlantı kurulamadı. Bilgileri kontrol edip tekrar dene."
+                            saving = false
+                            return@launch
                         }
                         settings.saveConnection(url, key)
                         onDone()
