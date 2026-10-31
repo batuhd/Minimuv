@@ -38,17 +38,16 @@ cp app/build/outputs/apk/release/app-release.apk  ~/Masaüstü/minimuv-vX.Y.Z.ap
 - **API'li APK → kullanıcının masaüstü** (`~/Masaüstü/minimuv-vX.Y.Z.apk`) ve Firebase App Distribution'a tester için yüklenir.
 - İkisinde de `versionCode`/`versionName` aynıdır; tek fark BuildConfig'teki TMDB anahtarı.
 
-## Firebase App Distribution — Uygulama İçi Güncelleme (v2.5.15+)
+## Firebase App Distribution — Uygulama İçi Güncelleme
 
 - Bağımlılık: `firebase-appdistribution:16.0.0-beta20` (`gradle/libs.versions.toml` + `app/build.gradle.kts`).
 - Özel güncelleme penceresi: `ui/components/InAppUpdate.kt` (`InAppUpdateHost`) → `ui/AppRoot.kt` içinde `MainApp`'ten çağrılır, oturumda bir kez.
 - `checkForNewRelease()` + `updateApp()` kullanılır; tester giriş yapmamışsa `signInTester()`. Firebase'in hazır `updateIfNewReleaseAvailable()` dialogu **kullanılmaz** (tester kazayla iptal ediyordu).
 - **KRİTİK — InstallActivity teması:** SDK'nın kurulum ekranı `com.google.firebase.appdistribution.impl.InstallActivity` bir `AppCompatActivity`'dir ve **AppCompat türevi tema ister**. Olmazsa kurulum anında çöker:
   `IllegalStateException: You need to use a Theme.AppCompat theme (or descendant) with this activity.`
-  Çözüm zaten uygulandı: `values/themes.xml` → `Theme.Minimuv.FirebaseInstall` (parent `Theme.AppCompat.NoActionBar`) + `AndroidManifest.xml`'de InstallActivity'ye tema ataması. **Bu düzeltmeyi asla kaldırma.** (Kırpma ekranı `Theme.Minimuv.Crop` de aynı nedenle AppCompat'tır.)
+  Çözüm zaten uygulandı: `values/themes.xml` → `Theme.Minimuv.FirebaseInstall` (parent `Theme.AppCompat.NoActionBar`) + `AndroidManifest.xml`'de InstallActivity'ye tema ataması. **Bu düzeltmeyi asla kaldırma.**
 - **Test akışı:** `versionCode` artır → `assembleRelease` → APK'yı Firebase paneline yükle (tester grubuna) → tester uygulamayı açar → "Yeni sürüm var 🎉" → **`Güncelle`** butonuna bas (dialog dışına dokunma — iptal eder) → indirme → sistem "Yükle" ekranı → kurulur.
 - **Firebase aynı `versionCode`'un yeniden yüklenmesini reddeder** → her test için mutlaka artır. Telefonda kurulu olandan büyük olmalı ki güncelleme algılansın.
-- Tester, Firebase App Distribution'da tester listesinde olmalı ve uygulamayı App Distribution linkinden kurmalı (Google hesabıyla giriş gerekir).
 - Teşhis: `adb logcat -d | grep -iE "AppDistrib|MinimuvUpdate"` — `checkForNewRelease`, dialog, indirme, `INSTALLATION_CANCELED`/crash burada görünür.
 
 ## Performans (uygulanmış optimizasyonlar)
@@ -56,16 +55,16 @@ cp app/build/outputs/apk/release/app-release.apk  ~/Masaüstü/minimuv-vX.Y.Z.ap
 - `TitleRepository.getTitlesLite()` — liste ekranı **yalnızca gerekli kolonları** çeker (overview/notlar taşınmaz → JSON payload ve decode süresi azalır). Liste ekranı işlerinde `getTitles()` YERİNE bunu kullan.
   - **Dikkat:** Liste ekranına yeni bir alan gerekirse bu fonksiyondaki kolon listesine de ekle; eksik kolon `Title` decode'unda default değere düşer.
 - `ListViewModel` — titles + profiles **paralel** (`async`) çekilir; realtime yenileme debounce'ı 500ms.
-- `ListScreen` — `filterAndSort` `remember` ile memoize edildi; profil araması `firstOrNull` yerine hazır map.
+- `LibraryScreen` — `filterAndSort` `remember` ile memoize edildi; profil araması `firstOrNull` yerine hazır map.
 - Liste ekranındaki veri akışına dokunurken yukarıdakileri bozmamaya dikkat et.
 
-## Çark sesi (v2.5.11+)
+## Çark Sesi
 
-- `core/WheelSound.kt` (SoundPool) + `res/raw/wheel_tick.wav`, `res/raw/wheel_win.wav` (bu dosyalar bir defa Python ile üretildi; silme).
+- `core/WheelSound.kt` (SoundPool) + `res/raw/wheel_tick.wav`, `res/raw/wheel_win.wav`.
 - `WheelScreen.kt`: dönüşte her dilim geçişinde tik, kazanan belirlenince marş; ses/titreşim anahtarları.
 - **Düzen notu:** Kazanan, çark durunca sayfa akışında DEĞİL, ekranın ortasında popup olarak gösterilir (`WinnerPopup` → `Dialog` + konfeti + karartma). Sayfa akışına kazanan kartı eklemeyin.
 
-## Mimari
+## Mimari & Dizin Yapısı
 
 - `app/src/main/java/com/sinop/minimuv/`
   - `core/` — SupabaseProvider, SearchApi (TMDB+AniList), notification motorları (BackgroundNotifications, NotificationWorker), RealtimeManager, WheelSound
@@ -80,17 +79,10 @@ cp app/build/outputs/apk/release/app-release.apk  ~/Masaüstü/minimuv-vX.Y.Z.ap
 - Görüntüleme dili `display_lang` ayarı (`SettingsStore`); liste/detay/kişi/stüdyo sayfaları buna göre TR/EN gösterir.
 - Kategoriler: Film | Dizi | Anime | Stüdyo | Kişi (AddScreen). Dokun=önizleme sheet, basılı tut=editleme (draft) ekranı.
 
-## Supabase & Test
-
-- Supabase MCP bu projeye bağlıdır (`.opencode/opencode.json`). Canlı DB değişiklikleri için `supabase_apply_migration` kullanılır; `init.sql` her zaman kaynak.
-- **FCM trigger'ları** (`fcm_*_notify`) `titles` ekleme/status değişiminde Edge Function'a POST atar → partner cihazına bildirim. Test sırasında (sevgili uyurken) bunlar **devre dışı** bırakılmalı:
-  `alter table public.<tablo> disable trigger fcm_<x>_notify;` (iş bitince geri enable).
-- Bildirimler iki yoldan gelir: (1) DB trigger → Edge Function → FCM; (2) WorkManager yerel periyodik denetleyici (~15 dk, uygulama kapalıyken). İkincisi trigger'lardan bağımsızdır.
-
 ## Kurallar
 
 - API anahtarları, token'lar, şifreler **asla** repoya ya da commit'e girmez (local.properties, .env, google-services.json).
 - Commit mesajları Türkçe ve özetleyici; her mantıklı değişiklik ayrı commit. **Push öncesi kullanıcıdan izin alınır.**
 - Test verileri (not, favori, başlık) gerçek Supabase'e yazılmamalı; yazılırsa test bitince temizlenir (bildirim tetikleyen olaylardan kaçın).
-- Telefon testi: `adb` (kablosuz) — `adb pair IP:PORT KOD` + `adb connect IP:PORT`; `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
+- Telefon testi: `adb` (kablosuz/kablolu) — `adb install -r app/build/outputs/apk/debug/app-debug.apk`.
 - **Sürüm çıkarken:** versionCode artır → iki APK (API'siz→GitHub, API'li→masaüstü+Firebase) → in-app update için telefona kurulu olandan büyük olmalı.

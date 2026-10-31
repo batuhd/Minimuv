@@ -1,365 +1,108 @@
-  <div align="center">
+<div align="center">
 
-<img src="logo.png" width="132" alt="Minimuv logosu" />
+<img src="logo.png" width="128" alt="Minimuv logosu" />
 
 # 🎬 Minimuv
 
-**"bizim izleme defterimiz"** - Van & Sinop için özel olarak tasarlanmış, **yalnızca iki kişilik** film, dizi ve anime takip uygulaması.
+**"bizim izleme defterimiz"** · Van & Sinop için özel olarak tasarlanmış, **yalnızca iki kişilik** film, dizi ve anime takip uygulaması.
 
-Letterboxd'ın poster odaklı sinefil estetiği ile Duolingo'nun oyunlaştırılmış tatlı dilini bir araya getirir: ikimiz ayrı ayrı puan veriyoruz, bölüm notları spoiler kilidiyle korunuyor, ne izleyeceğimize çark karar veriyor ve rozetler ortak başarılarımızı kutluyor.
+Letterboxd'ın sinefil poster estetiği ile Duolingo'nun oyunlaştırılmış tatlı dilini bir araya getirir: ikimiz ayrı ayrı puan veriyoruz, bölüm notları spoiler kilidiyle korunuyor, ne izleyeceğimize çark karar veriyor ve rozetler ortak başarılarımızı kutluyor.
 
 <p>
-  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.3.20-7F52FF?logo=kotlin&logoColor=white" />
+  <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.3-7F52FF?logo=kotlin&logoColor=white" />
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=android&logoColor=white" />
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Realtime-3ECF8E?logo=supabase&logoColor=white" />
-  <img alt="SDK" src="https://img.shields.io/badge/minSdk-26%20·%20targetSdk-36-3DDC84" />
-  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-2.5.15-F5A623" />
+  <img alt="SDK" src="https://img.shields.io/badge/minSdk-26%20%C2%B7%20targetSdk-36-3DDC84" />
+  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-3.0.0-F5A623" />
 </p>
 
 </div>
 
 ---
 
-## 📱 Ekranlar
+## 📱 Ekran Görüntüleri
 
-| Kütüphane | Detay sayfası | Randevu çarkı | Yıl özeti |
-| --- | --- | --- | --- |
-| <img src="docs/screenshots/library-grid-3.jpg" width="215"/> | <img src="docs/screenshots/detail.jpg" width="215"/> | <img src="docs/screenshots/wheel.jpg" width="215"/> | <img src="docs/screenshots/wrapped.jpg" width="215"/> |
+| 📚 Kütüphane | 🎬 Yapım Detayı | 🔍 Akıllı Arama |
+| :---: | :---: | :---: |
+| <img src="docs/screenshots/library.png" width="240" alt="Kütüphane" /> | <img src="docs/screenshots/detail.png" width="240" alt="Detay Sayfası" /> | <img src="docs/screenshots/search.png" width="240" alt="Arama Sayfası" /> |
+
+| 🎡 Randevu Çarkı | 💑 Aşk & Profil | 🏅 Rozetler | ⚙️ Ayarlar |
+| :---: | :---: | :---: | :---: |
+| <img src="docs/screenshots/wheel.png" width="200" alt="Çark" /> | <img src="docs/screenshots/profile.png" width="200" alt="Profil" /> | <img src="docs/screenshots/achievements.png" width="200" alt="Rozetler" /> | <img src="docs/screenshots/settings.png" width="200" alt="Ayarlar" /> |
 
 ---
 
 ## ✨ Özellikler
 
-### 📚 Kütüphane - 4 görünüm modu
+### 📚 Kütüphane & Görünüm Modları
+* **Gruplandırılmış Katmanlar:** *Devam edelim (İzliyoruz)*, *Sırada*, *Tamamlandı*, *Bıraktık* kategorileri.
+* **4 Farklı Görünüm:** Kompakt liste, poster satırları, 3'lü ızgara ve 2'li büyük ızgara seçenekleri.
+* **Sürükle-Bırak Sıralama:** "Sırada" listesini basılı tutarak kişisel öncelik sırasına koyma.
+* **Arama & Filtreleme:** Kütüphane içinde hızlı kelime araması; durum, format (Film/Dizi/Anime), çıkış yılı ve gelişmiş sıralama kriterleri.
 
-| Kompakt liste | Poster satırları | 3'lü ızgara | 2'li büyük ızgara |
-| --- | --- | --- | --- |
-| <img src="docs/screenshots/library-compact.jpg" width="215"/> | <img src="docs/screenshots/library-rows.jpg" width="215"/> | <img src="docs/screenshots/library-grid-3.jpg" width="215"/> | <img src="docs/screenshots/library-grid-2.jpg" width="215"/> |
+### 🎬 Detay & Kartlı Düzenleme
+* **Zengin İçerik Bilgileri:** TMDB ve AniList kaynaklı yüksek çözünürlüklü kapak/backdrop, Türkçe ve İngilizce özetler, oyuncu/karakter kadrosu, yönetmen ve stüdyo bilgileri.
+* **Bölüm Takibi & İlerleme:** Tek dokunuşla bölüm artırma/azaltma. İlerleme tamamlandığında düşen **konfeti animasyonu**.
+* **Katlanabilir Düzenleme Kartları:** Durum, Bölüm, Takvim, Puanlar ve Notlar için pratik düzenleme kartları.
 
-* **Durum bazlı gruplandırma** - İzliyoruz, Sırada, Tamamlandı… bölümleri; başlığa dokunarak katla/aç. Poster kartlarında puan, bölüm rozeti, durumu ekleyen kişinin emojisi ve 🔁 yeniden izleme sayacı.
-* **Kütüphane içi arama** - Türkçe karakter katlaması sayesinde "sifir bir" yazınca *Sıfır Bir* bulunur.
-* **Filtre çekmecesi** - durum, format, yıl aralığı (1960–2026 kaydırıcı) ve sıralama (Son Eklenen / Puan / İsim / Öncelik).
-* **Sürükle-bırak sıralama** - Sırada listesini basılı tutup istediğin sıraya diz; "N. sırada" rozetleri ve "👥 İkimiz de istiyoruz" etiketiyle saklanır.
-
-| Filtreler | Akıllı arama |
-| --- | --- |
-| <img src="docs/screenshots/filters.jpg" width="240"/> | <img src="docs/screenshots/search.jpg" width="240"/> |
-
-* **Yazım toleranslı arama** - Türkçe karakter katlama, Levenshtein benzerlik sıralaması, önek varyantları ve TR/EN çapraz dil denemeleri: "inceprion" bile *Inception*'ı bulur. Sonuçlar oturum içi önbellekte tutulur, 429 rate-limit'e saygılı retry yapılır.
-* **Ekleme akışı** - dokun: detaylı önizleme, basılı tut: hemen ekle. Zaten ekli yapımlar "✓ Eklendi" ile işaretlenir; API'de bulamazsan manuel ekleme düşer. Film/dizi için TMDB, anime için AniList (anahtarsız) kullanılır; başlık dili tercihi (TR/EN) hatırlanır.
-
-### 🎬 Detay & Düzenleme
-
-| Okuma modu | Düzenleme modu |
-| --- | --- |
-| <img src="docs/screenshots/detail.jpg" width="240"/> | <img src="docs/screenshots/detail-edit.jpg" width="240"/> |
-
-<details>
-<summary>📜 Detay ve düzenleme ekranlarının tamamı (uzun görüntüler)</summary>
-
-<img src="docs/screenshots/detail-full.jpg" width="240"/>
-<img src="docs/screenshots/detail-edit-full.jpg" width="240"/>
-
-</details>
-
-* **AniList tarzı okuma modu** - API'den gelen puan ve oy sayısı, yıl/süre/sezon, türler, stüdyo/yapımcı, hikâye özeti ve oyuncu/karakter kadrosu (anime için karakterler).
-* **Katlanabilir kartlarla düzenleme** - Durum, Bölümler, Takvim, Puanlar, Notlar; kapalıyken tek satırlık özet gösterir. Karta uzun basınca doğrudan düzenleme açılır.
-* **Akıllı tarihler** - kuyruğa eklenen başlığın başlangıcı boş kalır; izlemeye başlarken başlangıç, tamamlarken bitiş tarihi otomatik damgalanır (izlenmeden tamamlanan yapımda ikisi de o gün). Bölüm ilerlemesi toplama ulaşınca başlık kendiliğinden Tamamlandı olur ve **konfeti** düşer.
-* **Yeniden izleme** - biten/araya verilen yapımlar "🔁 İzliyoruz'a al" ile yeniden başlar, sayaç artar.
-* **Notlar** - emoji seçicili tatlı not kartları; ❤️ Favorimiz ile işaretle; favoriler Profil sayfasındaki ızgarada toplanır.
-
-### 💯 Çift puanlama
-
-* Herkes kendi puanını verir; kartların üzerinde **ikimizin ortalaması** görünür.
-* **Detaylı puanlama** - Hikaye, Karakterler, Görsellik, Ses ve Keyif kaydırıcıları (0–10); ana puan bu ortalamadan otomatik hesaplanır. Düzenleme ekranında iki puan halkası yan yana karşılaştırılır.
-
-### 🕵️ Spoiler kilidi & bölüm notları
-
-* "Ayrı ayrı izliyoruz" modunda alınan bölüm notları, karşı taraf o bölüme **gelene kadar kilitli** kalır - uygulama içinde de, bildirimlerde de.
-* Uzun yazmak yerine 😭🔥😱🤯😍😂🤢🤩 hızlı emoji tepkileri bırakabilirsin.
+### 💯 Çift Puanlama Sistematiği
+* **Ortak Puan:** Her iki taraf kendi puanını verir; kartlar üzerinde ikinizin puan ortalaması görünür.
+* **Detaylı Puanlama:** Hikaye, Karakterler, Görsellik, Ses ve Keyif olmak üzere 5 alt kategoride bağımsız 0–10 arası değerlendirme.
 
 ### 🎡 Randevu Gecesi Çarkı
+* **Görsel Afişli Çark:** "Sırada" bekleyen yapımları kura çarkına dizer.
+* **Ses & Titreşim Desteği:** Dönüş esnasında mekanik tik sesleri (`WheelSound`) ve kazanan belirleme marşı. Kazanan kartı şık bir popup ile kutlanır.
 
-* Kararsız kaldığınızda "Sırada" listesinden seçim yapan, **afişli dilimlerden** oluşan canvas çark (afiş yoksa numara + renk lejantı).
-* Tür filtresi ve "İlk 3 / İlk 5 / İlk 10" seçenekleri; 5 saniyelik yavaşlayan dönüş, titreşimli geri bildirim, kazanan kartından tek dokunuşla detaya geçiş.
-* **🎵 Çark sesi** - dönüş sırasında her dilim geçişinde "tik", kazanan belirlenince kısa marş; `🔊 Ses açık / 🔇 Ses kapalı` anahtarı. Kazanan kartı lejantın üstünde gösterilir, lejant kompakt tutulur.
+### 🏅 Rozet Yolculuğu & İstatistikler
+* **Ortak Başarılar (27+ Rozet):** Çiftin birlikte tamamladığı maratonlar, izleme serileri ve özel kategoriler için açılan rozetler.
+* **İzleme Takvimi & Yıl Özeti (Wrapped):** Katkı haritası (Heatmap) ve Spotify tarzı yıllık izleme özeti.
 
-### 🏅 Rozet Yolculuğu
-
-<img src="docs/screenshots/achievements.jpg" width="260" alt="Rozet ekranı" style="float: right; margin-left: 1rem; margin-bottom: 1rem;" />
-
-* **27 rozet** - İlk Perde 🎬, Kombo 🌪️, Anayasa Kitabı 🐉, Sinophil 🏯… hepsi **çiftin ortak** başarısı.
-* Sağa sola kıvrılan patika üzerinde altın madalyalar, kilitli rozetlerde ilerleme çubuğu, yeni açılan rozetlerde konfeti kutlaması.
-* Rozetler her kayıttan sonra otomatik değerlendirilir - Rozetler sekmesi açık olmasa bile.
-
-<div style="clear: both;"></div>
-
-<details>
-<summary>📜 Rozet ekranının tamamı (uzun görüntü)</summary>
-
-<img src="docs/screenshots/achievements-full.jpg" width="260"/>
-
-</details>
-
-### 📊 İstatistikler: Takvim & Wrapped
-
-| İzleme Takvimi | Yıl Özeti |
-| --- | --- |
-| <img src="docs/screenshots/heatmap.jpg" width="240"/> | <img src="docs/screenshots/wrapped.jpg" width="240"/> |
-
-<details>
-<summary>📜 Wrapped ekranının tamamı (uzun görüntü)</summary>
-
-<img src="docs/screenshots/wrapped-full.jpg" width="240"/>
-
-</details>
-
-* **İzleme Takvimi (Heatmap)** - GitHub tarzı, son 6 ayı gösteren katkı grafiği; ay ve gün etiketli, "Az → Çok" doygunluk lejantlı.
-* **Yıl Özeti (Wrapped)** - Spotify tarzı kapak kartıyla: tamamlananlar, izlenen bölüm, tahmini ekran saati, **Yılın En Değerlileri (top 3)**, aylık aktivite grafiği, tür dağılımı, ortalama puan, en aktif gün, yılın en büyük maraton günü, yılın ilk/son izlenenleri ve birlikte bayıldıklarınız (9+). ◀ ▶ ile geçmiş yıllara da gezinebilirsiniz.
-* **Tutarlı istatistikler** - takvim, wrapped, profil sayaçları ve rozetler tek doğruluk kaynağından beslenir: bir başlığı Tamamlandı işaretlemek (film dahil) otomatik olarak izleme günlüğüne işlenir; seri, günlük kayıtlar + bitirme günlerinden hesaplanır.
-
-### 👥 Profil
-
-<img src="docs/screenshots/profile.jpg" width="240" alt="Profil ekranı" style="float: right; margin-left: 1rem; margin-bottom: 1rem;" />
-
-* İsim, emoji (12 seçenek), renk ve **kare kırpmalı** profil fotoğrafı (bellek dostu küçültme ile yüklenir, Supabase Storage'a gider).
-* Duolingo tarzı istatistik şeridi: 🔥 Seri · 🎬 Bitirdik · 📺 Bölüm · 🏅 Rozet.
-* Ortak favoriler ızgarası ve tek dokunuşla **İzleme Takvimi / Wrapped** geçişi.
-* Diğer profile dokunmak "Bu profille geç" yapar - iki telefon, iki kimlik.
-
-<div style="clear: both;"></div>
-
-### 🔔 Bildirimler - üç katman, uygulama kapalıyken bile
-
-```text
-                    ┌─ Uygulama AÇIK   → Supabase Realtime → anında bildirim
-Veritabanı olayı ───┼─ Uygulama KAPALI → pg_net trigger → notify Edge Function → FCM (data-only)
-                    └─ Güvenlik ağı    → WorkManager (~15 dk'da bir kontrol)
-```
-
-* Bildirilenler: başlık ekleme, durum değişiklikleri (izleme/tamamlama/bırakma…), puan verme/güncelleme, başlık notu, bölüm notu (spoiler kilidine saygılı), bölüm kilometre taşları ("İkiniz de 10. bölümü geçtiniz!"), gizli notlar ve yıldönümü hatırlatmaları ("Tam 1 yıl önce bugün…").
-* **Çift bildirim koruması** - FCM mesajı bildirimi doğrudan içermez; uygulama Supabase'deki gerçek durumu kontrol edip bildirimi kendisi gösterir. Son görülen olay zaman damgaları DataStore'da kalıcı tutulur; realtime açıkken FCM yolu sessizce geçer. Kalıcı servis bildirimi yoktur.
-
-### 📲 Uygulama İçi Güncelleme (Firebase App Distribution)
-
-* Tester (Van & Sinop), uygulamayı açtığında Firebase App Distribution üzerinden **yeni sürüm varsa otomatik uyarılır**; tek dokunuşla arka planda indirip kurar.
-* Özel güncelleme penceresi: **"Yeni sürüm var 🎉" → `Güncelle`** butonu, indirme ilerleme çubuğu, ardından sistem kurulum ekranı (`Yükle`). Tester daha önce giriş yapmamışsa Google hesabıyla oturum açar.
-* `google-services.json` olmayan API'siz sürümde güncelleme kontrolü kendiliğinden kapanır.
-
-### 🤫 Gizli menü
-
-<img src="docs/screenshots/settings-secret-note.jpg" width="240" alt="Gizli menü" style="float: right; margin-left: 1rem; margin-bottom: 1rem;" />
-
-* Ayarlar → Hakkında yolunu izleyip sürüm yazısına **7 kez** dokunun.
-* Karşınıza çıkan "Partnere gizli not" kutusuna yazdığınız mesaj anında partnerinizin telefonuna bildirim olarak düşer. 💌
-
-<div style="clear: both;"></div>
-
-### 🎨 Görünüm & 🌐 Dil
-
-<img src="docs/screenshots/settings.jpg" width="240" alt="Ayarlar" style="float: right; margin-left: 1rem; margin-bottom: 1rem;" />
-
-* **15 tema rengi** - Mavi, Mor, Yeşil, Pembe, Turuncu, Kırmızı, Gül, Camgöbeği, Turkuaz, Indigo, Lavanta, Limon, Mercan, Nane, Altın.
-* Letterboxd esintili **Midnight** koyu paleti; film/dizi/anime ve durum renkleri her ekranda sabit anlam taşır.
-* **Plus Jakarta Sans** tabanlı tipografi (başlık + gövde), Midnight paleti ve yumuşak gradyanlar; edge-to-edge tasarım.
-* Ayarlar kategorilere ayrılmış (açılır menüler) — Görünüm, Dil, Bildirimler, Hakkında, Tehlikeli Bölge.
-* **Görüntüleme dili (TR/EN):** liste ve detaydaki başlıklar ile açıklamalar seçilen dilde gösterilir; TMDB/AniList'ten İngilizce veri saklanır, Türkçe özeti olmayan yapımlarda otomatik İngilizce yedek kullanılır.
-* **Kütüphane görünümü** (kompakt / poster satırları / 2'li-3'lü ızgara) artık ayarlardan seçilir.
-* Bildirim ayarları: pil optimizasyonu durumu. Tüm verileri tek dokunuşla (atomik TRUNCATE ile) sıfırlama.
-
-<div style="clear: both;"></div>
-
-### 🎬 Keşif: kişi, karakter, yönetmen ve stüdyo sayfaları
-
-* Detay sayfasındaki **oyuncular/karakterler** ve **yönetmen** üzerine dokununca o kişinin biyografisi + tüm filmografisi açılır; listedeki yapımlardan tek dokunuşla koleksiyona eklenebilir.
-* **Yapımcı/stüdyo** çiplerine dokununca stüdyo sayfası açılır (filmografi).
-* Kişiler, karakterler ve stüdyolar **favorilere** alınabilir (❤️) — Profil sekmesindeki "Kişiler & Stüdyolar" bölümünde listelenir.
-* Arama sonuçları yapım yılına göre filtrelenebilir (2020+, 2010'lar, 2000'ler, 2000 öncesi).
-
-### ⚡ Gerçek zamanlı senkronizasyon
-
-* Tüm tablolar Supabase Realtime'a abone; yapılan her değişiklik iki telefonda da anında (debounce'lu) güncellenir.
+### 🔔 Gerçek Zamanlı Senkronizasyon & Bildirimler
+* **Supabase Realtime:** İki cihaz arasında yapılan her değişiklik anında senkronize olur.
+* **Üç Katmanlı Bildirim:** Realtime (uygulama açıkken), Edge Function + FCM (uygulama kapalıyken) ve WorkManager periyodik denetleyicisi.
 
 ---
 
-## 🛠️ Teknoloji
+## 🛠️ Teknoloji Yığını
 
-| Katman | Teknoloji |
-| --- | --- |
-| Dil / UI | Kotlin 2.3 + Jetpack Compose (BOM 2026.02, Material 3) + Navigation Compose |
-| Backend | Supabase - Postgres + Realtime + Storage (**Auth yok**) · [supabase-kt 3.5](https://github.com/supabase-community/supabase-kt) |
-| Ağ / Serileştirme | Ktor 3.4 (OkHttp) + kotlinx.serialization |
-| Film/Dizi arama + detay | TMDB API |
-| Anime arama + detay | AniList GraphQL API |
-| Görseller | Coil 3 |
-| Bildirimler | Firebase Cloud Messaging 24 + WorkManager + Supabase Edge Function (pg_net trigger) |
-| Uygulama içi güncelleme | Firebase App Distribution 16 (`firebase-appdistribution`) — özel `InAppUpdateHost` penceresi |
-| Yerel ayarlar | Jetpack DataStore |
-| Sürükle-bırak | sh.calvin.reorderable |
-| Fotoğraf kırpma | vanniktech/android-image-cropper |
-| Hedef | minSdk 26 (Android 8.0) · targetSdk 36 · v2.5.15 |
+| Katman | Kullanılan Teknolojiler |
+| :--- | :--- |
+| **Dil & Arayüz** | Kotlin 2.3+ · Jetpack Compose (Material 3) · Navigation Compose |
+| **Backend & Veritabanı** | Supabase (Postgres, Realtime, Storage) · [supabase-kt 3.5](https://github.com/supabase-community/supabase-kt) |
+| **Ağ & Medya** | Ktor 3.4 (OkHttp) · Coil 3 · kotlinx.serialization |
+| **API Servisleri** | TMDB API (Film & Dizi) · AniList GraphQL API (Anime) |
+| **Bildirim & Dağıtım** | Firebase Cloud Messaging (FCM) · Firebase App Distribution · WorkManager |
+| **Tasarım Sistematiği** | Midnight Dark Theme · Plus Jakarta Sans Font · Edge-to-Edge |
 
 ---
 
-## 🚀 Kurulum
+## 🚀 Derleme & Geliştirme
 
 ### Gereksinimler
+* Android Studio (JDK 17+, AGP 9.x)
+* `minSdk 26` (Android 8.0) · `targetSdk 36`
 
-* Android Studio (Kotlin 2.3, AGP 9.x, JDK 17+)
-* minSdk 26 (Android 8.0) / targetSdk 36
-
-### 1) Supabase Hazırlığı
-
-1. [supabase.com](https://supabase.com) üzerinden yeni bir proje oluşturun.
-2. SQL Editor'de **[`supabase/init.sql`](supabase/init.sql)** dosyasını çalıştırın - **tek dosyadır**, tüm şemayı içerir:
-   * Tablolar (profiles, titles, title_notes, title_scores, episode_progress_per_profile, episode_notes, achievements, watch_log, partner_pings, fcm_tokens)
-   * `profiles` başlangıç verileri (Van 🌊 / Sinop 🦜)
-   * `avatars` bucket'ı + Storage politikaları
-   * RLS politikaları ve realtime yayınları
-   * FCM trigger'ları (pg_net) ve `reset_all_data()` sıfırlama fonksiyonu
-   * Eski kurulumlardan tek-metinli notların tekil notlara taşınması
-
-   Dosya **idempotent**'tir: mevcut bir veritabanında tekrar çalıştırılması güvenlidir, veri silmez.
-3. Bildirim istiyorsanız `init.sql` içindeki `fcm_notify_event` fonksiyonundaki Edge Function URL'sini kendi proje adresinizle değiştirin (bkz. [Bildirimler Nasıl Çalışıyor?](#-bildirimler--üç-katman-uygulama-kapalıyken-bile)).
-
-### 2) TMDB Anahtarı (Repoya EKLENMEZ)
-
-Proje ana dizinindeki **`local.properties`** dosyasına aşağıdaki satırı ekleyin (bu dosya `.gitignore` içindedir, git reposuna asla gitmez):
-
+### 1) TMDB API Anahtarı
+Projenin kök dizinindeki `local.properties` dosyasına API anahtarınızı ekleyin:
 ```properties
-tmdb.api.key=BU_KISMA_TMDB_API_ANAHTARINIZI_YAZIN
+tmdb.api.key=BURAYA_TMDB_API_KEY_GELECEK
 ```
 
-Anahtar, derleme sırasında `BuildConfig.TMDB_API_KEY` değişkenine okunur. Ücretsiz anahtar: [themoviedb.org](https://www.themoviedb.org/settings/api). Anime tarafı (AniList) anahtar gerektirmeden çalışır.
-
-> ⚠️ **Supabase anahtarları kodda veya repoda saklanmaz.** Supabase URL'si ve anon key, uygulamanın ilk açılışında elle girilir, gerçekten çalıştığı doğrulanır (`profiles` tablosuna probe atılır) ve yalnızca telefonun DataStore'unda saklanır.
-
-### 3) Derleme
+### 2) Derleme Komutları
 
 ```bash
-./gradlew assembleDebug
-# Çıktı APK konumu: app/build/outputs/apk/debug/app-debug.apk
+# Debug APK derlemesi
+./gradlew :app:assembleDebug
+
+# GitHub Release (API'siz APK):
+./gradlew :app:assembleRelease -PtmdbApiKey=""
+
+# Firebase / Kullanıcı Release (API'li APK):
+./gradlew :app:assembleRelease
 ```
-
-### 4) İlk Açılış (Her telefonda bir kez)
-
-1. Supabase **URL** ve **anon key** bilgilerinizi girin (Project Settings → API).
-2. Profilinizi seçin: **Van** veya **Sinop**
-
-Bilgiler DataStore'da saklanır; Profil sekmesinden istediğiniz an diğer profile geçebilirsiniz.
-
-### 5) Bildirimler için Firebase (İsteğe Bağlı)
-
-* `app/google-services.json` dosyasını Firebase konsolundan indirip `app/` klasörüne koyun - derleme sırasında değerler BuildConfig'e işlenir; **dosya yoksa FCM sessizce devre dışı kalır** (realtime + WorkManager çalışmaya devam eder).
-* Firebase'den **service account** JSON'u alın ve Supabase Dashboard → Edge Functions → Secrets bölümüne `FCM_SERVICE_ACCOUNT` adıyla ekleyin, sonra `supabase/functions/notify` fonksiyonunu deploy edin. Anahtar repoya girmez.
-
----
-
-## 📦 Yayınlar (Release) — v2.5.15
-
-Her sürümde **aynı versionCode/versionName ile iki APK** üretilir; ikisi de **debug keystore** ile imzalanır (`app/build.gradle.kts` → `signingConfigs.release`). Çıktı yolu aynı olduğu için **önce API'siz, sonra API'li** derlenir.
-
-### 1️⃣ API'li sürüm (TMDB anahtarlı) — masaüstüne
-TMDB araması, kişi/stüdyo sayfaları ve İngilizce açıklama fallback'i tam çalışır; tester telefonlarına ve Firebase App Distribution'a bu yüklenir.
-
-```bash
-# local.properties'e TMDB anahtarınız yazılı olduğundan emin olun (tmdb.api.key=...)
-./gradlew assembleRelease
-cp app/build/outputs/apk/release/app-release.apk ~/Masaüstü/minimuv-vX.Y.Z.apk
-```
-
-### 2️⃣ API'siz sürüm — GitHub Releases'e
-TMDB anahtarı **derlenmez** (boş BuildConfig), bu yüzden arama kapalıdır; gerisi çalışır.
-
-```bash
-./gradlew assembleRelease -PtmdbApiKey=""
-cp app/build/outputs/apk/release/app-release.apk ~/Sürümler/minimuv-vX.Y.Z.apk   # GitHub'a yüklenir
-```
-
-> **İn-app güncelleme için:** `versionCode` telefonda kurulu olandan büyük olmalı; Firebase aynı `versionCode`'un yeniden yüklenmesini reddettiği için her testte mutlaka artırın. `google-services.json` repoda yoktur; GitHub sürümünde FCM pasiftir. Kişisel sürüm için dosyayı `app/` klasörüne koyup yeniden derleyin.
-
----
-
-## 🗄️ Supabase Şeması
-
-Tüm veritabanı şeması **tek bir dosyada** toplanmıştır: [`supabase/init.sql`](supabase/init.sql) - tablolar, RLS, seed, Storage politikaları, realtime yayınları ve FCM trigger'ları dahil. Şemada değişiklik yapılacağı zaman **yalnızca bu dosya güncellenir**.
-
-### Tablolar
-
-| Tablo | Amaç | Önemli Alanlar |
-| --- | --- | --- |
-| `profiles` | Sabit iki profil | `name`, `emoji`, `avatar_color`, `avatar_url` |
-| `titles` | İzlenen içerikler | `type` (film/dizi/anime), `status`, `score` *(çift ortalama)*, `overview` + `overview_en`, `title_en`, `episode_progress`, `total_episodes`, `start_date`, `finish_date`, `total_rewatches`, `watch_mode` (birlikte/ayrı), `priority_order`, `is_private`, `is_favorite` |
-| `title_notes` | Başlıklara yazılan tekil notlar | `title_id`, `profile_id`, `note_text`, `emoji` |
-| `title_scores` | **Kişi bazlı puanlar** | `title_id` + `profile_id` (benzersiz), `score`, `story`, `characters`, `visuals`, `audio`, `enjoyment` |
-| `episode_progress_per_profile` | Ayrı modda kişisel bölüm ilerlemesi | `title_id` + `profile_id` (benzersiz), `current_episode` |
-| `episode_notes` | Bölüm bazlı notlar (spoiler korumalı) | `episode_number`, `note_text`, `emoji_reaction` |
-| `achievements` | Çift bazlı rozetler | `achievement_key` (benzersiz), `progress_current/target` |
-| `watch_log` | Takvim/istatistik günlüğü | `date`, `episodes_watched` |
-| `partner_pings` | Gizli menü mesajları | `from_profile`, `message` |
-| `fcm_tokens` | Cihaz push token'ları | `token` (benzersiz), `profile_id` |
-| `favorites` | Kişi/karakter/stüdyo favorileri | `profile_id`, `fav_type` (person/character/studio), `source`, `external_id`, `name`, `image_url` |
-
-Ayrıca: aynı yapım (aynı tür + harici ID) veritabanı seviyesinde **iki kez eklenemez** (partial unique index); `titles` güncellemelerinde `updated_at` otomatik işlenir.
-
-### Başlangıç Verisi (Seed)
-
-```sql
-insert into public.profiles (name, emoji, avatar_color)
-select 'Van', '🌊', '#4EA8DE' where not exists (select 1 from public.profiles where name = 'Van');
-
-insert into public.profiles (name, emoji, avatar_color)
-select 'Sinop', '🦜', '#FF8FA3' where not exists (select 1 from public.profiles where name = 'Sinop');
-```
-
-### Realtime & RLS
-
-* `titles`, `title_notes`, `title_scores`, `episode_progress_per_profile`, `episode_notes`, `achievements`, `watch_log`, `partner_pings`, `profiles` - dokuz tablonun tamamı `supabase_realtime` yayınına eklenmiştir.
-* Auth kullanılmadığı için tüm tablolarda `anon` rolüne tam erişim politikası vardır (bkz. Güvenlik Modeli).
-
----
-
-## 🗂️ Mimari
-
-```text
-app/src/main/java/com/sinop/minimuv/
-├── core/            # SupabaseProvider, RealtimeManager, SearchApi (TMDB+AniList, TextNormalizer),
-│                    # bildirim çekirdeği: NotificationHelper + PartnerEventWatcher,
-│                    # Ping/Score/Note/Milestone/TitleTransition/Anniversary takipçileri,
-│                    # MinimuvMessagingService (FCM) + NotificationWorker (WorkManager),
-│                    # WheelSound (çark sesleri, SoundPool)
-├── data/            # Modeller, SettingsStore (DataStore), Repository sınıfları,
-│                    # Achievements (27 rozet tanımı + ortak istatistik hesabı) + AchievementChecker
-├── ui/
-│   ├── theme/       # Midnight paleti, 15 vurgu rengi, sabit tür/durum renk kodlaması, Plus Jakarta Sans
-│   ├── components/  # PosterCard, StatusChip, ScoreBadge, SoftChip, InAppUpdateHost, konfeti animasyonu…
-│   └── screens/
-│       ├── list/    # Gruplandırılmış kütüphane, 4 görünüm modu, filtre çekmecesi,
-│       │            # sürükle-bırak sıra düzenleme (PlanOrderScreen)
-│       ├── detail/  # MAL tarzı okuma + katlanabilir kartlı düzenleme (puan, not, liste)
-│       ├── add/     # Debounce'lu arama, önizleme sayfası, manuel ekleme
-│       ├── wheel/   # Afişli randevu çarkı (canvas) + ses (WheelSound)
-│       ├── achievements/  # Rozet yolculuğu (patika + konfeti)
-│       ├── stats/   # Heatmap (26 hafta) + Wrapped (yıl özeti)
-│       ├── profile/ # Profil yönetimi, kırpmalı fotoğraf, favoriler
-│       ├── setup/   # Doğrulamalı Supabase bağlantısı + profil seçimi
-│       └── settings # Tema, bildirim araçları, gizli menü, sıfırlama
-└── supabase/
-    ├── init.sql           # Tek dosyada tüm şema (idempotent)
-    └── functions/notify/  # FCM Edge Function (service account ile OAuth → FCM v1 API)
-```
-
----
-
-## ⚠️ Güvenlik Modeli (Bilinçli Tercih)
-
-Uygulamada kullanıcı adı/şifre sistemi yoktur. Veritabanına "anon key" ile bağlanılır, profil ayrımı cihazın yerel hafızasındaki seçimle yapılır. Bu, **anon key'i bilen herkesin verilerinize erişebileceği** anlamına gelir:
-
-* Supabase URL + anon key ikilisini **kimseyle paylaşmayın** (APK içinde bulunmaz, ilk açılışta elle girilir).
-* Repoyu **private** tutun; kişisel bir proje olduğu için bu basitleştirme kabul edilmiştir.
 
 ---
 
 ## 📄 Lisans
 
-Kişisel proje - her hakkı saklıdır. Van & Sinop için, sevgiyle yapıldı. 💑
+Van & Sinop için sevgiyle yapılmış özel çift takip uygulaması. Her hakkı saklıdır. 💑
