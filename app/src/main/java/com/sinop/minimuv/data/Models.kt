@@ -125,6 +125,8 @@ data class FcmToken(
     val token: String,
     @SerialName("profile_id") val profileId: String? = null,
     @SerialName("created_at") val createdAt: String? = null,
+    // Her açılışta yenilenir: bayat token'ları ayırt etmek için.
+    @SerialName("updated_at") val updatedAt: String? = null,
 )
 
 @Serializable
@@ -208,5 +210,15 @@ data class Favorite(
     @SerialName("external_id") val externalId: String,
     val name: String,
     @SerialName("image_url") val imageUrl: String? = null,
+    @SerialName("created_at") val createdAt: String? = null,
+)
+
+/** Bir başlığı hangi profilin favorilediğini tutar. `titles.is_favorite`
+ *  "en az biri favoriledi" bayrağı olarak geriye dönük uyumludur. */
+@Serializable
+data class TitleFavorite(
+    val id: String? = null,
+    @SerialName("title_id") val titleId: String,
+    @SerialName("profile_id") val profileId: String,
     @SerialName("created_at") val createdAt: String? = null,
 )

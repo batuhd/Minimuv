@@ -27,6 +27,9 @@ class SettingsStore(private val context: Context) {
         val KEY_TITLES_SNAPSHOT = stringPreferencesKey("titles_snapshot")
         val KEY_LAST_ANNIV_DATE = stringPreferencesKey("last_anniv_date")
         val KEY_MILESTONES_SNAPSHOT = stringPreferencesKey("milestones_snapshot")
+        // "titleId|profileId" -> son görülen bölüm. Hangi tarafın ilerlediğini
+        // ayırt etmek için: kendi eklediğimiz bölüm bildirim üretmesin.
+        val KEY_MILESTONE_PROGRESS_SNAPSHOT = stringPreferencesKey("milestone_progress_snapshot")
         val KEY_SCORE_SNAPSHOT = stringPreferencesKey("score_snapshot")
         val KEY_LAST_TITLE_NOTE_AT = stringPreferencesKey("last_title_note_at")
         val KEY_LAST_EPISODE_NOTE_AT = stringPreferencesKey("last_episode_note_at")
@@ -174,6 +177,13 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveMilestonesSnapshot(value: String) {
         context.dataStore.edit { it[KEY_MILESTONES_SNAPSHOT] = value }
+    }
+
+    suspend fun milestoneProgressSnapshot(): String? =
+        context.dataStore.data.first()[KEY_MILESTONE_PROGRESS_SNAPSHOT]
+
+    suspend fun saveMilestoneProgressSnapshot(value: String) {
+        context.dataStore.edit { it[KEY_MILESTONE_PROGRESS_SNAPSHOT] = value }
     }
 
     suspend fun scoreSnapshot(): String? = context.dataStore.data.first()[KEY_SCORE_SNAPSHOT]

@@ -30,7 +30,11 @@ class TokenRepository(private val context: Context) {
         // aynı anda çağırsa bile çakışmaz; varsa profilini günceller.
         runCatching {
             SupabaseProvider.client.postgrest.from("fcm_tokens").upsert(
-                FcmToken(token = actual, profileId = profileId),
+                FcmToken(
+                    token = actual,
+                    profileId = profileId,
+                    updatedAt = java.time.Instant.now().toString(),
+                ),
             ) {
                 onConflict = "token"
             }

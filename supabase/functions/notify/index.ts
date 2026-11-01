@@ -1,4 +1,4 @@
-﻿// Minimuv — FCM bildirim Edge Function'ı
+// Minimuv — FCM bildirim Edge Function'ı
 // Veritabanı triggerları (pg_net) buraya POST atar; fonksiyon ilgili cihaz
 // tokenlarına data-only FCM mesajı gönderir. Uygulama mesajı alınca Supabase'deki
 // gerçek durumu kontrol edip bildirimi kendisi gösterir (çift bildirim korumalı).
@@ -121,6 +121,17 @@ async function sendAll(
   if (failed > 0) console.warn(`${failed} token gönderimi başarısız`);
 }
 
+/** Olayı yapan profil hariç tüm cihaz tokenları. `profile_id` boş satırlar
+ *  (kurulum tamamlanmadan kaydolmuş cihazlar) kaybolmasın diye filtre JS
+ *  tarafında yapılır; PostgREST `neq` NULL satırları dışarıda bırakır. */
+async function tokensForOthers(actor?: string | null) {
+  const { data } = await supabase
+    .from("fcm_tokens")
+    .select("token, profile_id");
+  const rows = (data ?? []) as Array<{ token: string; profile_id: string | null }>;
+  return actor ? rows.filter((r) => r.profile_id !== actor) : rows;
+}
+
 const ALLOWED_TABLES = new Set([
   "partner_pings",
   "titles",
@@ -174,62 +185,45 @@ Deno.serve(async (req) => {
 
   try {
     if (table === "partner_pings" && type === "INSERT" && payload?.from_profile) {
-      const { data: tokens } = await supabase
-        .from("fcm_tokens")
-        .select("token, profile_id")
-        .neq("profile_id", payload.from_profile);
-      await sendAll(tokens, { type: "ping" });
+      await sendAll(await tokensForOthers(payload.from_profile), { type: "ping" });
     }
 
     if (table === "titles" && type === "INSERT") {
       // Ekleyen cihaza bildirim gönderme; eski kayıtlarda created_by null olabilir.
-      const creator: string | undefined = payload?.created_by_profile_id;
-      const { data: tokens } = creator
-        ? await supabase.from("fcm_tokens").select("token, profile_id").neq("profile_id", creator)
-        : await supabase.from("fcm_tokens").select("token, profile_id");
-      await sendAll(tokens, { type: "title_new" });
+      await sendAll(
+        await tokensForOthers(payload?.created_by_profile_id),
+        { type: "title_new" },
+      );
     }
 
     if (table === "titles" && type === "UPDATE") {
       if (payload?.status && old?.status && payload.status !== old.status) {
         // Durumu değiştiren cihaza bildirim gönderme (updated_by_profile_id).
-        const sender: string | undefined = payload?.updated_by_profile_id;
-        const { data: tokens } = sender
-          ? await supabase.from("fcm_tokens").select("token").neq("profile_id", sender)
-          : await supabase.from("fcm_tokens").select("token");
-        await sendAll(tokens, { type: "title_status" });
+        await sendAll(
+          await tokensForOthers(payload?.updated_by_profile_id),
+          { type: "title_status" },
+        );
       }
     }
 
     if (table === "episode_progress_per_profile") {
-      const { data: tokens } = await supabase
-        .from("fcm_tokens")
-        .select("token");
-      await sendAll(tokens, { type: "episode_progress" });
+      // Bölümü ekleyen cihaz kendi bildirimini almasın.
+      await sendAll(
+        await tokensForOthers(payload?.profile_id),
+        { type: "episode_progress" },
+      );
     }
 
     if (table === "title_scores" && payload?.profile_id) {
-      const { data: tokens } = await supabase
-        .from("fcm_tokens")
-        .select("token, profile_id")
-        .neq("profile_id", payload.profile_id);
-      await sendAll(tokens, { type: "score" });
+      await sendAll(await tokensForOthers(payload.profile_id), { type: "score" });
     }
 
     if (table === "title_notes" && payload?.profile_id) {
-      const { data: tokens } = await supabase
-        .from("fcm_tokens")
-        .select("token, profile_id")
-        .neq("profile_id", payload.profile_id);
-      await sendAll(tokens, { type: "note" });
+      await sendAll(await tokensForOthers(payload.profile_id), { type: "note" });
     }
 
     if (table === "episode_notes" && payload?.profile_id) {
-      const { data: tokens } = await supabase
-        .from("fcm_tokens")
-        .select("token, profile_id")
-        .neq("profile_id", payload.profile_id);
-      await sendAll(tokens, { type: "episode_note" });
+      await sendAll(await tokensForOthers(payload.profile_id), { type: "episode_note" });
     }
   } catch (e) {
     console.error(e);

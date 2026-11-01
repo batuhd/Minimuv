@@ -208,26 +208,34 @@ object MilestoneTracker {
 
     private val mutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true }
-    private var milestones: MutableMap<String, Int>? = null // null = henüz yüklenmedi
+    private var milestones: MutableMap<String, Int>? = null // titleId -> bildirilen taş
+    // "titleId|profileId" -> son görülen bölüm. Kendi eklediğimiz bölümün
+    // bildirim üretmemesi için hangi tarafın ilerlediğini ayırt eder.
+    private var progressSnapshot: MutableMap<String, Int>? = null
+    private var canNotify = false
 
     /** Ayrı moddaki başlıklarda ikinizin de geçtiği 10'ar bölümlük kilometre
      *  taşlarını bildirir. Bildirilenler kalıcı kaydedilir — uygulama kapalıyken
-     *  FCM/worker yolu çalışsa da aynı taş iki kez bildirilmez. */
+     *  FCM/worker yolu çalışsa da aynı taş iki kez bildirilmez.
+     *
+     *  Bildirim yalnızca taşı **partner** geçirdiğinde gösterilir. Kendi
+     *  eklediğimiz bölüm taşı geçirse bile taş sessizce kaydedilir; böylece
+     *  kendi cihazımızda kendi işlemimiz için bildirim çıkmaz. */
     suspend fun process(context: Context, profileId: String) {
         val repo = TitleRepository()
         val titles = runCatching { repo.getTitlesLite() }
             .onFailure { android.util.Log.w("MinimuvNotif", "Başlıklar yüklenemedi", it) }
             .getOrNull() ?: return
         mutex.withLock {
+            val settings = SettingsStore(context)
             if (milestones == null) {
-                val stored = runCatching { SettingsStore(context).milestonesSnapshot() }.getOrNull()
-                milestones = if (stored.isNullOrBlank()) {
-                    mutableMapOf()
-                } else {
-                    runCatching { json.decodeFromString<Map<String, Int>>(stored) }
-                        .getOrDefault(emptyMap())
-                        .toMutableMap()
-                }
+                val storedMilestones = runCatching { settings.milestonesSnapshot() }.getOrNull()
+                val storedProgress = runCatching { settings.milestoneProgressSnapshot() }.getOrNull()
+                milestones = decodeIntMap(storedMilestones)
+                progressSnapshot = decodeIntMap(storedProgress)
+                // İlk kurulumda / eski sürümden geçişte mevcut durum sessizce
+                // fotoğraflanır: geçmiş kilometre taşları için bildirim fırtınası yok.
+                canNotify = !storedMilestones.isNullOrBlank() && !storedProgress.isNullOrBlank()
             }
             val ayriTitles = titles.filter { it.watchMode == WatchMode.AYRI.db }
             if (ayriTitles.isEmpty()) return@withLock
@@ -235,36 +243,72 @@ object MilestoneTracker {
             val progressByTitle = runCatching { repo.getAllEpisodeProgress() }
                 .getOrDefault(emptyList())
                 .groupBy { it.titleId }
-            var changed = false
+            var changedMilestones = false
+            var changedProgress = false
             ayriTitles.forEach { title ->
-                val progress = progressByTitle[title.id].orEmpty()
-                val mine = progress.firstOrNull { it.profileId == profileId }?.currentEpisode ?: 0
-                val partner = progress.firstOrNull { it.profileId != profileId }?.currentEpisode ?: 0
+                val rows = progressByTitle[title.id].orEmpty()
+                val myRow = rows.firstOrNull { it.profileId == profileId }
+                val partnerRow = rows.firstOrNull { it.profileId != profileId }
+                val mine = myRow?.currentEpisode ?: 0
+                val partner = partnerRow?.currentEpisode ?: 0
                 val milestone = (minOf(mine, partner) / 10) * 10
+
+                val myKey = "${title.id}|$profileId"
+                val partnerKey = partnerRow?.let { "${title.id}|${it.profileId}" }
+                val previousPartner = partnerKey?.let { progressSnapshot!![it] }
+
                 if (milestone >= 10 && milestones!![title.id] != milestone) {
                     milestones!![title.id] = milestone
-                    changed = true
-                    NotificationHelper.show(
-                        context,
-                        "🎊 ${title.title}",
-                        "İkiniz de $milestone. bölümü geçtiniz!",
-                        id = title.id.hashCode(),
-                    )
+                    changedMilestones = true
+                    // Taşı partner mi geçirdi? Önceki fotoğraf yoksa (ilk kez
+                    // görülen satır) 0 kabul edilir; ilk kurulum zaten sessiz.
+                    val partnerMoved = partnerRow != null && partner > (previousPartner ?: 0)
+                    if (canNotify && partnerMoved) {
+                        NotificationHelper.show(
+                            context,
+                            "🎊 ${title.title}",
+                            "İkiniz de $milestone. bölümü geçtiniz!",
+                            id = title.id.hashCode(),
+                        )
+                    }
                 }
+
+                fun remember(key: String, value: Int) {
+                    if (progressSnapshot!![key] != value) {
+                        progressSnapshot!![key] = value
+                        changedProgress = true
+                    }
+                }
+                remember(myKey, mine)
+                if (partnerKey != null) remember(partnerKey, partner)
             }
-            if (changed) {
-                val payload = runCatching {
-                    json.encodeToString(
-                        MapSerializer(String.serializer(), Int.serializer()),
-                        milestones!!,
-                    )
-                }.getOrNull()
-                if (payload != null) {
-                    // Bekleyerek yaz: worker dönmeden kalıcı olsun (BUG-006).
-                    runCatching { SettingsStore(context).saveMilestonesSnapshot(payload) }
-                }
+            if (changedMilestones) {
+                persist(settings::saveMilestonesSnapshot, milestones!!)
+            }
+            if (changedProgress) {
+                persist(settings::saveMilestoneProgressSnapshot, progressSnapshot!!)
             }
         }
+    }
+
+    private fun decodeIntMap(raw: String?): MutableMap<String, Int> =
+        if (raw.isNullOrBlank()) {
+            mutableMapOf()
+        } else {
+            runCatching { json.decodeFromString<Map<String, Int>>(raw) }
+                .getOrDefault(emptyMap())
+                .toMutableMap()
+        }
+
+    private suspend fun persist(
+        save: suspend (String) -> Unit,
+        value: Map<String, Int>,
+    ) {
+        val payload = runCatching {
+            json.encodeToString(MapSerializer(String.serializer(), Int.serializer()), value)
+        }.getOrNull() ?: return
+        // Bekleyerek yaz: worker dönmeden kalıcı olsun (BUG-006).
+        runCatching { save(payload) }
     }
 }
 
