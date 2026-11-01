@@ -109,10 +109,6 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
-/** Çarkta aynı anda gösterilecek en fazla dilim. Daha fazlasında afişler
- *  minicik kalıyordu; havuzdan rastgele bu kadar yapım seçilir. */
-private const val MAX_WHEEL_SLICES = 10
-
 /** Dilim renkleri vurgu + partner renginden türetilir; canvas ve lejant aynı listeyi kullanır. */
 private fun wheelSliceColors(van: Color, sinop: Color): List<Color> = listOf(
     van.copy(alpha = 0.85f),
@@ -154,19 +150,14 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
         titles.filter { typeFilter == null || it.type == typeFilter!!.db }
     }
 
-    // Çok başlıkta çark kalabalıklaşıp afişler küçülüyordu. Havuzdan rastgele
-    // en fazla MAX_WHEEL_SLICES yapım seçilir; "Yenile" ile yeni örnek alınır.
-    var wheelSeed by remember { mutableIntStateOf(0) }
-    val candidates = remember(pool, wheelSeed) {
-        if (pool.size <= MAX_WHEEL_SLICES) pool else pool.shuffled().take(MAX_WHEEL_SLICES)
-    }
-    var wheelPool by remember { mutableStateOf(candidates) }
-    // Dönüş sırasında çarkın görünümü değişmesin: yeni liste ancak durunca uygulanır.
-    LaunchedEffect(candidates, spinning) {
-        if (!spinning) wheelPool = candidates
+    // Havuzdaki HER yapım çarkta gösterilir; rastgele eleme / yenileme yok.
+    // Dönüş sırasında çarkın görünümü değişmesin diye liste kilitlenir.
+    var wheelPool by remember { mutableStateOf(pool) }
+    LaunchedEffect(pool, spinning) {
+        if (!spinning) wheelPool = pool
     }
 
-    LaunchedEffect(pool, wheelSeed) {
+    LaunchedEffect(pool) {
         // Dönüş sırasında liste sıfırlanmasın (BUG-066).
         if (!spinning) {
             winner = null
@@ -285,11 +276,10 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                when {
-                    pool.isEmpty() -> "Sırada listesine birkaç yapım ekle"
-                    pool.size > MAX_WHEEL_SLICES ->
-                        "Sırada ${pool.size} yapım var · çarkta rastgele ${wheelPool.size} tanesi"
-                    else -> "Sırada listesinden ${pool.size} yapım"
+                if (pool.isEmpty()) {
+                    "Sırada listesine birkaç yapım ekle"
+                } else {
+                    "Sırada listesinden ${pool.size} yapım · hepsi çarkta"
                 },
                 style = MaterialTheme.typography.bodyMedium,
                 color = tk.textSoft,
@@ -309,15 +299,6 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                         onClick = { if (!spinning) typeFilter = if (typeFilter == type) null else type },
                     )
                 }
-            }
-
-            if (pool.size > MAX_WHEEL_SLICES) {
-                Spacer(Modifier.height(8.dp))
-                FilterPill(
-                    "🎲 Çarkı yenile",
-                    selected = false,
-                    onClick = { if (!spinning) wheelSeed++ },
-                )
             }
 
             Spacer(Modifier.height(16.dp))
