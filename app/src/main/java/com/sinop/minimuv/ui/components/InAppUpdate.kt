@@ -45,23 +45,22 @@ import com.sinop.minimuv.ui.theme.Gold
 import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
 import com.sinop.minimuv.ui.theme.tokens
 
-private sealed interface UpdateUiState {
+sealed interface UpdateUiState {
     data object Idle : UpdateUiState
     data class Available(val release: AppDistributionRelease) : UpdateUiState
     data object Downloading : UpdateUiState
     data class Error(val message: String) : UpdateUiState
 }
 
-/** Uygulama açılışında yeni sürümü kontrol eder ve Minimuv tasarım diline
- *  uygun özel güncelleme penceresini gösterir. */
-@Composable
-fun InAppUpdateHost() {
-    if (BuildConfig.FCM_APP_ID.isBlank()) return
+object UpdateManager {
+    var state by mutableStateOf<UpdateUiState>(UpdateUiState.Idle)
+        internal set
 
-    var state by remember { mutableStateOf<UpdateUiState>(UpdateUiState.Idle) }
-    var progress by remember { mutableFloatStateOf(0f) }
-
-    LaunchedEffect(Unit) {
+    fun checkForUpdate(onNoUpdate: (() -> Unit)? = null) {
+        if (BuildConfig.FCM_APP_ID.isBlank()) {
+            onNoUpdate?.invoke()
+            return
+        }
         val fad = FirebaseAppDistribution.getInstance()
         val doCheck: () -> Unit = {
             fad.checkForNewRelease()
@@ -72,39 +71,52 @@ fun InAppUpdateHost() {
                     } else {
                         Log.d("MinimuvUpdate", "Güncel sürümdesiniz (installed: ${BuildConfig.VERSION_CODE}, release: ${release?.versionCode})")
                         state = UpdateUiState.Idle
+                        onNoUpdate?.invoke()
                     }
                 }
                 .addOnFailureListener { e ->
                     Log.w("MinimuvUpdate", "Sürüm kontrolü başarısız", e)
                     state = UpdateUiState.Idle
+                    onNoUpdate?.invoke()
                 }
         }
 
         if (fad.isTesterSignedIn()) {
-            Log.d("MinimuvUpdate", "Tester oturumu açık, sürüm kontrol ediliyor...")
             doCheck()
         } else {
-            Log.d("MinimuvUpdate", "Tester oturumu henüz doğrulanmadı, sürüm kontrolü deneniyor...")
             fad.checkForNewRelease()
                 .addOnSuccessListener { release ->
                     if (release != null && release.versionCode > BuildConfig.VERSION_CODE) {
                         Log.d("MinimuvUpdate", "Yeni sürüm bulundu! v${release.displayVersion} (code: ${release.versionCode})")
                         state = UpdateUiState.Available(release)
                     } else {
-                        Log.d("MinimuvUpdate", "Yeni sürüm bulunamadı (güncel sürüm)")
                         state = UpdateUiState.Idle
+                        onNoUpdate?.invoke()
                     }
                 }
-                .addOnFailureListener { e ->
-                    Log.w("MinimuvUpdate", "Sürüm kontrolü yapılamadı (Tester girişi gerekebilir): ${e.message}")
+                .addOnFailureListener {
                     state = UpdateUiState.Idle
+                    onNoUpdate?.invoke()
                 }
         }
     }
+}
 
-    when (val s = state) {
+/** Uygulama açılışında yeni sürümü kontrol eder ve Minimuv tasarım diline
+ *  uygun özel güncelleme penceresini gösterir. */
+@Composable
+fun InAppUpdateHost() {
+    if (BuildConfig.FCM_APP_ID.isBlank()) return
+
+    var progress by remember { mutableFloatStateOf(0f) }
+
+    LaunchedEffect(Unit) {
+        UpdateManager.checkForUpdate()
+    }
+
+    when (val s = UpdateManager.state) {
         is UpdateUiState.Available -> MinimuvUpdateDialog(
-            onDismissRequest = { state = UpdateUiState.Idle },
+            onDismissRequest = { UpdateManager.state = UpdateUiState.Idle },
         ) {
             val tk = tokens()
             Column(
@@ -180,7 +192,7 @@ fun InAppUpdateHost() {
                         .clip(RoundedCornerShape(16.dp))
                         .background(Brush.horizontalGradient(listOf(tk.van, tk.sinop)))
                         .bounceClick(onClick = {
-                            state = UpdateUiState.Downloading
+                            UpdateManager.state = UpdateUiState.Downloading
                             progress = 0f
                             FirebaseAppDistribution.getInstance().updateApp()
                                 .addOnProgressListener { p ->
@@ -188,10 +200,10 @@ fun InAppUpdateHost() {
                                         p.apkBytesDownloaded.toFloat() / p.apkFileTotalBytes
                                     } else 0f
                                 }
-                                .addOnSuccessListener { state = UpdateUiState.Idle }
+                                .addOnSuccessListener { UpdateManager.state = UpdateUiState.Idle }
                                 .addOnFailureListener { e ->
                                     Log.w("MinimuvUpdate", "Güncelleme başarısız", e)
-                                    state = UpdateUiState.Error(
+                                    UpdateManager.state = UpdateUiState.Error(
                                         if (e is FirebaseAppDistributionException) {
                                             "Güncelleme indirilemedi. İnternet bağlantını kontrol edip tekrar dene. (${e.errorCode})"
                                         } else {
@@ -214,7 +226,7 @@ fun InAppUpdateHost() {
 
                 // Şimdi Değil Butonu
                 TextButton(
-                    onClick = { state = UpdateUiState.Idle },
+                    onClick = { UpdateManager.state = UpdateUiState.Idle },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text(
@@ -290,7 +302,7 @@ fun InAppUpdateHost() {
                 Spacer(Modifier.height(20.dp))
 
                 TextButton(
-                    onClick = { state = UpdateUiState.Idle },
+                    onClick = { UpdateManager.state = UpdateUiState.Idle },
                     modifier = Modifier.fillMaxWidth(),
                 ) {
                     Text("Gizle", color = tk.textMuted)
@@ -299,7 +311,7 @@ fun InAppUpdateHost() {
         }
 
         is UpdateUiState.Error -> MinimuvUpdateDialog(
-            onDismissRequest = { state = UpdateUiState.Idle },
+            onDismissRequest = { UpdateManager.state = UpdateUiState.Idle },
         ) {
             val tk = tokens()
 
@@ -342,7 +354,7 @@ fun InAppUpdateHost() {
                         .height(44.dp)
                         .clip(RoundedCornerShape(14.dp))
                         .background(tk.surface2)
-                        .bounceClick(onClick = { state = UpdateUiState.Idle }),
+                        .bounceClick(onClick = { UpdateManager.state = UpdateUiState.Idle }),
                     contentAlignment = Alignment.Center,
                 ) {
                     Text(

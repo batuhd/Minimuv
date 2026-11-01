@@ -95,6 +95,7 @@ import com.sinop.minimuv.data.TitleFavorite
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.DcButton
 import com.sinop.minimuv.ui.components.ShimmerBox
+import com.sinop.minimuv.ui.components.screenGlow
 import com.sinop.minimuv.ui.theme.AppPalette
 import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import com.sinop.minimuv.ui.theme.parseHexColor
@@ -332,14 +333,20 @@ fun ProfileScreen(
         (minutes / 60)
     }
 
-    Column(
+    Box(
         Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .statusBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(22.dp),
+            .background(tk.bg)
+            .screenGlow(vanAlpha = 0.28f, sinopAlpha = 0.30f),
     ) {
+        Column(
+            Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .statusBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(22.dp),
+        ) {
         // Üst Bar: "Aşk" + Tema Değiştirme + Ayarlar Button
         Row(
             Modifier.fillMaxWidth(),
@@ -561,6 +568,7 @@ fun ProfileScreen(
             },
         )
     }
+}
 }
 
 // ── 1. Çift Başlığı & Avatarlar ────────────────────────────────────────────

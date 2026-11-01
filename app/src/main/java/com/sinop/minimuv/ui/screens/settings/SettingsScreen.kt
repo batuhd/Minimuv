@@ -254,23 +254,20 @@ fun SettingsScreen(
                     if (!isCheckingUpdate) {
                         isCheckingUpdate = true
                         updateCheckStatus = "Sürüm kontrol ediliyor… 🚀"
-                        val fad = com.google.firebase.appdistribution.FirebaseAppDistribution.getInstance()
-                        fad.checkForNewRelease()
-                            .addOnSuccessListener { release ->
-                                isCheckingUpdate = false
-                                if (release != null && release.versionCode > BuildConfig.VERSION_CODE) {
-                                    updateCheckStatus = "Yeni sürüm var! v${release.displayVersion} 🎉"
-                                    android.widget.Toast.makeText(ctx, "Yeni sürüm hazır! v${release.displayVersion} 🎉", android.widget.Toast.LENGTH_LONG).show()
-                                } else {
-                                    updateCheckStatus = "Minimuv son sürümde (v${BuildConfig.VERSION_NAME}) ✨"
-                                    android.widget.Toast.makeText(ctx, "Minimuv son sürümde! ✨", android.widget.Toast.LENGTH_SHORT).show()
-                                }
-                            }
-                            .addOnFailureListener {
+                        com.sinop.minimuv.ui.components.UpdateManager.checkForUpdate(
+                            onNoUpdate = {
                                 isCheckingUpdate = false
                                 updateCheckStatus = "Minimuv son sürümde (v${BuildConfig.VERSION_NAME}) ✨"
                                 android.widget.Toast.makeText(ctx, "Minimuv son sürümde! ✨", android.widget.Toast.LENGTH_SHORT).show()
                             }
+                        )
+                        scope.launch {
+                            delay(1200)
+                            if (com.sinop.minimuv.ui.components.UpdateManager.state is com.sinop.minimuv.ui.components.UpdateUiState.Available) {
+                                isCheckingUpdate = false
+                                updateCheckStatus = "Yeni sürüm var! 🎉"
+                            }
+                        }
                     }
                 }
                 Box(
