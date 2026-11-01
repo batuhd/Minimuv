@@ -253,7 +253,7 @@ fun SettingsScreen(
                 )
             }
 
-            SettingsSection("Hakkında") {
+            SettingsSection("Güncelleme") {
                 SettingsRow(
                     label = "Tester Girişi Yap (Güncelleme İzni)",
                     subtitle = if (isTesterSignedIn) "Tester oturumu açık ✅" else "Dokunup Google ile giriş yap ve izin ver 🔑",
@@ -300,6 +300,10 @@ fun SettingsScreen(
                         }
                     }
                 }
+            }
+
+            Spacer(Modifier.height(20.dp))
+            SettingsSection("Hakkında") {
                 Box(
                     Modifier
                         .fillMaxWidth()
