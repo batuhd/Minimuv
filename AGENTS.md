@@ -71,6 +71,7 @@ cp app/build/outputs/apk/release/app-release.apk  ~/Masaüstü/minimuv-vX.Y.Z.ap
   - `data/` — Supabase modelleri & repository'ler (TitleRepository, ProfileRepository, FavoritesRepository, TokenRepository, SettingsStore=DataStore, Achievements)
   - `ui/` — `AppRoot.kt` (NavHost + tüm rotalar + `InAppUpdateHost`), `screens/` (list, add, detail, person, studio, wheel, achievements, profile, stats, settings, setup), `components/` (PosterCard, InAppUpdate…), `theme/`
 - Veritabanı şeması **tek dosya**: `supabase/init.sql` (tablolar + RLS + seed + realtime + FCM trigger'ları). Şema değişiklikleri yalnızca burada yapılır.
+  - **Bilinen fark:** Canlı DB'de `init.sql`'de bulunmayan, uygulamanın kullanmadığı v3 nesneleri var (`friendships`, `watch_proposals`, `reports`, `current_profile_id()`, `profiles.auth_user_id` vb.). Veri kaybını önlemek için canlıdan silinmedi ve `init.sql`'e geri taşınmadı; yeni kurulumlar bu nesneler olmadan çalışır. Karar verilene kadar bunları silme/ekleme.
 - Yerel veritabanı yok; kalıcılık Supabase + DataStore.
 
 ## Arama & Dil

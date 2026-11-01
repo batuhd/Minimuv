@@ -293,6 +293,7 @@ Tüm veritabanı şeması **tek bir dosyada** toplanmıştır: [`supabase/init.s
 | :--- | :--- | :--- |
 | `profiles` | Sabit iki profil | `name`, `emoji`, `avatar_color`, `avatar_url` |
 | `titles` | İzlenen içerikler | `type` (film/dizi/anime), `status`, `score` *(çift ortalaması)*, `overview` + `overview_en`, `title_en`, `episode_progress`, `total_episodes`, `start_date`, `finish_date`, `total_rewatches`, `watch_mode` (birlikte/ayrı), `priority_order`, `is_private`, `is_favorite` |
+| `title_favorites` | Bir başlığı hangi profilin favorilediği | `title_id` + `profile_id` (benzersiz) |
 | `title_notes` | Başlıklara yazılan tekil notlar | `title_id`, `profile_id`, `note_text`, `emoji` |
 | `title_scores` | **Kişi bazlı puanlar** | `title_id` + `profile_id` (benzersiz), `score`, `story`, `characters`, `visuals`, `audio`, `enjoyment` |
 | `episode_progress_per_profile` | Ayrı modda kişisel bölüm ilerlemesi | `title_id` + `profile_id` (benzersiz), `current_episode` |
@@ -304,6 +305,8 @@ Tüm veritabanı şeması **tek bir dosyada** toplanmıştır: [`supabase/init.s
 | `favorites` | Kişi/karakter/stüdyo favorileri | `profile_id`, `fav_type` (person/character/studio), `source`, `external_id`, `name`, `image_url` |
 
 Ayrıca: aynı yapım (aynı tür + harici ID) veritabanı seviyesinde **iki kez eklenemez** (partial unique index); `titles` güncellemelerinde `updated_at` otomatik işlenir.
+
+> **Canlı DB ↔ `init.sql` farkı:** Canlı projede, `init.sql`'de bulunmayan v3 kimlik/çok kullanıcı nesneleri var (`profiles.auth_user_id/username/...`, `friendships`, `watch_proposals`, `reports`, `current_profile_id()` vb.). Bunlar terk edilmiş `v2-temel` hattından kalmıştır ve uygulama tarafından kullanılmaz. Veri kaybını önlemek için canlıdan silinmedi; yeni kurulumlar bu nesneler olmadan çalışır. İleride ya tamamen kaldırılmalı ya da v3 hattıyla birlikte yeniden benimsenmelidir.
 
 ### Başlangıç Verisi (Seed)
 
