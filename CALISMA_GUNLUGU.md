@@ -18,70 +18,107 @@ Her adım tamamlandıkça işaretlenir; hata ve notlar ilgili maddenin altına y
 
 ## Tamamlananlar
 
-- [x] **Veritabanı incelemesi (ilk tur):** şema, tablo sayıları, RLS, realtime yayını ve
-  FCM trigger'ları kontrol edildi. Yedek alındı. Ayrıntılı bulgular aşağıda.
-- [x] **Bildirim sorununun kök neden analizi:**
-  - `supabase/functions/notify/index.ts` → `episode_progress_per_profile` dalı tokenları
-    **hiç filtrelemeden** gönderiyordu; işlemi yapan cihaz da kendi bildirimini alıyordu.
-  - `MilestoneTracker` kimin tetiklediğini bilmiyordu; kendi bölüm eklemeniz kilometre
-    taşını geçirince aynı cihazda "İkiniz de N. bölümü geçtiniz" bildirimi çıkabiliyordu.
-  - Profil değişiminde FCM token'ının profile eşlenmesi yalnızca `MainApp` yeniden
-    kurulunca yapılıyor; `fcm_tokens.updated_at` upsert'te yenilenmiyordu (bayat token
-    ayrımı yapılamıyordu).
-  - Test cihazı (SM-A207F) DataStore'unda kayıtlı profil: **Sinop**
-    (`a41d1e0f-…`). Cihazda kurulu sürüm 3.0.0 (300); kaynaktaki sürüm 3.2.4 (324).
+### Bildirimler
+- [x] **Edge Function `notify`:** bölüm ilerlemesinde işlemi yapan profil (`profile_id`)
+  hariç tutuluyor; token sorgusu `profile_id` boş satırları da kapsıyor. Tüm dallar
+  yalnızca **karşı tarafa** gönderiyor. Sürüm 12 olarak deploy edildi.
+- [x] **`MilestoneTracker`:** ilerleme anlık görüntüsü tutuyor; yalnızca **partnerin**
+  ilerlemesi kilometre taşını geçince bildiriyor. Realtime, FCM ve WorkManager aynı
+  mantığı kullanıyor.
+- [x] **`TokenRepository`:** upsert'te `updated_at` yenileniyor; profil değişiminde
+  token–profil eşlemesi güncelleniyor.
+- [x] Cihaz üzerinde bildirim testi (1 Kasım 2026, 06:36): Vann adına yazılan test
+  pingi kendi cihazımıza ulaştı ("💌 Vann sana yazdı"); ping kaydı silindi.
+  Kendi olayımızın kendi cihazımıza bildirilmemesi yerel `PingNotifier` /
+  `ScoreNotifier` profili filtreleriyle doğrulandı; karşı tarafın token'larına
+  dokunmamak için kendi olayımızın Edge Function testi yapılmadı.
+
+### Arayüz
+- [x] **Aşk sayfası favoriler:** isimler altta değil; banner üstünde profil avatarları,
+  sağ üstte tür etiketi, altta puan/bölüm bilgisi. Aynı yapım iki profilde favoriyse
+  tek kartta birleşiyor (`FavoriteGroup` / `FavoriteBanner`).
+- [x] **Kütüphane:** tamamlananlarda puan ve bölüm bilgisi okunur çiplerle gösteriliyor
+  (`TileDetail`, `DetailChip`).
+- [x] **Çark:** "Çarkı yenile" kaldırıldı; havuzdaki **tüm** başlıklar çarkta.
+- [x] **Rozetler:** "Gün serisi / Tamamlanan / Not" özet şeridi kaldırıldı.
+- [x] **Müjgan** rozet açıklaması güncellendi ("25 favori biriktirdiniz…").
+- [x] **Rozet denetimi:** 75 rozetin tamamının `progress` dalı doğrulandı; eksik yok.
+  - Puan rozetleri artık "sizden biri verdi" mantığıyla: kişi bazlı `title_scores` ile
+    eski `titles.score` birleşimi (DS-BUG-23).
+  - Favori rozetleri karakter/stüdyo/kişi favorilerini de sayıyor (`entityFavoriteCount`).
+  - `AchievementsViewModel` ve `AchievementChecker` aynı hesabı kullanıyor.
+- [x] **"Bu Ay İzlenen" → "Son 30 Gün":** takvim ayı yerine kayan 30 günlük pencere;
+  izleme günlüğü ∪ bitiş tarihi pencereye düşen tamamlanmış başlıklar (DS-BUG-24).
+- [x] **Yıl Özeti yeniden yazıldı:** birlikte gün sayısı, 6 özet kartı, "Kim Ne Yaptı",
+  "Yılın En Değerlileri", çift barlı aylık aktivite, tür dağılımı (adet + bölüm),
+  yılın maratonu, puan mutabakatı, yolculuk, rozetler, notlar, favoriler ve kapanış.
+
+### Veritabanı incelemesi
+- [x] **İlk tur:** şema, tablo sayıları, RLS, realtime yayını ve FCM trigger'ları kontrol
+  edildi; yedek alındı.
+- [x] **İkinci tur (güvenlik + performans):**
+  - **KRİTİK:** `public.reset_all_data()` fonksiyonu `anon` ve `authenticated` tarafından
+    çalıştırılabiliyordu (yıkıcı RPC). Canlıda `revoke all … from public, anon,
+    authenticated; grant execute … to service_role;` uygulandı; `init.sql` ile uyumlu.
+  - Eksik 12 yabancı anahtar indeksi canlıya eklendi ve `init.sql`'e işlendi:
+    `achievements_profile_idx`, `episode_notes_profile_idx`, `ep_progress_profile_idx`,
+    `fcm_tokens_profile_idx`, `partner_pings_from_idx`, `title_favorites_profile_idx`,
+    `title_notes_profile_idx`, `title_scores_profile_idx`, `titles_created_by_idx`,
+    `titles_updated_by_idx`, `watch_log_profile_idx`, `watch_log_title_idx`.
+  - `init.sql` geri kalan indekslerle uyumlu; `title_favorites` tablosu, RLS ve realtime
+    yayını da dosyada mevcut.
+
+## Veritabanı bulguları (canlı ↔ init.sql farkı)
+
+- Canlı DB'de, `main`'in `init.sql`'inde **bulunmayan** v3 kimlik/çok kullanıcı nesneleri var:
+  `profiles.auth_user_id/username/display_name/bio/visibility/invite_code/is_deleted/
+  is_legacy/claim_code_hash/claimed_at/pair_id`, `titles.owner_id/shared_group_id/
+  backdrop_url`, `achievements.profile_id`, `fcm_tokens.auth_user_id`,
+  `friendships`, `watch_proposals`, `reports` tabloları ve `current_profile_id()`.
+- Kaynağı: `a009d13` / `757922b` / `23e44fb` commit'leri (v3 Faz A) **`main`'in atası
+  değil** (terk edilmiş `v2-temel` hattı); canlıya o dönemde uygulanmış, sonra uygulama
+  `main` hattına dönmüş. Uygulama bu nesnelerin hiçbirini kullanmıyor.
+- **Karar:** Veri kaybını önlemek için canlıdan silinmedi; `init.sql`'e de geri taşınmadı.
+  Yeni kurulumlar `init.sql` ile bu nesneler olmadan çalışır (uygulama bunlara bağımlı
+  değil). İleride ya tamamen kaldırılmalı ya da v3 hattıyla birlikte yeniden benimsenmeli.
+- RLS: uygulama tablolarında `anon_all` geniş politikası var (çiftin özel kullanımı için
+  bilinçli; publishable anahtarı kısıtlı). `app_config` yalnızca service_role.
+- Not: `reports.reporter_id` ve `watch_proposals.from_profile` indeksleri eklenmedi —
+  bu tablolar boş ve uygulama tarafından kullanılmıyor; `init.sql`'de de yoklar.
 
 ## Devam eden / sıradaki işler
 
-### Bildirimler
-- [ ] Edge Function: bölüm ilerlemesinde işlemi yapan profili hariç tut; token sorgusunu
-      `profile_id` boş satırları da kapsayacak şekilde istemci tarafında filtrele.
-- [ ] `MilestoneTracker`: ilerleme anlık görüntüsü tut; yalnızca **partnerin** ilerlemesi
-      kilometre taşını geçirdiğinde bildir. Kendi eklediğim bölüm sessizce kaydedilsin.
-      (Realtime, FCM ve WorkManager yolları aynı mantığı kullanır.)
-- [ ] `TokenRepository`: her kayıtta `updated_at` yenilensin; eski token'lar temizlenebilsin.
-- [ ] Profil değişiminden sonra token–profil eşlemesinin hemen güncellendiğini doğrula.
-- [ ] SM-A207F üzerinde bildirim testleri (kendi cihazımıza kendi olayımızın gitmediği,
-      partner olayının gittiği) — partner cihazına dokunmadan.
-
-### Arayüz
-- [ ] Aşk sayfası favoriler: isimler altta değil; görselin üstünde profil avatarları,
-      kütüphane tarzı isim / puan / bölüm bilgisi. Aynı yapım birden çok profilde
-      favoriyse tek kartta birleşsin.
-- [ ] Kütüphane: tamamlananlarda puan + bölüm bilgisi sığmıyor / dikkat çekmiyor —
-      okunur rozet/çip tasarımı.
-- [ ] Çark: "Çarkı yenile" kaldırılsın; havuzdaki **tüm** başlıklar çarkta gösterilsin.
-- [ ] Rozetler: "Gün serisi / Tamamlanan / Not" özet şeridi kaldırılsın.
-- [ ] Müjgan rozet açıklaması güncellensin.
-- [ ] Verilmeyen rozetlerin kontrolü: metrikler (favori tablosu, yeniden izleme, notlar,
-      puanlar) gerçek veriyle karşılaştırılıp düzeltilsin.
-- [ ] "Bu Ay İzlenen" sayısı: takvim ayı yerine son 30 gün / bölüm sayısı semantiği
-      netleştirilip düzeltilsin.
-- [ ] Yıl Özeti ekranı çok daha detaylı yeniden tasarlansın.
-
-### Sürüm / yayın
-- [ ] Sürüm 3.2.5 (versionCode 325) yapılsın.
+### Cihaz testi ve yayın
+- [x] Sürüm 3.2.5 (versionCode 325) bump.
+- [x] Debug derleme → SM-A207F'ye kur → Aşk sayfası, kütüphane, çark, rozetler,
+      Son 30 Gün ve Yıl Özeti kontrolü. Doğrulananlar: favori banner'ları
+      (avatarlar/tür/puan/bölüm), kütüphane puan-bölüm rozetleri, 35 yapımlı çark
+      (yenile yok), rozet ekranı (özet şerit yok, Tümü/Kazanılan/Kilitli),
+      Son 30 Gün = 6, Yıl Özeti "Birlikte bayıldıklarımız (9+)" yalnızca iki
+      profilin de 9+ verdiği 5 yapım.
+- [x] Bildirim testleri: yukarıdaki 06:36 kaydı. Partner cihazına dokunulmadı;
+      test kaydı (`partner_pings`) silindi, `fcm_tokens` sayıları teyit edildi
+      (4 + 4), geçici yedek tablo düşürüldü.
+- [x] Profil rozet sayısı 22/75 ↔ rozet ekranı 29/75 uyumsuzluğu giderildi:
+      profil ekranı artık DB'deki kazanılmış rozetleri (`achievements`) esas alıyor.
+- [ ] Mantıklı değişiklikler ayrı Türkçe commit'lerle kaydedilecek (push için onay).
 - [ ] İki APK: API'siz → GitHub, API'li → masaüstü + Firebase App Distribution.
-- [ ] AGENTS.md / README gerekli güncellemeler.
-- [ ] Değişiklikler mantıklı parçalar hâlinde Türkçe commit'lerle kaydedilsin
-      (push için kullanıcı onayı gerekir).
-
-## Veritabanı ilk tur bulguları
-
-- Şema `supabase/init.sql` ile uyumlu; 15 tablo mevcut.
-- `fcm_tokens`: 8 satır (profil başına 4). Birden çok token eski kurulum/yeniden kurulum
-  kaynaklı olabilir; geçersizler gönderimde siliniyor. `updated_at` upsert'te yenilenmiyor.
-- Bildirim trigger'ları: partner_pings INSERT, titles INSERT, titles UPDATE (status),
-  episode_progress INSERT/UPDATE, title_scores INSERT/UPDATE, title_notes INSERT,
-  episode_notes INSERT.
-- RLS: uygulama tablolarında `anon_all` geniş politikası var (çiftin özel kullanımı için
-  bilinçli; publishable anahtarı artık kısıtlı). `app_config` yalnızca service_role.
-- Veri bütünlüğü: yedekteki tablo sayımları makul; yetim kayıt taraması ve indeks
-  kontrolü ikinci turda yapılacak.
+- [ ] AGENTS.md / README gerekli güncellemeler (canlı ↔ init.sql farkı dahil).
 
 ## Notlar / hatalar
 
-- Tester cihazında kurulu uygulama 3.0.0; yeni derlemeler kurulunca cihaz üzerindeki
+- Test cihazında kurulu uygulama 3.0.0; yeni derlemeler kurulunca cihaz üzerindeki
   DataStore profili (Sinop) korunur. Testler bu profille yapılmalı.
 - Partnerin telefonuna test bildirimi **gönderilmemeli**. Partner profili (Vann) adına
   yazılan test kayıtları, test bitiminde silinmeli.
+- `AchievementsViewModel` init hızlı yolu `AppCache` ile 5 argüman kullanır
+  (`entityFavoriteCount` varsayılan 0); tam değer `refresh()` sonrası gelir.
+- Rozet "kazanıldı" durumu DB'de kalıcıdır; anlık ilerleme, süresi geçmiş
+  rozetlerde (örn. 7/14 günlük seri) hedefin altına düşebilir. Bu yüzden
+  Profil ekranındaki sayı ve rozet kartı artık `achievements` tablosunu esas alır;
+  hesaplanan ilerleme yalnızca kilitli rozetlerin "hedefe yakınlık" sırasında
+  kullanılır. `Anayasa Kitabı` gibi eski rozetlerin güncel ilerlemesi düşük
+  görünse bile kazanılmış kalır.
+- Bildirim testi için `fcm_tokens` geçici olarak yedeklendi; hiçbir token
+  silinmedi/değiştirilmedi ve yedek tablo (`_fcm_tokens_test_backup_20261101`)
+  test sonunda düşürüldü.
