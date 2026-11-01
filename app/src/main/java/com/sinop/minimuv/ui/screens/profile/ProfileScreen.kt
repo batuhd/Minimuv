@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -58,6 +59,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -76,6 +78,7 @@ import com.canhub.cropper.CropImageContract
 import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.sinop.minimuv.core.RealtimeManager
+import com.sinop.minimuv.data.Achievement
 import com.sinop.minimuv.data.AchievementDef
 import com.sinop.minimuv.data.Achievements
 import com.sinop.minimuv.data.AppCache
@@ -88,6 +91,7 @@ import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.Title
+import com.sinop.minimuv.data.TitleFavorite
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.DcButton
 import com.sinop.minimuv.ui.components.ShimmerBox
@@ -135,10 +139,15 @@ fun ProfileScreen(
 
     var profiles by remember { mutableStateOf(AppCache.profiles.value) }
     var stats by remember { mutableStateOf<CoupleStats?>(null) }
+    // DB'de kazanılmış rozetlerin anahtarları. Anlık ilerleme hesabı, süresi
+    // geçmiş rozetleri (örn. 7 günlük seri) "kilitli" gösteriyordu; kazanılan
+    // rozet bir kez alınır, listeden düşmez.
+    var earnedBadgeKeys by remember { mutableStateOf<Set<String>>(emptySet()) }
     var titles by remember {
         mutableStateOf(if (AppCache.titlesLoaded) AppCache.titlesLite.value else emptyList())
     }
     var favorites by remember { mutableStateOf<List<Favorite>>(emptyList()) }
+    var titleFavorites by remember { mutableStateOf<List<TitleFavorite>>(emptyList()) }
     var watchLogs by remember { mutableStateOf(AppCache.watchLog.value) }
     var couple by remember { mutableStateOf(AppCache.coupleSettings.value) }
     var editing by remember { mutableStateOf<Profile?>(null) }
@@ -166,12 +175,19 @@ fun ProfileScreen(
                     val favs = async {
                         runCatching { favRepo.getFavorites() }.getOrDefault(emptyList())
                     }
+                    val titleFavs = async {
+                        runCatching { favRepo.getTitleFavorites() }.getOrDefault(emptyList())
+                    }
                     val coupleSettings = async {
                         runCatching { CoupleRepository().get() }.getOrNull()
                     }
+                    val earned = async {
+                        runCatching { titleRepo.getAchievements() }.getOrDefault(emptyList())
+                    }
                     StatsBundle(
                         p.await(), t.await(), log.await(), sc.await(),
-                        prog.await(), notes.await(), coupleSettings.await(), favs.await(),
+                        prog.await(), notes.await(), coupleSettings.await(),
+                        favs.await(), titleFavs.await(), earned.await(),
                     )
                 }
             }.onSuccess { bundle ->
@@ -179,9 +195,14 @@ fun ProfileScreen(
                 titles = bundle.titles
                 watchLogs = bundle.log
                 favorites = bundle.favorites
+                titleFavorites = bundle.titleFavorites
                 couple = bundle.couple
+                earnedBadgeKeys = bundle.achievements.map { it.achievementKey }.toSet()
                 stats = Achievements.computeStats(
                     bundle.titles, bundle.log, bundle.scores, bundle.notes, bundle.progress,
+                    entityFavoriteCount = bundle.favorites
+                        .distinctBy { "${it.favType}|${it.source}|${it.externalId}" }
+                        .size,
                 )
                 // Tema renkleri profil verisinden beslenir: kayıt sonrası anında yansısın.
                 settings.cacheAccentColors(bundle.profiles)
@@ -198,7 +219,8 @@ fun ProfileScreen(
         reload()
         RealtimeManager.events
             .filter {
-                it == "profiles" || it == "titles" || it == "couple_settings" || it == "favorites"
+                it == "profiles" || it == "titles" || it == "couple_settings" ||
+                    it == "favorites" || it == "title_favorites" || it == "achievements"
             }
             .debounce(500)
             .collect { reload() }
@@ -257,16 +279,27 @@ fun ProfileScreen(
         t.finishDate?.startsWith("$currentYear") == true || t.startDate?.startsWith("$currentYear") == true
     }.coerceAtLeast(0)
 
-    val totalUnlockedBadges = stats?.let { s -> Achievements.ALL.count { it.progress(s) >= it.target } } ?: 0
+    // DB'deki kazanılmış rozetler esas alınır: anlık ilerleme, süresi geçmiş
+    // rozetleri düşürdüğü için rozet ekranı (29/75) ile buradaki sayı tutmuyordu.
+    val totalUnlockedBadges = Achievements.ALL.count { it.key in earnedBadgeKeys }
 
-    // "Bu ay izlenen": izleme günlüğünde bu ay kaydı olan farklı başlıklar.
-    val watchedThisMonthCount = remember(watchLogs) {
-        val monthPrefix = LocalDate.now().toString().take(7)
-        watchLogs.asSequence()
-            .filter { it.date.startsWith(monthPrefix) && it.episodesWatched > 0 }
-            .map { it.titleId }
-            .distinct()
-            .count()
+    // "Son 30 gün": izleme günlüğü ∪ bitiş tarihi pencereye düşen tamamlanmış
+    // başlıklar. Takvim ayı penceresi her ayın 1'inde sıfıra düşüp "1" gibi
+    // yanıltıcı değer veriyordu; kayan pencere bunu önler (DS-BUG-24).
+    val watchedLast30DaysCount = remember(watchLogs, titles) {
+        val today = LocalDate.now()
+        val from = today.minusDays(29)
+        fun inWindow(iso: String?): Boolean {
+            val d = iso?.take(10)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+                ?: return false
+            return !d.isBefore(from) && !d.isAfter(today)
+        }
+        (
+            watchLogs.filter { it.episodesWatched > 0 && inWindow(it.date) }.map { it.titleId } +
+                titles
+                    .filter { it.status == com.sinop.minimuv.data.WatchStatus.COMPLETED.db && inWindow(it.finishDate) }
+                    .map { it.id }
+            ).distinct().count()
     }
 
     // A1: birliktelik süresi dakikada bir tazelenir.
@@ -371,8 +404,8 @@ fun ProfileScreen(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             StatBox(
-                value = "$watchedThisMonthCount",
-                label = "Bu Ay İzlenen",
+                value = "$watchedLast30DaysCount",
+                label = "Son 30 Gün",
                 modifier = Modifier.weight(1f),
             )
             StatBox(
@@ -391,6 +424,7 @@ fun ProfileScreen(
         FavoritesSection(
             titles = titles,
             favorites = favorites,
+            titleFavorites = titleFavorites,
             profiles = profiles,
             displayLang = displayLang,
             onOpenTitle = onOpenTitle,
@@ -421,6 +455,7 @@ fun ProfileScreen(
             Spacer(Modifier.height(10.dp))
             BadgesOverviewCard(
                 stats = stats,
+                earnedKeys = earnedBadgeKeys,
                 onOpenBadges = onOpenBadges,
             )
         }
@@ -697,6 +732,7 @@ private fun StatBox(value: String, label: String, modifier: Modifier = Modifier)
 private fun FavoritesSection(
     titles: List<Title>,
     favorites: List<Favorite>,
+    titleFavorites: List<TitleFavorite>,
     profiles: List<Profile>,
     displayLang: String?,
     onOpenTitle: (String) -> Unit,
@@ -706,7 +742,40 @@ private fun FavoritesSection(
     val tk = tokens()
     val favTitles = remember(titles) { titles.filter { it.isFavorite } }
     val profileById = remember(profiles) { profiles.associateBy { it.id } }
-    val total = favTitles.size + favorites.size
+
+    // Aynı yapımı iki kişi favorilediyse tek kartta iki avatar gösterilir.
+    val titleOwners = remember(titleFavorites, profiles) {
+        titleFavorites.groupBy { it.titleId }.mapValues { (_, rows) ->
+            rows.mapNotNull { profileById[it.profileId] }.distinctBy { it.id }
+        }
+    }
+    // Kişi / karakter / stüdyo favorileri de aynı öğe için tek kartta birleşir.
+    val entityGroups = remember(favorites, profiles) {
+        favorites.groupBy { Triple(it.favType, it.source, it.externalId) }
+            .map { (key, rows) ->
+                FavoriteGroup(
+                    favType = key.first,
+                    source = key.second,
+                    externalId = key.third,
+                    name = rows.first().name,
+                    imageUrl = rows.first().imageUrl,
+                    owners = rows.mapNotNull { profileById[it.profileId] }.distinctBy { it.id },
+                )
+            }
+    }
+
+    val sortedTitles = remember(favTitles, titleOwners) {
+        favTitles.sortedWith(
+            compareByDescending<Title> { titleOwners[it.id]?.size ?: 0 }
+                .thenBy { it.displayTitle(displayLang) },
+        )
+    }
+    val sortedEntities = remember(entityGroups) {
+        entityGroups.sortedWith(
+            compareByDescending<FavoriteGroup> { it.owners.size }.thenBy { it.name },
+        )
+    }
+    val total = sortedTitles.size + sortedEntities.size
 
     Column {
         Row(
@@ -754,7 +823,7 @@ private fun FavoritesSection(
                             color = tk.text,
                         )
                         Text(
-                            "Bir başlık ya da kişi sayfasındaki kalbe dokunun.",
+                            "Bir başlık, kişi ya da stüdyo sayfasındaki kalbe dokunun.",
                             style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
                             color = tk.textMuted,
                         )
@@ -762,35 +831,48 @@ private fun FavoritesSection(
                 }
             }
         } else {
-            if (favTitles.isNotEmpty()) {
+            if (sortedTitles.isNotEmpty()) {
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(horizontal = 2.dp),
                 ) {
-                    items(favTitles, key = { it.id }) { t ->
-                        FavoriteTitleCard(
-                            title = t,
-                            displayLang = displayLang,
+                    items(sortedTitles, key = { it.id }) { t ->
+                        val meta = favoriteTitleMeta(t)
+                        FavoriteBanner(
+                            imageUrl = t.posterUrl,
+                            name = t.displayTitle(displayLang),
+                            scoreText = meta.first,
+                            detailText = meta.second,
+                            typeLabel = contentTypeLabel(t.type),
+                            owners = titleOwners[t.id].orEmpty(),
+                            placeholder = "🎬",
                             onClick = { onOpenTitle(t.id) },
                         )
                     }
                 }
             }
-            if (favorites.isNotEmpty()) {
-                if (favTitles.isNotEmpty()) Spacer(Modifier.height(14.dp))
+            if (sortedEntities.isNotEmpty()) {
+                if (sortedTitles.isNotEmpty()) Spacer(Modifier.height(14.dp))
                 LazyRow(
                     horizontalArrangement = Arrangement.spacedBy(12.dp),
                     contentPadding = PaddingValues(horizontal = 2.dp),
                 ) {
                     items(
-                        favorites,
-                        key = { "${it.profileId}_${it.favType}_${it.source}_${it.externalId}" },
+                        sortedEntities,
+                        key = { "${it.favType}_${it.source}_${it.externalId}" },
                     ) { f ->
-                        FavoriteEntityCard(
-                            favorite = f,
-                            owner = profileById[f.profileId],
+                        val isStudio = f.favType == "studio"
+                        FavoriteBanner(
+                            imageUrl = f.imageUrl,
+                            name = f.name,
+                            scoreText = null,
+                            detailText = favoriteTypeLabel(f.favType),
+                            typeLabel = favoriteTypeLabel(f.favType),
+                            owners = f.owners,
+                            placeholder = if (isStudio) "🏛️" else "👤",
+                            logoMode = isStudio,
                             onClick = {
-                                if (f.favType == "studio") {
+                                if (isStudio) {
                                     onOpenFavoriteStudio(f.source, f.externalId)
                                 } else {
                                     onOpenFavoritePerson(f.source, f.externalId)
@@ -804,146 +886,196 @@ private fun FavoritesSection(
     }
 }
 
+private data class FavoriteGroup(
+    val favType: String,
+    val source: String,
+    val externalId: String,
+    val name: String,
+    val imageUrl: String?,
+    val owners: List<Profile>,
+)
+
+/** Başlık kartının alt satırı: puan ve bölüm bilgisi (kütüphane ile aynı dil). */
+private fun favoriteTitleMeta(t: Title): Pair<String?, String?> {
+    val score = t.score?.let { String.format(java.util.Locale.US, "★ %.1f", it) }
+    if (t.type == com.sinop.minimuv.data.ContentType.FILM.db) return score to null
+    val total = t.totalEpisodes
+    val watched = when {
+        t.status == com.sinop.minimuv.data.WatchStatus.COMPLETED.db -> total ?: t.episodeProgress
+        else -> t.episodeProgress
+    }
+    val episodes = when {
+        total != null && total > 0 -> "$watched/$total bölüm"
+        watched > 0 -> "$watched bölüm"
+        else -> null
+    }
+    return score to episodes
+}
+
+private fun contentTypeLabel(type: String): String = when (type) {
+    com.sinop.minimuv.data.ContentType.FILM.db -> "Film"
+    com.sinop.minimuv.data.ContentType.DIZI.db -> "Dizi"
+    com.sinop.minimuv.data.ContentType.ANIME.db -> "Anime"
+    else -> type.replaceFirstChar { it.uppercase() }
+}
+
+/** Görselin üstünde sahiplerinin avatarları, altında isim/puan/bölüm.
+ *  Altta ayrı isim satırı yoktur — tüm bilgi banner'ın üzerindedir. */
 @Composable
-private fun FavoriteTitleCard(
-    title: Title,
-    displayLang: String?,
+private fun FavoriteBanner(
+    imageUrl: String?,
+    name: String,
+    scoreText: String?,
+    detailText: String?,
+    typeLabel: String,
+    owners: List<Profile>,
+    placeholder: String,
+    logoMode: Boolean = false,
     onClick: () -> Unit,
 ) {
     val tk = tokens()
-    Column(
+    Box(
         Modifier
-            .width(104.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .width(156.dp)
+            .height(220.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(tk.surface2)
+            .border(1.dp, tk.text.copy(alpha = 0.08f), RoundedCornerShape(18.dp))
             .clickable(role = Role.Button, onClick = onClick),
     ) {
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .aspectRatio(2f / 3f)
-                .clip(RoundedCornerShape(14.dp))
-                .background(tk.surface2),
-        ) {
-            if (title.posterUrl != null) {
-                AsyncImage(
-                    model = title.posterUrl,
-                    contentDescription = title.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("🎬", fontSize = 26.sp)
-                }
-            }
-            Box(
-                Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(6.dp)
-                    .size(22.dp)
-                    .clip(CircleShape)
-                    .background(tk.bg.copy(alpha = 0.65f)),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text("❤️", fontSize = 11.sp)
+        if (imageUrl != null) {
+            AsyncImage(
+                model = imageUrl,
+                contentDescription = name,
+                modifier = if (logoMode) {
+                    Modifier.fillMaxSize().padding(24.dp)
+                } else {
+                    Modifier.fillMaxSize()
+                },
+                contentScale = if (logoMode) ContentScale.Fit else ContentScale.Crop,
+            )
+        } else {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(placeholder, fontSize = 32.sp)
             }
         }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            title.displayTitle(displayLang),
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-            color = tk.text,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
+
+        // Alt kısımda okunurluk için yumuşak karartma.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.48f to Color.Transparent,
+                        1f to tk.bg.copy(alpha = 0.94f),
+                    ),
+                ),
         )
-        Text(
-            title.score?.let { String.format(java.util.Locale.US, "★ %.1f", it) } ?: " ",
-            fontSize = 10.sp,
-            color = tk.gold,
-            maxLines = 1,
-        )
+
+        val visibleOwners = owners.take(3)
+        if (visibleOwners.isNotEmpty()) {
+            Box(
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(8.dp)
+                    .height(30.dp)
+                    .width((30 + 18 * (visibleOwners.size - 1)).dp),
+            ) {
+                visibleOwners.forEachIndexed { index, profile ->
+                    Box(Modifier.offset(x = (index * 18).dp)) {
+                        FavoriteOwnerAvatar(profile = profile, borderColor = tk.bg)
+                    }
+                }
+            }
+        }
+
+        Box(
+            Modifier
+                .align(Alignment.TopEnd)
+                .padding(8.dp)
+                .clip(RoundedCornerShape(50))
+                .background(tk.bg.copy(alpha = 0.62f))
+                .padding(horizontal = 7.dp, vertical = 3.dp),
+        ) {
+            Text(
+                typeLabel,
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = tk.text,
+            )
+        }
+
+        Column(
+            Modifier
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 9.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
+        ) {
+            Text(
+                name,
+                fontWeight = FontWeight.Bold,
+                fontSize = 13.sp,
+                lineHeight = 15.sp,
+                color = tk.text,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (scoreText != null || detailText != null) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (scoreText != null) {
+                        Text(
+                            scoreText,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = tk.gold,
+                            maxLines = 1,
+                        )
+                    }
+                    if (scoreText != null && detailText != null) {
+                        Text("  ·  ", fontSize = 10.sp, color = tk.textMuted)
+                    }
+                    if (detailText != null) {
+                        Text(
+                            detailText,
+                            fontSize = 10.sp,
+                            color = tk.textMuted,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun FavoriteEntityCard(
-    favorite: Favorite,
-    owner: Profile?,
-    onClick: () -> Unit,
-) {
+private fun FavoriteOwnerAvatar(profile: Profile, borderColor: Color) {
     val tk = tokens()
-    val isStudio = favorite.favType == "studio"
-    val ownerColor = owner?.avatarColor?.let { parseColorSafe(it) } ?: tk.textMuted
-    Column(
+    val color = profile.avatarColor?.let { parseColorSafe(it) } ?: tk.textMuted
+    Box(
         Modifier
-            .width(92.dp)
-            .clip(RoundedCornerShape(20.dp))
-            .clickable(role = Role.Button, onClick = onClick),
+            .size(30.dp)
+            .clip(CircleShape)
+            .background(color.copy(alpha = 0.24f))
+            .border(2.dp, borderColor, CircleShape),
+        contentAlignment = Alignment.Center,
     ) {
-        Box(
-            Modifier
-                .size(92.dp)
-                .clip(RoundedCornerShape(20.dp))
-                .background(tk.surface2)
-                .border(1.dp, tk.text.copy(alpha = 0.08f), RoundedCornerShape(20.dp)),
-            contentAlignment = Alignment.Center,
-        ) {
-            if (favorite.imageUrl != null) {
-                AsyncImage(
-                    model = favorite.imageUrl,
-                    contentDescription = favorite.name,
-                    modifier = if (isStudio) Modifier.fillMaxSize().padding(10.dp) else Modifier.fillMaxSize(),
-                    contentScale = if (isStudio) ContentScale.Fit else ContentScale.Crop,
-                )
-            } else {
-                Text(if (isStudio) "🏛️" else "👤", fontSize = 26.sp)
-            }
-            Box(
-                Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(6.dp)
-                    .clip(RoundedCornerShape(50))
-                    .background(tk.bg.copy(alpha = 0.72f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp),
-            ) {
-                Text(
-                    favoriteTypeLabel(favorite.favType),
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = tk.text,
-                )
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Text(
-            favorite.name,
-            fontWeight = FontWeight.SemiBold,
-            fontSize = 12.sp,
-            color = tk.text,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        if (owner != null) {
-            Row(
-                Modifier.padding(top = 2.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    Modifier
-                        .size(5.dp)
-                        .clip(CircleShape)
-                        .background(ownerColor),
-                )
-                Spacer(Modifier.width(4.dp))
-                Text(
-                    owner.displayName,
-                    fontSize = 9.sp,
-                    color = tk.textMuted,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+        if (profile.avatarUrl != null) {
+            AsyncImage(
+                model = profile.avatarUrl,
+                contentDescription = profile.displayName,
+                modifier = Modifier.fillMaxSize().clip(CircleShape),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Text(
+                profile.emoji ?: profile.displayName.take(1),
+                fontSize = 13.sp,
+                color = tk.text,
+            )
         }
     }
 }
@@ -960,6 +1092,7 @@ private fun favoriteTypeLabel(favType: String): String = when (favType) {
 @Composable
 private fun BadgesOverviewCard(
     stats: CoupleStats?,
+    earnedKeys: Set<String>,
     onOpenBadges: () -> Unit,
 ) {
     val tk = tokens()
@@ -967,16 +1100,23 @@ private fun BadgesOverviewCard(
 
     // Üst satır (Row 1): 2 rastgele tamamlanmış rozet
     // Orta ve Alt satır (Row 2 & 3): Tamamlanmaya en yakın 4 kilitli rozet
-    val displayDefs = remember(stats) {
-        if (stats == null) allDefs.take(6)
+    val displayDefs = remember(stats, earnedKeys) {
+        if (stats == null && earnedKeys.isEmpty()) allDefs.take(6)
         else {
-            val (unlocked, locked) = allDefs.partition { it.progress(stats) >= it.target }
+            val (unlocked, locked) = if (earnedKeys.isNotEmpty()) {
+                allDefs.partition { it.key in earnedKeys }
+            } else {
+                allDefs.partition { stats != null && it.progress(stats) >= it.target }
+            }
             val row1 = unlocked.shuffled().take(2)
             val row1Keys = row1.map { it.key }.toSet()
 
             val remainingLocked = locked
                 .filterNot { it.key in row1Keys }
-                .sortedByDescending { it.progress(stats).toFloat() / it.target.coerceAtLeast(1) }
+                .sortedByDescending { def ->
+                    val p = stats?.let { def.progress(it) } ?: 0
+                    p.toFloat() / def.target.coerceAtLeast(1)
+                }
 
             val row2and3 = remainingLocked.take(4)
             val currentList = row1 + row2and3
@@ -1007,8 +1147,11 @@ private fun BadgesOverviewCard(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
                     pair.forEach { def ->
-                        val currentProgress = stats?.let { def.progress(it) } ?: 0
-                        val isUnlocked = currentProgress >= def.target
+                        val earned = def.key in earnedKeys
+                        // Kazanılmış rozet, güncel ilerleme gerilediyse bile tam görünür.
+                        val currentProgress =
+                            if (earned) def.target else stats?.let { def.progress(it) } ?: 0
+                        val isUnlocked = earned || currentProgress >= def.target
                         BadgeTile(
                             def = def,
                             isUnlocked = isUnlocked,
@@ -1370,6 +1513,8 @@ private data class StatsBundle(
     val notes: List<com.sinop.minimuv.data.TitleNote> = emptyList(),
     val couple: CoupleSettings? = null,
     val favorites: List<Favorite> = emptyList(),
+    val titleFavorites: List<TitleFavorite> = emptyList(),
+    val achievements: List<Achievement> = emptyList(),
 )
 
 @Composable

@@ -8,6 +8,7 @@ import com.sinop.minimuv.core.TitleDetails
 import com.sinop.minimuv.data.ContentType
 import com.sinop.minimuv.data.EpisodeNote
 import com.sinop.minimuv.data.EpisodeProgress
+import com.sinop.minimuv.data.FavoritesRepository
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.Title
@@ -31,6 +32,7 @@ class DetailViewModel : ViewModel() {
 
     private val repo = TitleRepository()
     private val profileRepo = ProfileRepository()
+    private val favRepo = FavoritesRepository()
 
     val title = MutableStateFlow<Title?>(null)
     val draft = MutableStateFlow<TitleDraft?>(null)
@@ -149,6 +151,27 @@ class DetailViewModel : ViewModel() {
             runCatching { repo.deleteTitleNote(id) }
                 .onSuccess { titleNotes.value = repo.getTitleNotes(titleId) }
                 .onFailure { error.value = it.message }
+        }
+    }
+
+    /** Favori kişi bazında yazılır; global `is_favorite` bayrağını
+     *  "en az biri favoriledi" olarak korur. */
+    fun setFavorite(
+        profileId: String,
+        titleId: String,
+        favorite: Boolean,
+        onFailure: () -> Unit = {},
+    ) {
+        viewModelScope.launch {
+            runCatching { favRepo.setTitleFavorite(profileId, titleId, favorite) }
+                .onSuccess { global ->
+                    title.value = title.value?.copy(isFavorite = global)
+                }
+                .onFailure {
+                    android.util.Log.e("MinimuvDetail", "favori yazılamadı", it)
+                    error.value = it.message
+                    onFailure()
+                }
         }
     }
 

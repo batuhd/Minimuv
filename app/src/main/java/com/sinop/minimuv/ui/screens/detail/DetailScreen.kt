@@ -571,7 +571,10 @@ fun DetailScreen(
                                 val next = !isFavorite
                                 isFavorite = next
                                 loaded?.let { t ->
-                                    vm.update(t.id, mapOf("is_favorite" to next)) {}
+                                    vm.setFavorite(profileId, t.id, next) {
+                                        // Yazma başarısızsa kalbi eski hâline döndür.
+                                        isFavorite = !next
+                                    }
                                 }
                             },
                         )

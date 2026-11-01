@@ -58,4 +58,56 @@ class FavoritesRepository {
             filter { eq("external_id", externalId) }
         }
     }
+
+    // ── Kişi bazlı başlık favorileri ─────────────────────────────────────
+
+    suspend fun getTitleFavorites(): List<TitleFavorite> {
+        val all = mutableListOf<TitleFavorite>()
+        val pageSize = 1000L
+        var offset = 0L
+        while (true) {
+            val page = SupabaseProvider.client.postgrest.from("title_favorites")
+                .select {
+                    order("created_at", Order.ASCENDING)
+                    order("id", Order.ASCENDING)
+                    range(offset, offset + pageSize - 1)
+                }
+                .decodeList<TitleFavorite>()
+            all += page
+            if (page.size < pageSize) break
+            offset += pageSize
+            if (offset > 20_000) break
+        }
+        return all
+    }
+
+    /** Favori satırını ekler/siler ve `titles.is_favorite` bayrağını
+     *  "en az bir profil favoriledi" olacak şekilde günceller.
+     *  Dönen değer güncel global bayraktır. */
+    suspend fun setTitleFavorite(profileId: String, titleId: String, favorite: Boolean): Boolean {
+        if (favorite) {
+            SupabaseProvider.client.postgrest.from("title_favorites").upsert(
+                TitleFavorite(titleId = titleId, profileId = profileId),
+            ) {
+                onConflict = "title_id,profile_id"
+                ignoreDuplicates = true
+            }
+        } else {
+            SupabaseProvider.client.postgrest.from("title_favorites").delete {
+                filter { eq("title_id", titleId) }
+                filter { eq("profile_id", profileId) }
+            }
+        }
+        val remaining = SupabaseProvider.client.postgrest.from("title_favorites")
+            .select { filter { eq("title_id", titleId) } }
+            .decodeList<TitleFavorite>()
+            .isNotEmpty()
+        SupabaseProvider.client.postgrest.from("titles").update(
+            { set("is_favorite", remaining) },
+        ) {
+            filter { eq("id", titleId) }
+        }
+        AppCache.patchTitle(titleId) { it.copy(isFavorite = remaining) }
+        return remaining
+    }
 }

@@ -28,6 +28,7 @@ object RealtimeManager {
         "profiles",
         "couple_settings",
         "favorites",
+        "title_favorites",
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
