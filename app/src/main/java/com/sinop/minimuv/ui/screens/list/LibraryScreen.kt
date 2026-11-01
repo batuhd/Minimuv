@@ -40,6 +40,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.RangeSlider
@@ -87,6 +88,7 @@ import com.sinop.minimuv.ui.components.SvgPath
 import com.sinop.minimuv.ui.components.SearchPill
 import com.sinop.minimuv.ui.components.screenGlow
 import com.sinop.minimuv.ui.theme.Fraunces
+import com.sinop.minimuv.ui.theme.icons.MinimuvIcons
 import com.sinop.minimuv.ui.theme.tokens
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.ReorderableLazyGridState
@@ -1053,7 +1055,7 @@ private fun PosterTile(
     lang: String?,
     badge: String?,
     meta: String? = null,
-    detail: String? = null,
+    detail: TileDetail? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -1115,25 +1117,49 @@ private fun PosterTile(
                     .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = 28.dp),
             ) {
                 if (detail != null) {
-                    // Puan + bölüm bilgisi posterin üstünde, başlık bandının
-                    // hemen üzerinde ince bir satır olarak durur (ekstra yer kaplamaz).
-                    Text(
-                        detail,
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        lineHeight = 12.sp,
-                        color = Color.White.copy(alpha = 0.92f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = TextStyle(
-                            shadow = androidx.compose.ui.graphics.Shadow(
-                                color = Color.Black.copy(alpha = 0.9f),
-                                offset = androidx.compose.ui.geometry.Offset(0f, 1f),
-                                blurRadius = 5f,
-                            ),
-                        ),
-                    )
-                    Spacer(Modifier.height(2.dp))
+                    // Puan ve bölüm ilerlemesi ayrı rozetlerde: 3 sütunlu
+                    // kompakt görünümde bile metin taşmadan okunur.
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        detail.score?.let { value ->
+                            DetailChip {
+                                Icon(
+                                    MinimuvIcons.Star,
+                                    contentDescription = null,
+                                    tint = tk.gold,
+                                    modifier = Modifier.size(9.dp),
+                                )
+                                Text(
+                                    String.format(java.util.Locale.US, "%.1f", value),
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = tk.gold,
+                                    maxLines = 1,
+                                )
+                            }
+                        }
+                        detail.episodes?.let { text ->
+                            DetailChip {
+                                Icon(
+                                    MinimuvIcons.Play,
+                                    contentDescription = "Bölüm",
+                                    tint = Color.White.copy(alpha = 0.9f),
+                                    modifier = Modifier.size(8.dp),
+                                )
+                                Text(
+                                    text,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(3.dp))
                 }
                 Text(
                     t.displayTitle(lang),
@@ -1168,10 +1194,11 @@ private fun PosterTile(
     }
 }
 
-/** Tamamlandı / Duraklattık / Bıraktık bölümlerinde posterin üstünde gösterilen
- *  kısa satır: verilen puan ve kaldığımız bölüm. */
-private fun sectionDetail(t: Title): String? {
-    val score = t.score?.let { String.format(java.util.Locale.US, "★ %.1f", it) }
+/** Tamamlandı / Duraklattık / Bıraktık bölümlerinde posterin üstünde
+ *  gösterilen rozetler: verilen puan ve kaldığımız bölüm. */
+private data class TileDetail(val score: Double?, val episodes: String?)
+
+private fun sectionDetail(t: Title): TileDetail? {
     val episodes = if (t.type == ContentType.FILM.db) {
         null
     } else {
@@ -1182,12 +1209,27 @@ private fun sectionDetail(t: Title): String? {
             t.episodeProgress
         }
         when {
-            total != null && total > 0 -> "$shown/$total bölüm"
-            shown > 0 -> "$shown bölüm"
+            total != null && total > 0 -> "$shown/$total"
+            shown > 0 -> "$shown"
             else -> null
         }
     }
-    return listOfNotNull(score, episodes).joinToString(" · ").ifBlank { null }
+    if (t.score == null && episodes == null) return null
+    return TileDetail(score = t.score, episodes = episodes)
+}
+
+/** Poster altındaki küçük bilgi rozeti. */
+@Composable
+private fun DetailChip(content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit) {
+    Row(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(Color(0xFF0E0E12).copy(alpha = 0.72f))
+            .padding(horizontal = 5.dp, vertical = 2.dp),
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        content = content,
+    )
 }
 
 private fun tileSub(t: Title): String {
