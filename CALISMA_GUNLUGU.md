@@ -101,14 +101,18 @@ Her adım tamamlandıkça işaretlenir; hata ve notlar ilgili maddenin altına y
       (4 + 4), geçici yedek tablo düşürüldü.
 - [x] Profil rozet sayısı 22/75 ↔ rozet ekranı 29/75 uyumsuzluğu giderildi:
       profil ekranı artık DB'deki kazanılmış rozetleri (`achievements`) esas alıyor.
-- [x] Mantıklı değişiklikler ayrı Türkçe commit'lerle kaydedildi (push **yapılmadı**):
+- [x] Mantıklı değişiklikler ayrı Türkçe commit'lerle kaydedildi ve `main`
+      dalına **push edildi** (`1b115f8..bad1743`):
       `3446ac9` bildirimler, `9304cff` favoriler + profil rozet sayısı, `feab22b`
       rozetler, `2555366` kütüphane, `2e4d344` çark, `acc9452` Yıl Özeti,
-      `96c77d4` init.sql, `90f6409` sürüm 3.2.5, `4fccaa0` dokümanlar.
-      Push için kullanıcı onayı bekleniyor.
+      `96c77d4` init.sql, `90f6409` sürüm 3.2.5, `4fccaa0` + `bad1743` dokümanlar.
 - [x] İki APK üretildi (aynı versionCode **325** / versionName **3.2.5**):
-  - API'siz → `~/Sürümler/minimuv-v3.2.5.apk` (GitHub Releases'e yüklenecek)
-  - API'li → `~/Masaüstü/minimuv-v3.2.5.apk` (Firebase App Distribution'a yüklenecek)
+  - API'siz → `~/Sürümler/minimuv-v3.2.5.apk` → **GitHub Releases v3.2.5**
+    olarak yayınlandı: https://github.com/batuhd/Minimuv/releases/tag/v3.2.5
+  - API'li → `~/Masaüstü/minimuv-v3.2.5.apk` (Firebase App Distribution'a yüklenecek;
+    TMDB anahtarının APK içinde olduğu doğrulandı)
+- [x] Galaxy A15 (SM-A155F) cihaza 3.2.5 kuruldu; uygulama açılıyor. Cihazda
+      kayıtlı Supabase bağlantısı yok, kurulum ekranı görünüyor.
 - [ ] Firebase App Distribution yüklemesi: makinede `firebase`/`gcloud` CLI yok;
       APK, Firebase konsolundan tester grubuna **elle** yüklenecek (versionCode 325).
 - [x] AGENTS.md / README güncellendi (canlı ↔ init.sql farkı, title_favorites,
