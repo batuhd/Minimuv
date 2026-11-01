@@ -96,6 +96,8 @@ alter table public.titles drop column if exists custom_lists;
 
 create index if not exists titles_type_idx on public.titles (type);
 create index if not exists titles_status_idx on public.titles (status);
+create index if not exists titles_created_by_idx on public.titles (created_by_profile_id);
+create index if not exists titles_updated_by_idx on public.titles (updated_by_profile_id);
 
 -- Aynı yapım (aynı tür + harici ID) iki kez eklenemez (partial unique)
 create unique index if not exists titles_type_external_id_unique
@@ -124,6 +126,30 @@ create table if not exists public.episode_progress_per_profile (
   unique (title_id, profile_id)
 );
 
+create index if not exists ep_progress_profile_idx on public.episode_progress_per_profile (profile_id);
+
+-- ── Kişi bazlı başlık favorileri ─────────────────────────────
+-- titles.is_favorite "en az biri favoriledi" anlamına gelir; kimlerin
+-- favorilediği burada tutulur (Aşk sayfasında avatarlar için).
+create table if not exists public.title_favorites (
+  id uuid primary key default gen_random_uuid(),
+  title_id uuid not null references public.titles(id) on delete cascade,
+  profile_id uuid not null references public.profiles(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (title_id, profile_id)
+);
+
+create index if not exists title_favorites_profile_idx on public.title_favorites (profile_id);
+
+-- Eski paylaşımlı is_favorite bayrağı: sahibi bilinmiyorsa en son
+-- güncelleyene yazılır. Sonraki favoriler kişi bazında tutulur.
+insert into public.title_favorites (title_id, profile_id)
+select t.id, coalesce(t.updated_by_profile_id, t.created_by_profile_id)
+from public.titles t
+where t.is_favorite
+  and coalesce(t.updated_by_profile_id, t.created_by_profile_id) is not null
+on conflict (title_id, profile_id) do nothing;
+
 -- ── Bölüm notları (spoiler korumalı) ─────────────────────────
 create table if not exists public.episode_notes (
   id uuid primary key default gen_random_uuid(),
@@ -136,6 +162,7 @@ create table if not exists public.episode_notes (
 );
 
 create index if not exists episode_notes_title_idx on public.episode_notes (title_id, episode_number);
+create index if not exists episode_notes_profile_idx on public.episode_notes (profile_id);
 
 -- ── Başarımlar (çift bazlı) ──────────────────────────────────
 create table if not exists public.achievements (
@@ -156,6 +183,8 @@ create table if not exists public.watch_log (
 );
 
 create index if not exists watch_log_date_idx on public.watch_log (date);
+create index if not exists watch_log_profile_idx on public.watch_log (profile_id);
+create index if not exists watch_log_title_idx on public.watch_log (title_id);
 
 -- ── Kişi bazlı puanlar (herkes kendi puanını verir) ──────────
 create table if not exists public.title_scores (
@@ -172,6 +201,8 @@ create table if not exists public.title_scores (
   unique (title_id, profile_id)
 );
 
+create index if not exists title_scores_profile_idx on public.title_scores (profile_id);
+
 -- ── Partnere gizli mesaj (bildirim) ──────────────────────────
 create table if not exists public.partner_pings (
   id uuid primary key default gen_random_uuid(),
@@ -179,6 +210,8 @@ create table if not exists public.partner_pings (
   message text not null check (char_length(message) between 1 and 500),
   created_at timestamptz not null default now()
 );
+
+create index if not exists partner_pings_from_idx on public.partner_pings (from_profile);
 
 -- ── Başlık başına tekil notlar ───────────────────────────────
 create table if not exists public.title_notes (
@@ -191,6 +224,7 @@ create table if not exists public.title_notes (
 );
 
 create index if not exists title_notes_title_idx on public.title_notes (title_id);
+create index if not exists title_notes_profile_idx on public.title_notes (profile_id);
 
 -- ── FCM cihaz tokenları (kapalıyken anlık bildirim) ───────────
 create table if not exists public.fcm_tokens (
@@ -200,6 +234,8 @@ create table if not exists public.fcm_tokens (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+create index if not exists fcm_tokens_profile_idx on public.fcm_tokens (profile_id);
 
 -- ── Edge Function webhook yapılandırması ─────────────────────
 -- notify_url ve webhook_secret burada tutulur. Tablo RLS ile anon/
@@ -288,6 +324,7 @@ alter table public.partner_pings enable row level security;
 alter table public.title_notes enable row level security;
 alter table public.fcm_tokens enable row level security;
 alter table public.favorites enable row level security;
+alter table public.title_favorites enable row level security;
 alter table public.couple_settings enable row level security;
 
 do $$
@@ -297,7 +334,7 @@ begin
   foreach t in array array[
     'profiles', 'titles', 'episode_progress_per_profile', 'episode_notes',
     'achievements', 'watch_log', 'title_scores', 'partner_pings', 'title_notes',
-    'fcm_tokens', 'favorites', 'couple_settings'
+    'fcm_tokens', 'favorites', 'title_favorites', 'couple_settings'
   ] loop
     execute format('drop policy if exists anon_all on public.%I', t);
     execute format(
@@ -315,7 +352,7 @@ begin
   foreach t in array array[
     'titles', 'title_notes', 'title_scores', 'episode_progress_per_profile',
     'episode_notes', 'achievements', 'watch_log', 'partner_pings', 'profiles',
-    'favorites', 'couple_settings'
+    'favorites', 'title_favorites', 'couple_settings'
   ] loop
     if not exists (
       select 1 from pg_publication_tables
