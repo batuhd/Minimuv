@@ -26,20 +26,25 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.BottomSheetDefaults
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberDatePickerState
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -57,24 +62,27 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.sinop.minimuv.BuildConfig
-import com.sinop.minimuv.core.TitleLanguage
 import com.sinop.minimuv.data.CoupleRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.TitleRepository
+import com.sinop.minimuv.ui.components.DcButton
 import com.sinop.minimuv.ui.components.DcIconButton
 import com.sinop.minimuv.ui.components.FilterPill
 import com.sinop.minimuv.ui.components.screenGlow
 import com.sinop.minimuv.ui.theme.icons.EmojiText
+import com.sinop.minimuv.ui.theme.together
 import com.sinop.minimuv.ui.theme.tokens
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
@@ -167,29 +175,6 @@ fun SettingsScreen(
                             selected = displayLang == code,
                             onClick = {
                                 scope.launch { runCatching { settings.saveDisplayLang(code) } }
-                            },
-                        )
-                    }
-                }
-                Spacer(Modifier.height(14.dp))
-                Text(
-                    "Arama dili",
-                    style = MaterialTheme.typography.titleSmall,
-                    color = tk.text,
-                    modifier = Modifier.padding(vertical = 6.dp),
-                )
-                val searchLangName by settings.searchLang.collectAsState(initial = null)
-                val searchLang = TitleLanguage.fromDb(searchLangName)
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    TitleLanguage.entries.forEach { option ->
-                        FilterPill(
-                            text = option.label,
-                            selected = searchLang == option,
-                            onClick = {
-                                scope.launch { runCatching { settings.saveSearchLang(option.name) } }
                             },
                         )
                     }
@@ -355,66 +340,161 @@ fun SettingsScreen(
 
     // 🤫 Gizli menü: partnere mesaj + bildirim
     if (showSecretMenu) {
-        var secretText by remember { mutableStateOf("") }
-        var sent by remember { mutableStateOf(false) }
-        var secretError by remember { mutableStateOf<String?>(null) }
-        AlertDialog(
-            onDismissRequest = { showSecretMenu = false },
-            title = { EmojiText("💌 Partnere gizli not", style = MaterialTheme.typography.headlineSmall) },
-            text = {
-                Column {
+        SecretNoteSheet(
+            profileId = profileId,
+            titleRepo = titleRepo,
+            onDismiss = { showSecretMenu = false },
+        )
+    }
+}
+
+/** Partnere gizli not — eski AlertDialog yerine uygulamanın diline uyan alt sayfa. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SecretNoteSheet(
+    profileId: String?,
+    titleRepo: TitleRepository,
+    onDismiss: () -> Unit,
+) {
+    val tk = tokens()
+    val scope = rememberCoroutineScope()
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var text by remember { mutableStateOf("") }
+    var sending by remember { mutableStateOf(false) }
+    var sent by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    // Başarılı gönderimden sonra kısa bir kutlama, sonra sayfa kendiliğinden kapanır.
+    LaunchedEffect(sent) {
+        if (sent) {
+            delay(1400)
+            onDismiss()
+        }
+    }
+
+    ModalBottomSheet(
+        onDismissRequest = { if (!sending) onDismiss() },
+        sheetState = sheetState,
+        containerColor = tk.surface1,
+        contentColor = tk.text,
+        dragHandle = { BottomSheetDefaults.DragHandle(color = tk.textMuted) },
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 22.dp)
+                .padding(bottom = 22.dp),
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(54.dp)
+                        .clip(CircleShape)
+                        .background(tk.together),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("💌", fontSize = 26.sp)
+                }
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
                     Text(
-                        "Karşındakine küçük bir sürpriz bırak — telefonuna anında bildirim düşer.",
+                        "Partnere gizli not",
+                        style = MaterialTheme.typography.headlineSmall,
+                        color = tk.text,
+                    )
+                    Text(
+                        "Sadece ikinizin arasında — telefonuna anında bildirim düşer.",
                         style = MaterialTheme.typography.bodySmall,
                         color = tk.textMuted,
                     )
-                    Spacer(Modifier.height(10.dp))
-                    OutlinedTextField(
-                        value = secretText,
-                        onValueChange = { if (it.length <= 500) secretText = it },
-                        minLines = 2,
-                        placeholder = { Text("Seni seviyorum, bu akşam film var mı?") },
-                    )
-                    if (sent) {
-                        Spacer(Modifier.height(8.dp))
-                        EmojiText("Gönderildi! 💘", color = tk.done)
-                    }
-                    if (secretError != null) {
-                        Spacer(Modifier.height(8.dp))
-                        EmojiText(secretError!!, color = MaterialTheme.colorScheme.error)
-                    }
                 }
-            },
-            confirmButton = {
-                TextButton(onClick = {
-                    val msg = secretText.trim()
+            }
+            Spacer(Modifier.height(20.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(tk.surface2)
+                    .border(1.dp, tk.text.copy(alpha = 0.08f), RoundedCornerShape(18.dp)),
+            ) {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { if (it.length <= 500) text = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 4,
+                    maxLines = 6,
+                    placeholder = { Text("Seni seviyorum, bu akşam film var mı?", color = tk.textMuted) },
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedContainerColor = Color.Transparent,
+                        unfocusedContainerColor = Color.Transparent,
+                        focusedBorderColor = tk.van,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = tk.van,
+                        focusedTextColor = tk.text,
+                        unfocusedTextColor = tk.text,
+                    ),
+                    enabled = !sending && !sent,
+                )
+            }
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(top = 6.dp, end = 6.dp),
+            ) {
+                Spacer(Modifier.weight(1f))
+                Text("${text.length}/500", fontSize = 11.sp, color = tk.textMuted)
+            }
+            if (sent) {
+                Spacer(Modifier.height(8.dp))
+                EmojiText("Gönderildi! 💘", color = tk.done)
+            }
+            if (error != null) {
+                Spacer(Modifier.height(8.dp))
+                EmojiText(error!!, color = MaterialTheme.colorScheme.error)
+            }
+            Spacer(Modifier.height(16.dp))
+            DcButton(
+                label = when {
+                    sent -> "Gönderildi 💘"
+                    sending -> "Gönderiliyor…"
+                    else -> "Gönder 💌"
+                },
+                onClick = {
+                    val msg = text.trim()
                     val fromId = profileId
-                    if (fromId == null) {
-                        secretError = "Profil bulunamadı, tekrar giriş yap."
-                        return@TextButton
-                    }
-                    if (msg.isBlank()) {
-                        secretError = "Önce bir not yaz 💌"
-                        return@TextButton
-                    }
-                    secretError = null
-                    scope.launch {
-                        runCatching { titleRepo.sendPartnerPing(fromId, msg) }
-                            .onSuccess {
-                                sent = true
-                                secretText = ""
+                    when {
+                        fromId == null -> error = "Profil bulunamadı, tekrar giriş yap."
+                        msg.isBlank() -> error = "Önce bir not yaz 💌"
+                        else -> {
+                            error = null
+                            sending = true
+                            scope.launch {
+                                runCatching { titleRepo.sendPartnerPing(fromId, msg) }
+                                    .onSuccess {
+                                        sent = true
+                                        text = ""
+                                    }
+                                    .onFailure {
+                                        error = "Gönderilemedi, bağlantıyı kontrol et."
+                                    }
+                                sending = false
                             }
-                            .onFailure {
-                                sent = false
-                                secretError = "Gönderilemedi, bağlantıyı kontrol et."
-                            }
+                        }
                     }
-                }) { EmojiText("Gönder 💌") }
-            },
-            dismissButton = {
-                TextButton(onClick = { showSecretMenu = false }) { Text("Kapat") }
-            },
-        )
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !sending && !sent,
+                height = 52.dp,
+            )
+            TextButton(
+                onClick = onDismiss,
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !sending,
+            ) {
+                Text("Kapat", color = tk.textMuted)
+            }
+        }
     }
 }
 

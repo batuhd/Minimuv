@@ -8,6 +8,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -17,8 +18,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -29,7 +32,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -39,29 +41,33 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.sinop.minimuv.data.Achievement
 import com.sinop.minimuv.data.AchievementDef
 import com.sinop.minimuv.data.Achievements
 import com.sinop.minimuv.data.CoupleStats
 import com.sinop.minimuv.ui.components.ConfettiOverlay
-import com.sinop.minimuv.ui.components.MinimuvSurface
+import com.sinop.minimuv.ui.components.FilterPill
 import com.sinop.minimuv.ui.components.screenGlow
 import com.sinop.minimuv.ui.theme.Fraunces
-import com.sinop.minimuv.ui.theme.icons.EmojiText
-import com.sinop.minimuv.ui.theme.icons.MinimuvEmojiIcon
+import com.sinop.minimuv.ui.theme.together
 import com.sinop.minimuv.ui.theme.tokens
+import java.time.LocalDate
+import java.time.format.DateTimeFormatter
+import java.util.Locale
+
+private enum class BadgeFilter { ALL, EARNED, LOCKED }
 
 @Composable
 fun AchievementsScreen(onBack: () -> Unit = {}) {
@@ -72,6 +78,7 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
     val newlyUnlocked by vm.newlyUnlocked.collectAsStateWithLifecycle()
     var celebrate by remember { mutableIntStateOf(0) }
     var shownFor by remember { mutableStateOf<List<String>>(emptyList()) }
+    var filter by remember { mutableStateOf(BadgeFilter.ALL) }
 
     // Yeni açılan rozetlerde kutlama — composition sırasında state yazılmaz (DS-BUG-17).
     LaunchedEffect(newlyUnlocked) {
@@ -81,65 +88,165 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
         }
     }
 
+    val earnedAtByKey = remember(unlocked) {
+        unlocked.associate { it.achievementKey to it.unlockedAt }
+    }
+    val newKeys = remember(newlyUnlocked) {
+        newlyUnlocked.map { it.achievementKey }.toSet()
+    }
+    val earnedDefs = remember(unlocked) {
+        Achievements.ALL.filter { it.key in earnedAtByKey }
+    }
+    // Kilitliler tamamlanmaya en yakın olanlar önce gelsin: hedefe giden yol görünür olsun.
+    val lockedDefs = remember(unlocked, stats) {
+        Achievements.ALL
+            .filterNot { it.key in earnedAtByKey }
+            .sortedByDescending { def ->
+                def.progress(stats).toFloat() / def.target.coerceAtLeast(1)
+            }
+    }
+    val total = Achievements.ALL.size
+
     Box(Modifier.fillMaxSize()) {
-        LazyColumn(
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
             modifier = Modifier
                 .fillMaxSize()
                 .screenGlow()
                 .statusBarsPadding(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                top = 10.dp, bottom = 96.dp,
-            ),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, top = 10.dp, bottom = 96.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item {
+            item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                        .padding(horizontal = 0.dp, vertical = 4.dp),
                 ) {
-                    IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Geri", tint = tk.text)
+                    IconButton(onClick = onBack, modifier = Modifier.size(40.dp)) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Geri",
+                            tint = tk.text,
+                        )
                     }
-                    Text(
-                        "Rozetlerimiz",
-                        fontFamily = Fraunces,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 22.sp,
-                        color = tk.text,
-                    )
+                    Spacer(Modifier.size(4.dp))
+                    Column {
+                        Text(
+                            "Rozetler",
+                            fontFamily = Fraunces,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 26.sp,
+                            color = tk.text,
+                        )
+                        Text(
+                            "Birlikte başardıklarımız 💕",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = tk.textMuted,
+                        )
+                    }
                 }
             }
-            item {
-                Column(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 4.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    EmojiText(
-                        "Birlikte başardıklarımız. 💕",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = tk.textMuted,
-                    )
-                    Spacer(Modifier.height(14.dp))
-                    StatsBar(stats)
-                }
-            }
-            item { Spacer(Modifier.height(10.dp)) }
-            items(count = Achievements.ALL.size) { index ->
-                val def = Achievements.ALL[index]
-                val unlockedRow = unlocked.firstOrNull { it.achievementKey == def.key }
-                val isUnlocked = unlockedRow != null
-                val progress = def.progress(stats)
-                val justOpened = newlyUnlocked.any { it.achievementKey == def.key }
-                JourneyRow(
-                    def = def,
-                    index = index,
-                    isUnlocked = isUnlocked,
-                    progress = progress,
-                    justOpened = justOpened,
+
+            item(span = { GridItemSpan(maxLineSpan) }, key = "hero") {
+                BadgeHero(
+                    unlockedCount = earnedDefs.size,
+                    total = total,
+                    lockedCount = total - earnedDefs.size,
                 )
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }, key = "stats") {
+                StatsStrip(stats)
+            }
+
+            item(span = { GridItemSpan(maxLineSpan) }, key = "filters") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterPill(
+                        text = "Tümü",
+                        selected = filter == BadgeFilter.ALL,
+                        onClick = { filter = BadgeFilter.ALL },
+                    )
+                    FilterPill(
+                        text = "Kazanılan ${earnedDefs.size}",
+                        selected = filter == BadgeFilter.EARNED,
+                        onClick = { filter = BadgeFilter.EARNED },
+                    )
+                    FilterPill(
+                        text = "Kilitli ${lockedDefs.size}",
+                        selected = filter == BadgeFilter.LOCKED,
+                        onClick = { filter = BadgeFilter.LOCKED },
+                    )
+                }
+            }
+
+            when (filter) {
+                BadgeFilter.ALL -> {
+                    if (earnedDefs.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "sec_earned") {
+                            SectionHeading("Kazanılanlar", earnedDefs.size)
+                        }
+                        items(earnedDefs, key = { "earned_${it.key}" }) { def ->
+                            BadgeCard(
+                                def = def,
+                                isUnlocked = true,
+                                progress = def.target,
+                                earnedAt = earnedAtByKey[def.key],
+                                justOpened = def.key in newKeys,
+                            )
+                        }
+                    }
+                    if (lockedDefs.isNotEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "sec_locked") {
+                            SectionHeading("Yolda", lockedDefs.size)
+                        }
+                        items(lockedDefs, key = { "locked_${it.key}" }) { def ->
+                            BadgeCard(
+                                def = def,
+                                isUnlocked = false,
+                                progress = def.progress(stats),
+                                earnedAt = null,
+                                justOpened = false,
+                            )
+                        }
+                    }
+                }
+                BadgeFilter.EARNED -> {
+                    if (earnedDefs.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "empty_earned") {
+                            EmptyBadges("Henüz rozet yok. İlk izlenenle başlayın!")
+                        }
+                    } else {
+                        items(earnedDefs, key = { "earned_${it.key}" }) { def ->
+                            BadgeCard(
+                                def = def,
+                                isUnlocked = true,
+                                progress = def.target,
+                                earnedAt = earnedAtByKey[def.key],
+                                justOpened = def.key in newKeys,
+                            )
+                        }
+                    }
+                }
+                BadgeFilter.LOCKED -> {
+                    if (lockedDefs.isEmpty()) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "empty_locked") {
+                            EmptyBadges("Tüm rozetler kazanıldı. Efsanesiniz! 🏆")
+                        }
+                    } else {
+                        items(lockedDefs, key = { "locked_${it.key}" }) { def ->
+                            BadgeCard(
+                                def = def,
+                                isUnlocked = false,
+                                progress = def.progress(stats),
+                                earnedAt = null,
+                                justOpened = false,
+                            )
+                        }
+                    }
+                }
             }
         }
         ConfettiOverlay(trigger = celebrate)
@@ -147,187 +254,345 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
 }
 
 @Composable
-private fun StatsBar(stats: CoupleStats) {
-    MinimuvSurface(shape = RoundedCornerShape(16.dp)) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 14.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            StatCell("🎬", "${stats.totalCompleted}", "Tamamlanan")
-            StatCell("🔥", "${stats.streakDays}", "Günlük Streak")
-            StatCell("📺", "${stats.animeEpisodes}", "Anime Bölümü")
-            StatCell("🏅", "${Achievements.ALL.count { def -> def.progress(stats) >= def.target }}", "Rozet")
+private fun BadgeHero(unlockedCount: Int, total: Int, lockedCount: Int) {
+    val tk = tokens()
+    val fraction = if (total == 0) 0f else unlockedCount.toFloat() / total.toFloat()
+    val animatedFraction by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = spring(dampingRatio = 0.8f, stiffness = 300f),
+        label = "heroRing",
+    )
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(26.dp))
+            .background(tk.together)
+            .padding(20.dp),
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.size(96.dp), contentAlignment = Alignment.Center) {
+                Canvas(Modifier.fillMaxSize()) {
+                    val stroke = 8.dp.toPx()
+                    val inset = stroke / 2f
+                    val arcSize = Size(size.width - stroke, size.height - stroke)
+                    val arcTopLeft = Offset(inset, inset)
+                    drawArc(
+                        color = Color.White.copy(alpha = 0.22f),
+                        startAngle = -90f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = arcTopLeft,
+                        size = arcSize,
+                        style = Stroke(width = stroke, cap = StrokeCap.Round),
+                    )
+                    if (animatedFraction > 0.002f) {
+                        drawArc(
+                            color = Color.White,
+                            startAngle = -90f,
+                            sweepAngle = 360f * animatedFraction,
+                            useCenter = false,
+                            topLeft = arcTopLeft,
+                            size = arcSize,
+                            style = Stroke(width = stroke, cap = StrokeCap.Round),
+                        )
+                    }
+                }
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "$unlockedCount",
+                        fontFamily = Fraunces,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 30.sp,
+                        color = Color.White,
+                    )
+                    Text(
+                        "/ $total",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = Color.White.copy(alpha = 0.82f),
+                    )
+                }
+            }
+            Spacer(Modifier.size(18.dp))
+            Column(Modifier.weight(1f)) {
+                Text(
+                    "ROZET KOLEKSİYONU",
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.4.sp,
+                    ),
+                    color = Color.White.copy(alpha = 0.82f),
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Birlikte topladıklarımız",
+                    fontFamily = Fraunces,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 20.sp,
+                    lineHeight = 24.sp,
+                    color = Color.White,
+                )
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    if (lockedCount > 0) {
+                        "$lockedCount rozet seni bekliyor. Her biri yeni bir anı."
+                    } else {
+                        "Tüm rozetler kazanıldı. Efsanesiniz!"
+                    },
+                    style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                    color = Color.White.copy(alpha = 0.9f),
+                    maxLines = 3,
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun StatCell(emoji: String, value: String, label: String) {
+private fun StatsStrip(stats: CoupleStats?) {
+    Row(
+        Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        MiniStat("🔥", "${stats?.streakDays ?: 0}", "Gün serisi", Modifier.weight(1f))
+        MiniStat("🎬", "${stats?.totalCompleted ?: 0}", "Tamamlanan", Modifier.weight(1f))
+        MiniStat("📝", "${stats?.notesCount ?: 0}", "Not", Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun MiniStat(
+    emoji: String,
+    value: String,
+    label: String,
+    modifier: Modifier = Modifier,
+) {
     val tk = tokens()
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        MinimuvEmojiIcon(emoji, size = 20.dp)
+    Column(
+        modifier
+            .clip(RoundedCornerShape(18.dp))
+            .background(tk.surface1)
+            .padding(vertical = 12.dp, horizontal = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(emoji, fontSize = 15.sp)
+        Spacer(Modifier.height(3.dp))
         Text(
             value,
             fontFamily = Fraunces,
             fontWeight = FontWeight.Bold,
-            fontSize = 20.sp,
+            fontSize = 18.sp,
             color = tk.text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
         )
-        Text(label, style = MaterialTheme.typography.labelSmall, color = tk.textMuted)
+        Text(
+            label,
+            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+            color = tk.textMuted,
+            maxLines = 1,
+        )
     }
 }
 
 @Composable
-private fun JourneyRow(
+private fun SectionHeading(text: String, count: Int) {
+    val tk = tokens()
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(top = 6.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Text(
+            text,
+            fontWeight = FontWeight.Bold,
+            fontSize = 17.sp,
+            color = tk.text,
+        )
+        Text(
+            "$count",
+            style = MaterialTheme.typography.labelMedium,
+            color = tk.textMuted,
+        )
+    }
+}
+
+@Composable
+private fun BadgeCard(
     def: AchievementDef,
-    index: Int,
     isUnlocked: Boolean,
     progress: Int,
+    earnedAt: String?,
     justOpened: Boolean,
 ) {
     val tk = tokens()
-    val haptic = LocalHapticFeedback.current
-    val scale by animateFloatAsState(
-        targetValue = if (justOpened) 1.25f else 1f,
-        animationSpec = spring(dampingRatio = 0.4f),
-        label = "medalScale",
+    val target = def.target.coerceAtLeast(1)
+    val fraction = if (isUnlocked) 1f else (progress.toFloat() / target.toFloat()).coerceIn(0f, 1f)
+    val fill by animateFloatAsState(
+        targetValue = fraction,
+        animationSpec = spring(dampingRatio = 0.9f, stiffness = 400f),
+        label = "badgeFill_${def.key}",
     )
-    // Sağa/sola kıvrılan patika
-    val offsetFraction = when (index % 3) {
-        0 -> 0f
-        1 -> 0.22f
-        else -> -0.22f
+    val scale by animateFloatAsState(
+        targetValue = if (justOpened) 1.06f else 1f,
+        animationSpec = spring(dampingRatio = 0.4f),
+        label = "badgeScale_${def.key}",
+    )
+    val shape = RoundedCornerShape(20.dp)
+    val borderBrush = if (isUnlocked) {
+        Brush.linearGradient(listOf(tk.gold.copy(alpha = 0.65f), tk.gold.copy(alpha = 0.25f)))
+    } else {
+        Brush.linearGradient(
+            listOf(tk.text.copy(alpha = 0.08f), tk.text.copy(alpha = 0.05f)),
+        )
     }
-    Box(
+
+    Column(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 40.dp)
-            .height(104.dp),
-    ) {
-        Canvas(Modifier.align(Alignment.CenterStart)) {
-            val mid = size.height / 2f
-            drawLine(
-                color = tk.surface3,
-                start = Offset(0f, mid),
-                end = Offset(size.width, mid),
-                strokeWidth = 3.dp.toPx(),
-                pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 14f)),
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+            }
+            .clip(shape)
+            .background(
+                if (isUnlocked) {
+                    Brush.linearGradient(listOf(tk.gold.copy(alpha = 0.10f), tk.surface1))
+                } else {
+                    Brush.linearGradient(listOf(tk.surface1, tk.surface1))
+                },
             )
-        }
+            .border(1.dp, borderBrush, shape)
+            .padding(13.dp),
+    ) {
         Row(
-            Modifier
-                .align(Alignment.CenterStart)
-                .padding(start = (offsetFraction * 260f).dp.coerceAtLeast(0.dp)),
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
+                Modifier
+                    .size(44.dp)
+                    .clip(CircleShape)
+                    .background(if (isUnlocked) tk.gold.copy(alpha = 0.18f) else tk.surface2),
                 contentAlignment = Alignment.Center,
-                modifier = Modifier.graphicsLayer {
-                    scaleX = scale
-                    scaleY = scale
-                },
             ) {
-                // Dış parlama: blur'suz, üst üste radial gradient katmanı (ucuz)
-                if (isUnlocked) {
+                Text(
+                    def.emoji,
+                    fontSize = 21.sp,
+                    modifier = Modifier.graphicsLayer { alpha = if (isUnlocked) 1f else 0.5f },
+                )
+                if (!isUnlocked) {
                     Box(
                         Modifier
-                            .size(92.dp)
+                            .align(Alignment.BottomEnd)
+                            .size(16.dp)
                             .clip(CircleShape)
-                            .background(
-                                Brush.radialGradient(
-                                    listOf(tk.gold.copy(alpha = 0.30f), tk.gold.copy(alpha = 0f)),
-                                )
-                            ),
-                    )
-                }
-                Box(
-                    Modifier
-                        .size(66.dp)
-                        .clip(CircleShape)
-                        .background(
-                            if (isUnlocked) {
-                                Brush.radialGradient(listOf(tk.gold, tk.gold.copy(alpha = 0.75f)))
-                            } else {
-                                // Kilitli: frosted cam hissi
-                                Brush.radialGradient(
-                                    listOf(tk.surface3.copy(alpha = 0.55f), tk.surface2.copy(alpha = 0.55f)),
-                                )
-                            },
-                        )
-                        .border(
-                            width = 1.dp,
-                            brush = if (isUnlocked) {
-                                Brush.radialGradient(
-                                    listOf(tk.text.copy(alpha = 0.55f), tk.gold.copy(alpha = 0.25f)),
-                                )
-                            } else {
-                                Brush.radialGradient(
-                                    listOf(tk.text.copy(alpha = 0.18f), Color.Transparent),
-                                )
-                            },
-                            shape = CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (isUnlocked) {
-                        Text(def.emoji, style = MaterialTheme.typography.headlineSmall)
-                    } else {
-                        MinimuvEmojiIcon("🔒", size = 24.dp)
+                            .background(tk.surface3),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("🔒", fontSize = 8.sp)
                     }
                 }
             }
-            Spacer(Modifier.width(14.dp))
-            Column {
-                Text(
-                    def.title,
-                    fontFamily = Fraunces,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp,
-                    color = if (isUnlocked) tk.gold else tk.text,
-                )
-                Text(
-                    def.description,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = tk.textSoft,
-                    maxLines = 2,
-                )
-                if (!isUnlocked) {
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        val fraction = (progress.toFloat() / def.target.toFloat()).coerceIn(0f, 1f)
-                        val fillFraction by animateFloatAsState(
-                            targetValue = fraction,
-                            animationSpec = spring(dampingRatio = 0.9f, stiffness = 400f),
-                            label = "badgeProgress",
-                        )
-                        Box(
-                            Modifier
-                                .width(120.dp)
-                                .height(8.dp)
-                                .clip(CircleShape)
-                                .background(tk.surface3.copy(alpha = 0.6f)),
-                        ) {
-                            if (fillFraction > 0.01f) {
-                                Box(
-                                    Modifier
-                                        .fillMaxWidth(fillFraction)
-                                        .fillMaxHeight()
-                                        .clip(CircleShape)
-                                        .background(Brush.horizontalGradient(listOf(tk.gold.copy(alpha = 0.7f), tk.gold))),
-                                )
-                            }
-                        }
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "$progress/${def.target}",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = tk.textMuted,
-                        )
-                    }
+            if (isUnlocked) {
+                Box(
+                    Modifier
+                        .size(22.dp)
+                        .clip(CircleShape)
+                        .background(tk.gold.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text("✓", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = tk.gold)
                 }
             }
         }
+        Spacer(Modifier.height(10.dp))
+        Text(
+            def.title,
+            fontWeight = FontWeight.Bold,
+            fontSize = 13.sp,
+            lineHeight = 16.sp,
+            color = if (isUnlocked) tk.text else tk.textSoft,
+            minLines = 2,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(3.dp))
+        Text(
+            def.description,
+            fontSize = 10.sp,
+            lineHeight = 13.sp,
+            color = tk.textMuted,
+            minLines = 2,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Start,
+        )
+        Spacer(Modifier.height(10.dp))
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(tk.surface3.copy(alpha = 0.55f)),
+        ) {
+            if (fill > 0.01f) {
+                Box(
+                    Modifier
+                        .fillMaxWidth(fill)
+                        .fillMaxHeight()
+                        .clip(CircleShape)
+                        .background(
+                            Brush.horizontalGradient(
+                                listOf(tk.gold.copy(alpha = 0.65f), tk.gold),
+                            ),
+                        ),
+                )
+            }
+        }
+        Spacer(Modifier.height(5.dp))
+        Text(
+            if (isUnlocked) {
+                earnedAt?.let(::formatEarnedDate)?.let { "Kazanıldı · $it" } ?: "Kazanıldı"
+            } else {
+                "$progress / ${def.target}"
+            },
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (isUnlocked) tk.gold else tk.textMuted,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
     }
+}
+
+@Composable
+private fun EmptyBadges(message: String) {
+    val tk = tokens()
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(22.dp))
+            .background(tk.surface1)
+            .padding(20.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = tk.textMuted,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+private fun formatEarnedDate(iso: String?): String? {
+    val raw = iso?.take(10) ?: return null
+    return runCatching {
+        LocalDate.parse(raw).format(
+            DateTimeFormatter.ofPattern("d MMM yyyy", Locale.forLanguageTag("tr-TR")),
+        )
+    }.getOrNull()
 }

@@ -48,6 +48,7 @@ class TitleRepository {
                 "watch_order",
                 "watch_mode",
                 "is_favorite",
+                "is_private",
                 "created_at",
                 "updated_at",
                 "notes",

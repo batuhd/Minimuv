@@ -109,6 +109,10 @@ import kotlin.math.roundToInt
 import kotlin.math.sin
 import kotlin.random.Random
 
+/** Çarkta aynı anda gösterilecek en fazla dilim. Daha fazlasında afişler
+ *  minicik kalıyordu; havuzdan rastgele bu kadar yapım seçilir. */
+private const val MAX_WHEEL_SLICES = 10
+
 /** Dilim renkleri vurgu + partner renginden türetilir; canvas ve lejant aynı listeyi kullanır. */
 private fun wheelSliceColors(van: Color, sinop: Color): List<Color> = listOf(
     van.copy(alpha = 0.85f),
@@ -150,7 +154,19 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
         titles.filter { typeFilter == null || it.type == typeFilter!!.db }
     }
 
-    LaunchedEffect(pool) {
+    // Çok başlıkta çark kalabalıklaşıp afişler küçülüyordu. Havuzdan rastgele
+    // en fazla MAX_WHEEL_SLICES yapım seçilir; "Yenile" ile yeni örnek alınır.
+    var wheelSeed by remember { mutableIntStateOf(0) }
+    val candidates = remember(pool, wheelSeed) {
+        if (pool.size <= MAX_WHEEL_SLICES) pool else pool.shuffled().take(MAX_WHEEL_SLICES)
+    }
+    var wheelPool by remember { mutableStateOf(candidates) }
+    // Dönüş sırasında çarkın görünümü değişmesin: yeni liste ancak durunca uygulanır.
+    LaunchedEffect(candidates, spinning) {
+        if (!spinning) wheelPool = candidates
+    }
+
+    LaunchedEffect(pool, wheelSeed) {
         // Dönüş sırasında liste sıfırlanmasın (BUG-066).
         if (!spinning) {
             winner = null
@@ -166,12 +182,12 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
     }
 
     // Dönerken gösterge her dilimi geçtiğinde "tik" sesi
-    LaunchedEffect(spinning, pool) {
-        if (!spinning || pool.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(spinning, wheelPool) {
+        if (!spinning || wheelPool.isEmpty()) return@LaunchedEffect
         fun sliceIndex(): Int {
-            val slice = 360f / pool.size
+            val slice = 360f / wheelPool.size
             val rel = ((270f - (rotation.value % 360f)) % 360f + 360f) % 360f
-            return (rel / slice).toInt().coerceIn(0, pool.size - 1)
+            return (rel / slice).toInt().coerceIn(0, wheelPool.size - 1)
         }
         var last = sliceIndex()
         while (spinning) {
@@ -190,13 +206,21 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
         if (showWinner && soundOn) WheelSound.playWin()
     }
 
-    // Dilimlerde gösterilecek afişler (poster yoksa numara gösterilir)
-    val posters = rememberPosterBitmaps(pool)
+    // Dilimlerde gösterilecek afişler (poster yoksa numara gösterilir).
+    // Kazanan, liste yenilense bile popup'ta afişiyle görünsün.
+    val posterPool = remember(wheelPool, winner) {
+        if (winner != null && wheelPool.none { it.id == winner?.id }) {
+            wheelPool + listOfNotNull(winner)
+        } else {
+            wheelPool
+        }
+    }
+    val posters = rememberPosterBitmaps(posterPool)
 
     fun spinWheel() {
-        if (spinning || pool.isEmpty()) return
+        if (spinning || wheelPool.isEmpty()) return
         // Dönüş boyunca filtre/liste değişse bile aynı listeyle bitir (BUG-066).
-        val spinPool = pool
+        val spinPool = wheelPool
         spinning = true
         winner = null
         showWinner = false
@@ -261,8 +285,12 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
             )
             Spacer(Modifier.height(6.dp))
             Text(
-                if (pool.isEmpty()) "Sırada listesine birkaç yapım ekle"
-                else "Sırada listesinden ${pool.size} yapım",
+                when {
+                    pool.isEmpty() -> "Sırada listesine birkaç yapım ekle"
+                    pool.size > MAX_WHEEL_SLICES ->
+                        "Sırada ${pool.size} yapım var · çarkta rastgele ${wheelPool.size} tanesi"
+                    else -> "Sırada listesinden ${pool.size} yapım"
+                },
                 style = MaterialTheme.typography.bodyMedium,
                 color = tk.textSoft,
                 textAlign = TextAlign.Center,
@@ -281,6 +309,15 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                         onClick = { if (!spinning) typeFilter = if (typeFilter == type) null else type },
                     )
                 }
+            }
+
+            if (pool.size > MAX_WHEEL_SLICES) {
+                Spacer(Modifier.height(8.dp))
+                FilterPill(
+                    "🎲 Çarkı yenile",
+                    selected = false,
+                    onClick = { if (!spinning) wheelSeed++ },
+                )
             }
 
             Spacer(Modifier.height(16.dp))
@@ -306,7 +343,7 @@ fun WheelScreen(onOpenTitle: (String) -> Unit) {
                     contentAlignment = Alignment.Center,
                 ) {
                         WheelCanvas(
-                            titles = pool,
+                            titles = wheelPool,
                             angle = rotation.value,
                             posters = posters,
                             modifier = Modifier.fillMaxSize(),

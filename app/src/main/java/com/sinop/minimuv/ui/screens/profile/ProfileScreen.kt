@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -26,6 +28,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -78,9 +82,12 @@ import com.sinop.minimuv.data.AppCache
 import com.sinop.minimuv.data.CoupleRepository
 import com.sinop.minimuv.data.CoupleSettings
 import com.sinop.minimuv.data.CoupleStats
+import com.sinop.minimuv.data.Favorite
+import com.sinop.minimuv.data.FavoritesRepository
 import com.sinop.minimuv.data.Profile
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
+import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.DcButton
 import com.sinop.minimuv.ui.components.ShimmerBox
@@ -113,19 +120,25 @@ fun ProfileScreen(
     onOpenWrapped: () -> Unit = {},
     onOpenBadges: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    onOpenTitle: (String) -> Unit = {},
+    onOpenFavoritePerson: (String, String) -> Unit = { _, _ -> },
+    onOpenFavoriteStudio: (String, String) -> Unit = { _, _ -> },
 ) {
     val context = LocalContext.current
     val tk = tokens()
     val profileId by settings.profileId.collectAsState(initial = null)
+    val displayLang by settings.displayLang.collectAsState(initial = null)
     val scope = rememberCoroutineScope()
     val repo = remember { ProfileRepository() }
     val titleRepo = remember { TitleRepository() }
+    val favRepo = remember { FavoritesRepository() }
 
     var profiles by remember { mutableStateOf(AppCache.profiles.value) }
     var stats by remember { mutableStateOf<CoupleStats?>(null) }
     var titles by remember {
         mutableStateOf(if (AppCache.titlesLoaded) AppCache.titlesLite.value else emptyList())
     }
+    var favorites by remember { mutableStateOf<List<Favorite>>(emptyList()) }
     var watchLogs by remember { mutableStateOf(AppCache.watchLog.value) }
     var couple by remember { mutableStateOf(AppCache.coupleSettings.value) }
     var editing by remember { mutableStateOf<Profile?>(null) }
@@ -136,7 +149,7 @@ fun ProfileScreen(
     fun reload() {
         scope.launch {
             runCatching {
-                // P2: yedi istek paralel — sıralı ağ turları yerine tek tur.
+                // P2: sekiz istek paralel — sıralı ağ turları yerine tek tur.
                 kotlinx.coroutines.supervisorScope {
                     val p = async { repo.getProfiles() }
                     val t = async { titleRepo.getTitlesLite() }
@@ -150,18 +163,22 @@ fun ProfileScreen(
                     val notes = async {
                         runCatching { titleRepo.getAllTitleNotes() }.getOrDefault(emptyList())
                     }
+                    val favs = async {
+                        runCatching { favRepo.getFavorites() }.getOrDefault(emptyList())
+                    }
                     val coupleSettings = async {
                         runCatching { CoupleRepository().get() }.getOrNull()
                     }
                     StatsBundle(
                         p.await(), t.await(), log.await(), sc.await(),
-                        prog.await(), notes.await(), coupleSettings.await(),
+                        prog.await(), notes.await(), coupleSettings.await(), favs.await(),
                     )
                 }
             }.onSuccess { bundle ->
                 profiles = bundle.profiles
                 titles = bundle.titles
                 watchLogs = bundle.log
+                favorites = bundle.favorites
                 couple = bundle.couple
                 stats = Achievements.computeStats(
                     bundle.titles, bundle.log, bundle.scores, bundle.notes, bundle.progress,
@@ -180,7 +197,9 @@ fun ProfileScreen(
     LaunchedEffect(Unit) {
         reload()
         RealtimeManager.events
-            .filter { it == "profiles" || it == "titles" || it == "couple_settings" }
+            .filter {
+                it == "profiles" || it == "titles" || it == "couple_settings" || it == "favorites"
+            }
             .debounce(500)
             .collect { reload() }
     }
@@ -240,10 +259,14 @@ fun ProfileScreen(
 
     val totalUnlockedBadges = stats?.let { s -> Achievements.ALL.count { it.progress(s) >= it.target } } ?: 0
 
-    val watchedTitlesCount = remember(titles) {
-        titles.count { t ->
-            t.status != com.sinop.minimuv.data.WatchStatus.PLAN.db || t.episodeProgress > 0
-        }
+    // "Bu ay izlenen": izleme günlüğünde bu ay kaydı olan farklı başlıklar.
+    val watchedThisMonthCount = remember(watchLogs) {
+        val monthPrefix = LocalDate.now().toString().take(7)
+        watchLogs.asSequence()
+            .filter { it.date.startsWith(monthPrefix) && it.episodesWatched > 0 }
+            .map { it.titleId }
+            .distinct()
+            .count()
     }
 
     // A1: birliktelik süresi dakikada bir tazelenir.
@@ -342,14 +365,14 @@ fun ProfileScreen(
             onSwitchProfile = onSwitchProfile,
         )
 
-        // 2. 3'lü İstatistik Kutuları: İzlenen Başlık | İzleme Süresi | Aktif Streak
+        // 2. 3'lü İstatistik Kutuları: Bu Ay İzlenen | İzleme Süresi | Aktif Streak
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             StatBox(
-                value = "$watchedTitlesCount",
-                label = "İzlenen Başlık",
+                value = "$watchedThisMonthCount",
+                label = "Bu Ay İzlenen",
                 modifier = Modifier.weight(1f),
             )
             StatBox(
@@ -364,7 +387,18 @@ fun ProfileScreen(
             )
         }
 
-        // 3. Rozetlerimiz (Üst Satır: 2 Rastgele Kazanılan | Alt Satırlar: Tamamlanmaya Yakın Olanlar)
+        // 3. Favorilerimiz: favori başlıklar + favori kişi/karakter/stüdyolar
+        FavoritesSection(
+            titles = titles,
+            favorites = favorites,
+            profiles = profiles,
+            displayLang = displayLang,
+            onOpenTitle = onOpenTitle,
+            onOpenFavoritePerson = onOpenFavoritePerson,
+            onOpenFavoriteStudio = onOpenFavoriteStudio,
+        )
+
+        // 4. Rozetlerimiz (Üst Satır: 2 Rastgele Kazanılan | Alt Satırlar: Tamamlanmaya Yakın Olanlar)
         Column {
             Row(
                 Modifier.fillMaxWidth(),
@@ -657,7 +691,271 @@ private fun StatBox(value: String, label: String, modifier: Modifier = Modifier)
     }
 }
 
-// ── 3. Rozetlerimiz Genel Bakış Kartı ──────────────────────────────────────
+// ── 3. Favorilerimiz ───────────────────────────────────────────────────────
+
+@Composable
+private fun FavoritesSection(
+    titles: List<Title>,
+    favorites: List<Favorite>,
+    profiles: List<Profile>,
+    displayLang: String?,
+    onOpenTitle: (String) -> Unit,
+    onOpenFavoritePerson: (String, String) -> Unit,
+    onOpenFavoriteStudio: (String, String) -> Unit,
+) {
+    val tk = tokens()
+    val favTitles = remember(titles) { titles.filter { it.isFavorite } }
+    val profileById = remember(profiles) { profiles.associateBy { it.id } }
+    val total = favTitles.size + favorites.size
+
+    Column {
+        Row(
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                "Favorilerimiz",
+                fontWeight = FontWeight.Bold,
+                fontSize = 20.sp,
+                color = tk.text,
+            )
+            Text(
+                if (total == 0) "Henüz yok" else "$total favori",
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 12.sp),
+                color = tk.textMuted,
+            )
+        }
+        Spacer(Modifier.height(10.dp))
+        if (total == 0) {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(22.dp))
+                    .background(tk.surface1)
+                    .padding(16.dp),
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .background(tk.van.copy(alpha = 0.14f)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text("💗", fontSize = 19.sp)
+                    }
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(
+                            "Favoriler burada birikecek",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 14.sp,
+                            color = tk.text,
+                        )
+                        Text(
+                            "Bir başlık ya da kişi sayfasındaki kalbe dokunun.",
+                            style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp),
+                            color = tk.textMuted,
+                        )
+                    }
+                }
+            }
+        } else {
+            if (favTitles.isNotEmpty()) {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp),
+                ) {
+                    items(favTitles, key = { it.id }) { t ->
+                        FavoriteTitleCard(
+                            title = t,
+                            displayLang = displayLang,
+                            onClick = { onOpenTitle(t.id) },
+                        )
+                    }
+                }
+            }
+            if (favorites.isNotEmpty()) {
+                if (favTitles.isNotEmpty()) Spacer(Modifier.height(14.dp))
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 2.dp),
+                ) {
+                    items(
+                        favorites,
+                        key = { "${it.profileId}_${it.favType}_${it.source}_${it.externalId}" },
+                    ) { f ->
+                        FavoriteEntityCard(
+                            favorite = f,
+                            owner = profileById[f.profileId],
+                            onClick = {
+                                if (f.favType == "studio") {
+                                    onOpenFavoriteStudio(f.source, f.externalId)
+                                } else {
+                                    onOpenFavoritePerson(f.source, f.externalId)
+                                }
+                            },
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FavoriteTitleCard(
+    title: Title,
+    displayLang: String?,
+    onClick: () -> Unit,
+) {
+    val tk = tokens()
+    Column(
+        Modifier
+            .width(104.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .clickable(role = Role.Button, onClick = onClick),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(2f / 3f)
+                .clip(RoundedCornerShape(14.dp))
+                .background(tk.surface2),
+        ) {
+            if (title.posterUrl != null) {
+                AsyncImage(
+                    model = title.posterUrl,
+                    contentDescription = title.title,
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop,
+                )
+            } else {
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("🎬", fontSize = 26.sp)
+                }
+            }
+            Box(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(6.dp)
+                    .size(22.dp)
+                    .clip(CircleShape)
+                    .background(tk.bg.copy(alpha = 0.65f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("❤️", fontSize = 11.sp)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            title.displayTitle(displayLang),
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            color = tk.text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Text(
+            title.score?.let { String.format(java.util.Locale.US, "★ %.1f", it) } ?: " ",
+            fontSize = 10.sp,
+            color = tk.gold,
+            maxLines = 1,
+        )
+    }
+}
+
+@Composable
+private fun FavoriteEntityCard(
+    favorite: Favorite,
+    owner: Profile?,
+    onClick: () -> Unit,
+) {
+    val tk = tokens()
+    val isStudio = favorite.favType == "studio"
+    val ownerColor = owner?.avatarColor?.let { parseColorSafe(it) } ?: tk.textMuted
+    Column(
+        Modifier
+            .width(92.dp)
+            .clip(RoundedCornerShape(20.dp))
+            .clickable(role = Role.Button, onClick = onClick),
+    ) {
+        Box(
+            Modifier
+                .size(92.dp)
+                .clip(RoundedCornerShape(20.dp))
+                .background(tk.surface2)
+                .border(1.dp, tk.text.copy(alpha = 0.08f), RoundedCornerShape(20.dp)),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (favorite.imageUrl != null) {
+                AsyncImage(
+                    model = favorite.imageUrl,
+                    contentDescription = favorite.name,
+                    modifier = if (isStudio) Modifier.fillMaxSize().padding(10.dp) else Modifier.fillMaxSize(),
+                    contentScale = if (isStudio) ContentScale.Fit else ContentScale.Crop,
+                )
+            } else {
+                Text(if (isStudio) "🏛️" else "👤", fontSize = 26.sp)
+            }
+            Box(
+                Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(6.dp)
+                    .clip(RoundedCornerShape(50))
+                    .background(tk.bg.copy(alpha = 0.72f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp),
+            ) {
+                Text(
+                    favoriteTypeLabel(favorite.favType),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = tk.text,
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            favorite.name,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            color = tk.text,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        if (owner != null) {
+            Row(
+                Modifier.padding(top = 2.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(
+                    Modifier
+                        .size(5.dp)
+                        .clip(CircleShape)
+                        .background(ownerColor),
+                )
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    owner.displayName,
+                    fontSize = 9.sp,
+                    color = tk.textMuted,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+    }
+}
+
+private fun favoriteTypeLabel(favType: String): String = when (favType) {
+    "studio" -> "Stüdyo"
+    "character" -> "Karakter"
+    "person" -> "Kişi"
+    else -> favType.replaceFirstChar { it.uppercase() }
+}
+
+// ── 4. Rozetlerimiz Genel Bakış Kartı ──────────────────────────────────────
 
 @Composable
 private fun BadgesOverviewCard(
@@ -1071,6 +1369,7 @@ private data class StatsBundle(
     val progress: List<com.sinop.minimuv.data.EpisodeProgress> = emptyList(),
     val notes: List<com.sinop.minimuv.data.TitleNote> = emptyList(),
     val couple: CoupleSettings? = null,
+    val favorites: List<Favorite> = emptyList(),
 )
 
 @Composable

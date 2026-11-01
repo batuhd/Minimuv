@@ -52,7 +52,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import androidx.compose.runtime.toMutableStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -91,6 +95,34 @@ import sh.calvin.reorderable.rememberReorderableLazyRowState
 
 private fun statusGroup(db: String): String =
     if (db == WatchStatus.REWATCHING.db) WatchStatus.WATCHING.db else db
+
+/** Detaydan dönünce filtreler kaybolmasın (null'lar boş metinle kodlanır). */
+private val ListFiltersSaver = listSaver<ListFilters, Any>(
+    save = { f ->
+        listOf(
+            f.type?.name ?: "",
+            f.status?.name ?: "",
+            f.yearRange?.start ?: Float.NaN,
+            f.yearRange?.endInclusive ?: Float.NaN,
+            f.sort.name,
+        )
+    },
+    restore = { v ->
+        val start = v[2] as Float
+        val end = v[3] as Float
+        ListFilters(
+            type = (v[0] as String).takeIf { it.isNotBlank() }?.let(ContentType::valueOf),
+            status = (v[1] as String).takeIf { it.isNotBlank() }?.let(WatchStatus::valueOf),
+            yearRange = if (start.isNaN() || end.isNaN()) null else start..end,
+            sort = SortOption.valueOf(v[4] as String),
+        )
+    },
+)
+
+private val CollapsedSectionsSaver = listSaver<SnapshotStateList<String>, String>(
+    save = { it.toList() },
+    restore = { it.toMutableStateList() },
+)
 
 private fun libraryFilterAndSort(
     titles: List<Title>,
@@ -134,10 +166,12 @@ fun LibraryScreen(
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val progressRows by vm.perProfileProgress.collectAsStateWithLifecycle()
     val tk = tokens()
-    var filters by remember { mutableStateOf(ListFilters()) }
+    var filters by rememberSaveable(stateSaver = ListFiltersSaver) {
+        mutableStateOf(ListFilters())
+    }
     var panelOpen by remember { mutableStateOf(false) }
-    var searchOpen by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
     var pickerOpen by remember { mutableStateOf(false) }
 
     Box(
@@ -206,7 +240,9 @@ fun LibraryScreen(
                     continueOrder.addAll(watchingIds)
                 }
             }
-            val collapsedSecs = remember { mutableStateListOf<String>() }
+            val collapsedSecs = rememberSaveable(saver = CollapsedSectionsSaver) {
+                mutableStateListOf<String>()
+            }
             val reorderableState = rememberReorderableLazyGridState(gridState) { from, to ->
                 if (!dragging) {
                     android.util.Log.w("MinimuvOrder", "move IGNORED (dragging=false) ${from.key} -> ${to.key}")
@@ -229,7 +265,16 @@ fun LibraryScreen(
                     planOrder.addAll(planIds)
                 }
             }
-            LaunchedEffect(viewMode) { gridState.scrollToItem(0) }
+            // Yalnızca görünüm modu GERÇEKTEN değişince başa dön. Ekran detaydan
+            // geri gelince yeniden kompoze olduğu için bu efekt her dönüşte
+            // tetiklenip kaydırma konumunu sıfırlıyordu.
+            var appliedViewMode by rememberSaveable { mutableStateOf(viewMode) }
+            LaunchedEffect(viewMode) {
+                if (appliedViewMode != viewMode) {
+                    appliedViewMode = viewMode
+                    gridState.scrollToItem(0)
+                }
+            }
             val byId = remember(all) { all.associateBy { it.id } }
             val watchingOrdered = continueOrder.mapNotNull { byId[it] }.filter(typeOk)
             val planOrdered = planOrder.mapNotNull { byId[it] }.filter(typeOk)
@@ -497,6 +542,7 @@ fun LibraryScreen(
                                         displayLang,
                                         badge = null,
                                         meta = tileSub(t),
+                                        detail = sectionDetail(t),
                                         onClick = { onOpenTitle(t.id) },
                                         onLongClick = { onEditTitle(t.id) },
                                     )
@@ -1007,6 +1053,7 @@ private fun PosterTile(
     lang: String?,
     badge: String?,
     meta: String? = null,
+    detail: String? = null,
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -1067,6 +1114,27 @@ private fun PosterTile(
                     )
                     .padding(start = 8.dp, end = 8.dp, bottom = 8.dp, top = 28.dp),
             ) {
+                if (detail != null) {
+                    // Puan + bölüm bilgisi posterin üstünde, başlık bandının
+                    // hemen üzerinde ince bir satır olarak durur (ekstra yer kaplamaz).
+                    Text(
+                        detail,
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        lineHeight = 12.sp,
+                        color = Color.White.copy(alpha = 0.92f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = TextStyle(
+                            shadow = androidx.compose.ui.graphics.Shadow(
+                                color = Color.Black.copy(alpha = 0.9f),
+                                offset = androidx.compose.ui.geometry.Offset(0f, 1f),
+                                blurRadius = 5f,
+                            ),
+                        ),
+                    )
+                    Spacer(Modifier.height(2.dp))
+                }
                 Text(
                     t.displayTitle(lang),
                     fontFamily = Fraunces,
@@ -1098,6 +1166,28 @@ private fun PosterTile(
             )
         }
     }
+}
+
+/** Tamamlandı / Duraklattık / Bıraktık bölümlerinde posterin üstünde gösterilen
+ *  kısa satır: verilen puan ve kaldığımız bölüm. */
+private fun sectionDetail(t: Title): String? {
+    val score = t.score?.let { String.format(java.util.Locale.US, "★ %.1f", it) }
+    val episodes = if (t.type == ContentType.FILM.db) {
+        null
+    } else {
+        val total = t.totalEpisodes
+        val shown = if (t.status == WatchStatus.COMPLETED.db) {
+            t.episodeProgress.coerceAtLeast(total ?: 0)
+        } else {
+            t.episodeProgress
+        }
+        when {
+            total != null && total > 0 -> "$shown/$total bölüm"
+            shown > 0 -> "$shown bölüm"
+            else -> null
+        }
+    }
+    return listOfNotNull(score, episodes).joinToString(" · ").ifBlank { null }
 }
 
 private fun tileSub(t: Title): String {

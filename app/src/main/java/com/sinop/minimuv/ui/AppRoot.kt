@@ -230,7 +230,9 @@ fun MainApp(settings: SettingsStore, profileId: String) {
         }
     }
 
-    val onboardingDone by settings.onboardingDone.collectAsState(initial = false)
+    // null = DataStore henüz okunmadı. İlk emisyon gelmeden onboarding'i çizme;
+    // aksi halde her açılışta "Başlayalım" kartı bir kare görünüp kayboluyordu.
+    val onboardingDone by settings.onboardingDone.collectAsState(initial = null)
 
     // Kişi ve stüdyo sayfalarındaki ortak "yapıma git" mantığı: kayıtlıysa detay,
     // değilse salt okunur önizleme (B8). Önizlemeden "Koleksiyona ekle" taslağa geçer.
@@ -319,6 +321,17 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     onOpenWrapped = { navController.navigate("wrapped") },
                     onOpenBadges = { navController.navigate("achievements") },
                     onOpenSettings = { navController.navigate("settings") },
+                    onOpenTitle = { navController.navigate("detail/$it") },
+                    onOpenFavoritePerson = { source, externalId ->
+                        navController.navigate(
+                            "person/${if (source == "anime") "anime" else "tmdb"}/$externalId",
+                        )
+                    },
+                    onOpenFavoriteStudio = { source, externalId ->
+                        navController.navigate(
+                            "studio/${if (source == "anime") "anime" else "film"}/$externalId",
+                        )
+                    },
                 )
             }
             composable("settings") {
@@ -360,7 +373,10 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     },
                     onBack = { navController.popBackStack() },
                     onSaved = {
-                        navController.popBackStack("list", inclusive = false)
+                        // Kullanıcıyı start destination'a ("list") fırlatma: nereden
+                        // geldiyse (arama, kütüphane, kişi/stüdyo) oraya dön. Liste
+                        // geri dönerken kaydırma konumunu korur.
+                        navController.popBackStack()
                     },
                     onDeleted = { navController.popBackStack() },
                 )
@@ -444,7 +460,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
     }
 
     // Onboarding ana içerikten SONRA çizilir ki görünür olsun (eskiden arkada kalıyordu).
-    if (!onboardingDone) {
+    if (onboardingDone == false) {
         PendingOnboarding(settings = settings)
     }
 

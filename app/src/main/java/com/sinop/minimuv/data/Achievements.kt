@@ -66,6 +66,26 @@ data class AchievementDef(
         "3_uzun_dizi" -> stats.longSeriesCount.coerceAtMost(target)
         "ayri_izleme" -> stats.separateWatchCount.coerceAtMost(target)
         "10_mukemmel" -> stats.perfectScoreCount.coerceAtMost(target)
+        // ── Özel / içimize dönük rozetler ────────────────────────────────
+        "bitter" -> stats.lowScoreCount.coerceAtMost(target)
+        "saudade" -> stats.rewatchCount.coerceAtMost(target)
+        "mujgan" -> stats.favoriteCount.coerceAtMost(target)
+        "nova" -> stats.titlesAddedThisMonth.coerceAtMost(target)
+        "kokun_yuzumu_tokatliyor" -> stats.longNotesCount.coerceAtMost(target)
+        "karma" -> stats.rewatchCount.coerceAtMost(target)
+        "resmi_au_amelesi" -> stats.totalEpisodesLogged.coerceAtMost(target)
+        "back_to_uni" -> stats.titlesAddedThisMonth.coerceAtMost(target)
+        "kvkk" -> stats.privateCount.coerceAtMost(target)
+        "mavi_kalp_arkadaslik" -> stats.favoriteCount.coerceAtMost(target)
+        "kurumsal_gulus" -> stats.highScoreCount.coerceAtMost(target)
+        "ogrenci_isleri" -> stats.animeEpisodes.coerceAtMost(target)
+        "selam_ne_yapmaya_calisiyorsun" -> stats.scoredCount.coerceAtMost(target)
+        "spotify" -> stats.bingeMax.coerceAtMost(target)
+        "gercekten_3_te_mi_yazdin_batu" -> stats.notesThisMonth.coerceAtMost(target)
+        "iki_yetiskin" -> stats.separateWatchCount.coerceAtMost(target)
+        "birlikte_buyuyoruz" -> stats.togetherCompleted.coerceAtMost(target)
+        "sekti" -> stats.droppedCount.coerceAtMost(target)
+        "bozmaz" -> stats.streakDays.coerceAtMost(target)
         else -> 0
     }
 }
@@ -90,6 +110,13 @@ data class CoupleStats(
     val longSeriesCount: Int = 0,
     val separateWatchCount: Int = 0,
     val perfectScoreCount: Int = 0,
+    // ── Özel rozetler için ek metrikler ──────────────────────────────────
+    val lowScoreCount: Int = 0,
+    val droppedCount: Int = 0,
+    val longNotesCount: Int = 0,
+    val titlesAddedThisMonth: Int = 0,
+    val notesThisMonth: Int = 0,
+    val privateCount: Int = 0,
 )
 
 object Achievements {
@@ -152,6 +179,26 @@ object Achievements {
         AchievementDef("3_uzun_dizi", "🏃", "Yüksek Lisans Sahibi", "3 tane 100+ bölümlük yapım bitirdiniz.", 3),
         AchievementDef("ayri_izleme", "🕊️", "Qardiş Modu", "Ayrı ayrı izleme modunda ilk başlığınız.", 1),
         AchievementDef("10_mukemmel", "✨", "Eşleşen Yüzükler", "10 başlığa tam 10 puan verdiniz.", 10),
+        // ── Özel / içimize dönük rozetler ────────────────────────────────
+        AchievementDef("bitter", "🥀", "Bitter", "3 başlığa 4 ya da altı puan verdiniz. Acı ama gerçek.", 3),
+        AchievementDef("saudade", "🌫️", "Saudade", "10 kez yeniden izlemeye başladınız. Özlem baki.", 10),
+        AchievementDef("mujgan", "🪶", "Müjgan", "25 favori biriktirdiniz. Kirpik kadar zarif.", 25),
+        AchievementDef("nova", "✨", "Nova", "Bu ay 3 yeni başlık eklendi. Parladınız.", 3),
+        AchievementDef("kokun_yuzumu_tokatliyor", "🌬️", "Kokun Yüzümü Tokatlıyor", "200 karakterlik 3 not yazdınız. Bu ne kokusu?", 3),
+        AchievementDef("karma", "🌀", "Karma", "20 yeniden izleme. Evren dengeyi sever.", 20),
+        AchievementDef("resmi_au_amelesi", "🪪", "Resmi AU Amelesi", "200 bölüm resmi kayda geçti. Amelsiz kalmadı.", 200),
+        AchievementDef("back_to_uni", "🎓", "Back to Uni", "Bu ay 10 başlık eklendi. Kampüs yolu göründü.", 10),
+        AchievementDef("kvkk", "🔐", "KVKK", "Görevi kötüye kullanma: 5 gizli başlık.", 5),
+        AchievementDef("mavi_kalp_arkadaslik", "💙", "Mavi Kalp Arkadaşlık", "40 favori biriktirdiniz. Mavi kalp arkadaşlık.", 40),
+        AchievementDef("kurumsal_gulus", "🗂️", "Kurumsal Gülüş", "40 başlığa 9+ puan. Profesyonel gülümseme eşliğinde.", 40),
+        AchievementDef("ogrenci_isleri", "🎒", "Öğrenci İşleri", "300 anime bölümü. Öğrenci işleri onayladı.", 300),
+        AchievementDef("selam_ne_yapmaya_calisiyorsun", "👋", "Selam, ne yapmaya çalışıyorsun?", "40 başlığa puan verdiniz. Selam, ne yapmaya çalışıyorsun?", 40),
+        AchievementDef("spotify", "🎧", "Spotify", "Tek günde 30 bölüm. Çalma listesi başa sardı.", 30),
+        AchievementDef("gercekten_3_te_mi_yazdin_batu", "🕒", "GERCEKTEN 3 TE Mİ YAZDIN BATU", "Bu ay 3 not yazdınız. Gerçekten 3'te mi, Batu?", 3),
+        AchievementDef("iki_yetiskin", "👫", "İki Yetişkin", "2 başlıkta ayrı ayrı izleme modunu seçtiniz. İki yetişkin.", 2),
+        AchievementDef("birlikte_buyuyoruz", "🌱", "Birlikte Büyüyoruz", "20 başlığı birlikte bitirdiniz. Birlikte büyüyoruz.", 20),
+        AchievementDef("sekti", "⏭️", "Sekti", "3 yapımı bıraktınız. Bazen olur, sekti.", 3),
+        AchievementDef("bozmaz", "🧱", "Bozmaz", "21 gün üst üste izlediniz. Bu seri bozmaz.", 21),
     )
 
     fun computeStats(
@@ -209,6 +256,22 @@ object Achievements {
         val longSeriesCount = completed.count { it.type != ContentType.FILM.db && (it.totalEpisodes ?: 0) >= 100 }
         val separateWatchCount = titles.count { it.watchMode == WatchMode.AYRI.db }
         val perfectScoreCount = titles.count { it.score == 10.0 }
+        // ── Özel rozet metrikleri ────────────────────────────────────────
+        // "Bu ay" hesapları cihazın yerel ayına göre yapılır (YYYY-MM öneki).
+        val monthPrefix = LocalDate.now().toString().take(7)
+        val lowScoreCount = titles.count { (it.score ?: 99.0) <= 4.0 }
+        val droppedCount = titles.count { it.status == WatchStatus.DROPPED.db }
+        // 200+ karakterlik notlar; eski titles.notes metinleri de sayılır ama
+        // aynı metin title_notes'ta varsa iki kez sayılmaz.
+        val longNotesCount = titleNotes.count { it.noteText.trim().length >= 200 } +
+            titles.count { t ->
+                val legacy = t.notes?.trim().orEmpty()
+                legacy.length >= 200 &&
+                    titleNotes.none { it.titleId == t.id && it.noteText == t.notes }
+            }
+        val titlesAddedThisMonth = titles.count { it.createdAt?.startsWith(monthPrefix) == true }
+        val notesThisMonth = titleNotes.count { it.createdAt?.startsWith(monthPrefix) == true }
+        val privateCount = titles.count { it.isPrivate }
         return CoupleStats(
             totalCompleted = completed.size,
             filmsCompleted = films,
@@ -238,6 +301,12 @@ object Achievements {
             longSeriesCount = longSeriesCount,
             separateWatchCount = separateWatchCount,
             perfectScoreCount = perfectScoreCount,
+            lowScoreCount = lowScoreCount,
+            droppedCount = droppedCount,
+            longNotesCount = longNotesCount,
+            titlesAddedThisMonth = titlesAddedThisMonth,
+            notesThisMonth = notesThisMonth,
+            privateCount = privateCount,
         )
     }
 
