@@ -101,9 +101,18 @@ Her adım tamamlandıkça işaretlenir; hata ve notlar ilgili maddenin altına y
       (4 + 4), geçici yedek tablo düşürüldü.
 - [x] Profil rozet sayısı 22/75 ↔ rozet ekranı 29/75 uyumsuzluğu giderildi:
       profil ekranı artık DB'deki kazanılmış rozetleri (`achievements`) esas alıyor.
-- [ ] Mantıklı değişiklikler ayrı Türkçe commit'lerle kaydedilecek (push için onay).
-- [ ] İki APK: API'siz → GitHub, API'li → masaüstü + Firebase App Distribution.
-- [ ] AGENTS.md / README gerekli güncellemeler (canlı ↔ init.sql farkı dahil).
+- [x] Mantıklı değişiklikler ayrı Türkçe commit'lerle kaydedildi (push **yapılmadı**):
+      `3446ac9` bildirimler, `9304cff` favoriler + profil rozet sayısı, `feab22b`
+      rozetler, `2555366` kütüphane, `2e4d344` çark, `acc9452` Yıl Özeti,
+      `96c77d4` init.sql, `90f6409` sürüm 3.2.5, `4fccaa0` dokümanlar.
+      Push için kullanıcı onayı bekleniyor.
+- [x] İki APK üretildi (aynı versionCode **325** / versionName **3.2.5**):
+  - API'siz → `~/Sürümler/minimuv-v3.2.5.apk` (GitHub Releases'e yüklenecek)
+  - API'li → `~/Masaüstü/minimuv-v3.2.5.apk` (Firebase App Distribution'a yüklenecek)
+- [ ] Firebase App Distribution yüklemesi: makinede `firebase`/`gcloud` CLI yok;
+      APK, Firebase konsolundan tester grubuna **elle** yüklenecek (versionCode 325).
+- [x] AGENTS.md / README güncellendi (canlı ↔ init.sql farkı, title_favorites,
+      sürüm 3.2.5 / 325).
 
 ## Notlar / hatalar
 

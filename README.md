@@ -13,7 +13,7 @@ Letterboxd'ın poster odaklı sinefil estetiği ile Duolingo'nun oyunlaştırıl
   <img alt="Jetpack Compose" src="https://img.shields.io/badge/Jetpack%20Compose-Material%203-4285F4?logo=android&logoColor=white" />
   <img alt="Supabase" src="https://img.shields.io/badge/Supabase-Postgres%20%2B%20Realtime-3ECF8E?logo=supabase&logoColor=white" />
   <img alt="SDK" src="https://img.shields.io/badge/minSdk-26%20%C2%B7%20targetSdk-36-3DDC84" />
-  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-3.0.0-F5A623" />
+  <img alt="Sürüm" src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-3.2.5-F5A623" />
 </p>
 
 </div>
@@ -201,7 +201,7 @@ Veritabanı olayı ───┼─ Uygulama KAPALI → pg_net trigger → notify
 | **Yerel Ayarlar** | Jetpack DataStore |
 | **Sürükle-Bırak** | sh.calvin.reorderable |
 | **Fotoğraf Kırpma** | vanniktech/android-image-cropper |
-| **Hedef** | minSdk 26 (Android 8.0) · targetSdk 36 · v3.0.0 |
+| **Hedef** | minSdk 26 (Android 8.0) · targetSdk 36 · v3.2.5 |
 
 ---
 
@@ -258,7 +258,7 @@ Bilgiler DataStore'da saklanır; Profil sekmesinden istediğiniz an diğer profi
 
 ---
 
-## 📦 Yayınlar (Release) — v3.0.0
+## 📦 Yayınlar (Release) — v3.2.5
 
 Her sürümde **aynı versionCode/versionName ile iki APK** üretilir; ikisi de **debug keystore** ile imzalanır (`app/build.gradle.kts` → `signingConfigs.release`). Çıktı yolu aynı olduğu için **önce API'siz, sonra API'li** derlenir.
 
