@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 class AchievementsViewModel : ViewModel() {
 
     private val repo = TitleRepository()
+    private val favRepo = com.sinop.minimuv.data.FavoritesRepository()
 
     val unlocked = MutableStateFlow<List<Achievement>>(emptyList())
     val stats = MutableStateFlow(CoupleStats(0, 0, 0, 0, 0, 0, 0, 0, 0, 0))
@@ -66,7 +67,11 @@ class AchievementsViewModel : ViewModel() {
             val scores = runCatching { repo.getAllTitleScores() }.getOrDefault(emptyList())
             val notes = runCatching { repo.getAllTitleNotes() }.getOrDefault(emptyList())
             val progress = runCatching { repo.getAllEpisodeProgress() }.getOrDefault(emptyList())
-            val s = Achievements.computeStats(titles, log, scores, notes, progress)
+            val entityFavs = runCatching { favRepo.getFavorites() }
+                .getOrDefault(emptyList())
+                .distinctBy { "${it.favType}|${it.source}|${it.externalId}" }
+                .size
+            val s = Achievements.computeStats(titles, log, scores, notes, progress, entityFavs)
             stats.value = s
             // Yalnızca DB'ye gerçekten yazılanlar kutlanır (BUG-042).
             val inserted = AchievementChecker.unlockNew(repo, existing, s)

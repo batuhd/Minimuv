@@ -117,6 +117,8 @@ data class CoupleStats(
     val titlesAddedThisMonth: Int = 0,
     val notesThisMonth: Int = 0,
     val privateCount: Int = 0,
+    /** Karakter / stüdyo / kişi favorileri (favorites tablosu). */
+    val entityFavoriteCount: Int = 0,
 )
 
 object Achievements {
@@ -182,7 +184,7 @@ object Achievements {
         // ── Özel / içimize dönük rozetler ────────────────────────────────
         AchievementDef("bitter", "🥀", "Bitter", "3 başlığa 4 ya da altı puan verdiniz. Acı ama gerçek.", 3),
         AchievementDef("saudade", "🌫️", "Saudade", "10 kez yeniden izlemeye başladınız. Özlem baki.", 10),
-        AchievementDef("mujgan", "🪶", "Müjgan", "25 favori biriktirdiniz. Kirpik kadar zarif.", 25),
+        AchievementDef("mujgan", "🪶", "Müjgan", "25 favori biriktirdiniz. Bazıları film, hepsi bizden.", 25),
         AchievementDef("nova", "✨", "Nova", "Bu ay 3 yeni başlık eklendi. Parladınız.", 3),
         AchievementDef("kokun_yuzumu_tokatliyor", "🌬️", "Kokun Yüzümü Tokatlıyor", "200 karakterlik 3 not yazdınız. Bu ne kokusu?", 3),
         AchievementDef("karma", "🌀", "Karma", "20 yeniden izleme. Evren dengeyi sever.", 20),
@@ -207,6 +209,7 @@ object Achievements {
         titleScores: List<TitleScore> = emptyList(),
         titleNotes: List<TitleNote> = emptyList(),
         episodeProgress: List<EpisodeProgress> = emptyList(),
+        entityFavoriteCount: Int = 0,
     ): CoupleStats {
         val completed = titles.filter { it.status == WatchStatus.COMPLETED.db }
         val together = completed.filter { it.watchMode == WatchMode.BIRLIKTE.db }
@@ -251,15 +254,32 @@ object Achievements {
         }
         val activeDays = (logDays + completedDays).toSet()
         // ── Yeni istatistikler (rozetler için) ────────────────────────────
-        val favoriteCount = titles.count { it.isFavorite }
+        // Favori = başlık favorileri (en az bir profil işaretlediyse) + karakter/
+        // stüdyo/kişi favorileri. Koleksiyon ekranındaki rayların tamamı sayılır.
+        val favoriteCount = titles.count { it.isFavorite } + entityFavoriteCount
         val rewatchCount = titles.sumOf { it.totalRewatches }
         val longSeriesCount = completed.count { it.type != ContentType.FILM.db && (it.totalEpisodes ?: 0) >= 100 }
         val separateWatchCount = titles.count { it.watchMode == WatchMode.AYRI.db }
-        val perfectScoreCount = titles.count { it.score == 10.0 }
+        // Puan rozetleri "sizden biri verdi" mantığıyla sayılır: başlık puanı
+        // artık iki profilin ortalaması olduğundan, tek kişinin 10'u ortalamada
+        // kayboluyor ve rozet hiç açılmıyordu (DS-BUG-23).
+        val perfectIds = buildSet {
+            titleScores.forEach { s -> if (s.score == 10.0) add(s.titleId) }
+            titles.forEach { t -> if (t.score == 10.0) add(t.id) }
+        }
+        val perfectScoreCount = perfectIds.size
         // ── Özel rozet metrikleri ────────────────────────────────────────
         // "Bu ay" hesapları cihazın yerel ayına göre yapılır (YYYY-MM öneki).
         val monthPrefix = LocalDate.now().toString().take(7)
-        val lowScoreCount = titles.count { (it.score ?: 99.0) <= 4.0 }
+        val lowScoreIds = buildSet {
+            titleScores.forEach { s -> if ((s.score ?: 99.0) <= 4.0) add(s.titleId) }
+            titles.forEach { t -> if ((t.score ?: 99.0) <= 4.0) add(t.id) }
+        }
+        val lowScoreCount = lowScoreIds.size
+        val highScoreIds = buildSet {
+            titleScores.forEach { s -> if ((s.score ?: 0.0) >= 9.0) add(s.titleId) }
+            titles.forEach { t -> if ((t.score ?: 0.0) >= 9.0) add(t.id) }
+        }
         val droppedCount = titles.count { it.status == WatchStatus.DROPPED.db }
         // 200+ karakterlik notlar; eski titles.notes metinleri de sayılır ama
         // aynı metin title_notes'ta varsa iki kez sayılmaz.
@@ -291,7 +311,7 @@ object Achievements {
             bingeMax = watchLog.groupBy { it.date }
                 .mapValues { (_, v) -> v.sumOf { it.episodesWatched } }
                 .values.maxOrNull() ?: 0,
-            highScoreCount = titles.count { (it.score ?: 0.0) >= 9.0 },
+            highScoreCount = highScoreIds.size,
             allThreeScored = if (
                 ContentType.entries.all { it.db in scoredTypeKeys }
             ) 1 else 0,
@@ -307,6 +327,7 @@ object Achievements {
             titlesAddedThisMonth = titlesAddedThisMonth,
             notesThisMonth = notesThisMonth,
             privateCount = privateCount,
+            entityFavoriteCount = entityFavoriteCount,
         )
     }
 

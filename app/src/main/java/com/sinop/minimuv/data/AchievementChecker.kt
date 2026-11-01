@@ -14,7 +14,12 @@ object AchievementChecker {
             val scores = repo.getAllTitleScores()
             val notes = runCatching { repo.getAllTitleNotes() }.getOrDefault(emptyList())
             val progress = runCatching { repo.getAllEpisodeProgress() }.getOrDefault(emptyList())
-            val s = Achievements.computeStats(titles, log, scores, notes, progress)
+            // Karakter/stüdyo/kişi favorileri de rozet sayımına girer.
+            val entityFavs = runCatching { FavoritesRepository().getFavorites() }
+                .getOrDefault(emptyList())
+                .distinctBy { "${it.favType}|${it.source}|${it.externalId}" }
+                .size
+            val s = Achievements.computeStats(titles, log, scores, notes, progress, entityFavs)
             unlockNew(repo, existing, s)
         }.getOrDefault(emptyList())
     }

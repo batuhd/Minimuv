@@ -158,10 +158,6 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
                 )
             }
 
-            item(span = { GridItemSpan(maxLineSpan) }, key = "stats") {
-                StatsStrip(stats)
-            }
-
             item(span = { GridItemSpan(maxLineSpan) }, key = "filters") {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     FilterPill(
@@ -344,53 +340,6 @@ private fun BadgeHero(unlockedCount: Int, total: Int, lockedCount: Int) {
                 )
             }
         }
-    }
-}
-
-@Composable
-private fun StatsStrip(stats: CoupleStats?) {
-    Row(
-        Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
-    ) {
-        MiniStat("🔥", "${stats?.streakDays ?: 0}", "Gün serisi", Modifier.weight(1f))
-        MiniStat("🎬", "${stats?.totalCompleted ?: 0}", "Tamamlanan", Modifier.weight(1f))
-        MiniStat("📝", "${stats?.notesCount ?: 0}", "Not", Modifier.weight(1f))
-    }
-}
-
-@Composable
-private fun MiniStat(
-    emoji: String,
-    value: String,
-    label: String,
-    modifier: Modifier = Modifier,
-) {
-    val tk = tokens()
-    Column(
-        modifier
-            .clip(RoundedCornerShape(18.dp))
-            .background(tk.surface1)
-            .padding(vertical = 12.dp, horizontal = 8.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text(emoji, fontSize = 15.sp)
-        Spacer(Modifier.height(3.dp))
-        Text(
-            value,
-            fontFamily = Fraunces,
-            fontWeight = FontWeight.Bold,
-            fontSize = 18.sp,
-            color = tk.text,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            label,
-            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
-            color = tk.textMuted,
-            maxLines = 1,
-        )
     }
 }
 
