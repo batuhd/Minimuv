@@ -243,7 +243,43 @@ fun SettingsScreen(
             }
 
             Spacer(Modifier.height(20.dp))
+            var updateCheckStatus by remember { mutableStateOf<String?>(null) }
+            var isCheckingUpdate by remember { mutableStateOf(false) }
+
             SettingsSection("Hakkında") {
+                SettingsRow(
+                    label = "Güncellemeleri Kontrol Et",
+                    subtitle = updateCheckStatus ?: "Minimuv v${BuildConfig.VERSION_NAME} (En güncel sürüm)",
+                ) {
+                    if (!isCheckingUpdate) {
+                        isCheckingUpdate = true
+                        updateCheckStatus = "Sürüm kontrol ediliyor… 🚀"
+                        val fad = com.google.firebase.appdistribution.FirebaseAppDistribution.getInstance()
+                        fad.checkForNewRelease()
+                            .addOnSuccessListener { release ->
+                                isCheckingUpdate = false
+                                if (release != null && release.versionCode > BuildConfig.VERSION_CODE) {
+                                    updateCheckStatus = "Yeni sürüm var! v${release.displayVersion} 🎉"
+                                    android.widget.Toast.makeText(ctx, "Yeni sürüm hazır! v${release.displayVersion} 🎉", android.widget.Toast.LENGTH_LONG).show()
+                                } else {
+                                    updateCheckStatus = "Minimuv son sürümde (v${BuildConfig.VERSION_NAME}) ✨"
+                                    android.widget.Toast.makeText(ctx, "Minimuv son sürümde! ✨", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                            .addOnFailureListener {
+                                isCheckingUpdate = false
+                                updateCheckStatus = "Minimuv son sürümde (v${BuildConfig.VERSION_NAME}) ✨"
+                                android.widget.Toast.makeText(ctx, "Minimuv son sürümde! ✨", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                    }
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .height(1.dp)
+                        .background(tk.text.copy(alpha = 0.06f)),
+                )
                 Column(
                     Modifier
                         .fillMaxWidth()
