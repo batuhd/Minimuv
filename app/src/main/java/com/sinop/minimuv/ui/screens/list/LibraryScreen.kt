@@ -53,6 +53,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -724,6 +726,9 @@ private fun LibraryHeader(
     onPickerOpen: () -> Unit,
 ) {
     val tk = tokens()
+    var isEasterEggActive by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
     Column(Modifier.statusBarsPadding()) {
         Spacer(Modifier.height(8.dp))
         Row(
@@ -732,13 +737,28 @@ private fun LibraryHeader(
         ) {
             Column(Modifier.weight(1f)) {
                 Text(
-                    "Kütüphane",
+                    text = if (isEasterEggActive) "MİNİMUVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV" else "Kütüphane",
                     fontFamily = Fraunces,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 34.sp,
+                    fontSize = if (isEasterEggActive) 30.sp else 34.sp,
                     letterSpacing = (-0.5).sp,
                     lineHeight = 36.sp,
-                    color = tk.text,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Visible,
+                    color = if (isEasterEggActive) tk.van else tk.text,
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        if (!isEasterEggActive) {
+                            scope.launch {
+                                isEasterEggActive = true
+                                kotlinx.coroutines.delay(3000)
+                                isEasterEggActive = false
+                            }
+                        }
+                    },
                 )
                 Spacer(Modifier.height(6.dp))
                 Text(

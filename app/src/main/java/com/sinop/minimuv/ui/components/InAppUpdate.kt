@@ -56,6 +56,20 @@ object UpdateManager {
     var state by mutableStateOf<UpdateUiState>(UpdateUiState.Idle)
         internal set
 
+    fun signInTester() {
+        if (BuildConfig.FCM_APP_ID.isBlank()) return
+        val fad = FirebaseAppDistribution.getInstance()
+        Log.d("MinimuvUpdate", "Manual signInTester çağrıldı, tarayıcı açılıyor...")
+        fad.signInTester()
+            .addOnSuccessListener {
+                Log.d("MinimuvUpdate", "signInTester başarılı, güncelleme kontrol ediliyor...")
+                checkForUpdate()
+            }
+            .addOnFailureListener { e ->
+                Log.w("MinimuvUpdate", "signInTester başarısız", e)
+            }
+    }
+
     fun checkForUpdate(onNoUpdate: (() -> Unit)? = null) {
         if (BuildConfig.FCM_APP_ID.isBlank()) {
             onNoUpdate?.invoke()

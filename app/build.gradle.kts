@@ -70,8 +70,8 @@ android {
         applicationId = "com.sinop.minimuv"
         minSdk = 26
         targetSdk = 36
-        versionCode = 326
-        versionName = "3.2.6"
+        versionCode = 327
+        versionName = "3.2.7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

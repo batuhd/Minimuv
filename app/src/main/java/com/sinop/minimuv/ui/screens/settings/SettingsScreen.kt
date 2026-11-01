@@ -245,8 +245,28 @@ fun SettingsScreen(
             Spacer(Modifier.height(20.dp))
             var updateCheckStatus by remember { mutableStateOf<String?>(null) }
             var isCheckingUpdate by remember { mutableStateOf(false) }
+            var isTesterSignedIn by remember {
+                mutableStateOf(
+                    runCatching {
+                        com.google.firebase.appdistribution.FirebaseAppDistribution.getInstance().isTesterSignedIn()
+                    }.getOrDefault(false)
+                )
+            }
 
             SettingsSection("Hakkında") {
+                SettingsRow(
+                    label = "Tester Girişi Yap (Güncelleme İzni)",
+                    subtitle = if (isTesterSignedIn) "Tester oturumu açık ✅" else "Dokunup Google ile giriş yap ve izin ver 🔑",
+                ) {
+                    com.sinop.minimuv.ui.components.UpdateManager.signInTester()
+                }
+                Box(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 4.dp)
+                        .height(1.dp)
+                        .background(tk.text.copy(alpha = 0.06f)),
+                )
                 SettingsRow(
                     label = "Güncellemeleri Kontrol Et",
                     subtitle = updateCheckStatus ?: "Minimuv v${BuildConfig.VERSION_NAME} (En güncel sürüm)",
@@ -254,18 +274,28 @@ fun SettingsScreen(
                     if (!isCheckingUpdate) {
                         isCheckingUpdate = true
                         updateCheckStatus = "Sürüm kontrol ediliyor… 🚀"
-                        com.sinop.minimuv.ui.components.UpdateManager.checkForUpdate(
-                            onNoUpdate = {
-                                isCheckingUpdate = false
-                                updateCheckStatus = "Minimuv son sürümde (v${BuildConfig.VERSION_NAME}) ✨"
-                                android.widget.Toast.makeText(ctx, "Minimuv son sürümde! ✨", android.widget.Toast.LENGTH_SHORT).show()
-                            }
-                        )
-                        scope.launch {
-                            delay(1200)
-                            if (com.sinop.minimuv.ui.components.UpdateManager.state is com.sinop.minimuv.ui.components.UpdateUiState.Available) {
-                                isCheckingUpdate = false
-                                updateCheckStatus = "Yeni sürüm var! 🎉"
+                        isTesterSignedIn = runCatching {
+                            com.google.firebase.appdistribution.FirebaseAppDistribution.getInstance().isTesterSignedIn()
+                        }.getOrDefault(false)
+
+                        if (!isTesterSignedIn) {
+                            com.sinop.minimuv.ui.components.UpdateManager.signInTester()
+                            isCheckingUpdate = false
+                            updateCheckStatus = "Tester girişi açıldı..."
+                        } else {
+                            com.sinop.minimuv.ui.components.UpdateManager.checkForUpdate(
+                                onNoUpdate = {
+                                    isCheckingUpdate = false
+                                    updateCheckStatus = "Minimuv son sürümde (v${BuildConfig.VERSION_NAME}) ✨"
+                                    android.widget.Toast.makeText(ctx, "Minimuv son sürümde! ✨", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            )
+                            scope.launch {
+                                delay(1200)
+                                if (com.sinop.minimuv.ui.components.UpdateManager.state is com.sinop.minimuv.ui.components.UpdateUiState.Available) {
+                                    isCheckingUpdate = false
+                                    updateCheckStatus = "Yeni sürüm var! 🎉"
+                                }
                             }
                         }
                     }
