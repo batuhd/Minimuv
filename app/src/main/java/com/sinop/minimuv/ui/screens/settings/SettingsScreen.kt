@@ -255,8 +255,9 @@ fun SettingsScreen(
 
             SettingsSection("Güncelleme") {
                 SettingsRow(
-                    label = "Tester Girişi Yap (Güncelleme İzni)",
-                    subtitle = if (isTesterSignedIn) "Tester oturumu açık ✅" else "Dokunup Google ile giriş yap ve izin ver 🔑",
+                    label = if (isTesterSignedIn) "Tester oturumu açık" else "Tester girişi yap (güncelleme izni)",
+                    subtitle = if (isTesterSignedIn) "Güncelleme izinleri tanımlı." else "Dokunup Google ile giriş yap ve izin ver.",
+                    color = if (isTesterSignedIn) tk.done else tk.text,
                 ) {
                     com.sinop.minimuv.ui.components.UpdateManager.signInTester()
                 }
@@ -304,13 +305,6 @@ fun SettingsScreen(
 
             Spacer(Modifier.height(20.dp))
             SettingsSection("Hakkında") {
-                Box(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp)
-                        .height(1.dp)
-                        .background(tk.text.copy(alpha = 0.06f)),
-                )
                 Column(
                     Modifier
                         .fillMaxWidth()
