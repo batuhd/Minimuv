@@ -23,6 +23,11 @@
             android:authorities="${applicationId}.firebaseinitprovider"
             tools:node="remove" />
 
+        <!-- FCM varsayılan bildirim kanalı ve yüksek öncelik yapılandırması -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="minimuv_events" />
+
         <!-- FCM data-only mesajları: uygulama kapalıyken bile uyandırılır -->
         <service
             android:name=".core.MinimuvMessagingService"

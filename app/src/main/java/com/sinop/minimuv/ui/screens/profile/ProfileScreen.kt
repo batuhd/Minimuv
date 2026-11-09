@@ -46,13 +46,21 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalHapticFeedback
 import com.sinop.minimuv.ui.theme.together
 import kotlinx.coroutines.async
 import androidx.compose.runtime.setValue
@@ -94,6 +102,7 @@ import com.sinop.minimuv.data.Title
 import com.sinop.minimuv.data.TitleFavorite
 import com.sinop.minimuv.data.TitleRepository
 import com.sinop.minimuv.ui.components.DcButton
+import com.sinop.minimuv.ui.components.LetterBurstOverlay
 import com.sinop.minimuv.ui.components.ShimmerBox
 import com.sinop.minimuv.ui.components.screenGlow
 import com.sinop.minimuv.ui.theme.AppPalette
@@ -155,6 +164,14 @@ fun ProfileScreen(
     var pendingCropUri by remember { mutableStateOf<android.net.Uri?>(null) }
     var uploadingPhoto by remember { mutableStateOf(false) }
     var editError by remember { mutableStateOf<String?>(null) }
+
+    // "Aşk" başlığındaki F/B + kalp patlaması
+    val haptics = LocalHapticFeedback.current
+    var burstTrigger by remember { mutableIntStateOf(0) }
+    var burstOrigin by remember { mutableStateOf(Offset.Zero) }
+    var titlePosition by remember { mutableStateOf(Offset.Zero) }
+    var titleSize by remember { mutableStateOf(IntSize.Zero) }
+    var rootPosition by remember { mutableStateOf(Offset.Zero) }
 
     fun reload() {
         scope.launch {
@@ -337,7 +354,8 @@ fun ProfileScreen(
         Modifier
             .fillMaxSize()
             .background(tk.bg)
-            .screenGlow(vanAlpha = 0.28f, sinopAlpha = 0.30f),
+            .screenGlow(vanAlpha = 0.28f, sinopAlpha = 0.30f)
+            .onGloballyPositioned { rootPosition = it.positionInRoot() },
     ) {
         Column(
             Modifier
@@ -358,6 +376,20 @@ fun ProfileScreen(
                 fontWeight = FontWeight.Bold,
                 fontSize = 28.sp,
                 color = tk.text,
+                modifier = Modifier
+                    .onGloballyPositioned {
+                        titlePosition = it.positionInRoot()
+                        titleSize = it.size
+                    }
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        burstOrigin = titlePosition - rootPosition +
+                            Offset(titleSize.width / 2f, titleSize.height / 2f)
+                        burstTrigger++
+                        runCatching { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove) }
+                    },
             )
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // K4: açık tema geçici olarak kapalı — tema değiştirme düğmesi gizlendi.
@@ -568,6 +600,13 @@ fun ProfileScreen(
             },
         )
     }
+
+    // Başlığa dokunma patlaması: her dokunuş animasyonu baştan başlatır.
+    LetterBurstOverlay(
+        trigger = burstTrigger,
+        origin = burstOrigin,
+        modifier = Modifier.fillMaxSize(),
+    )
 }
 }
 

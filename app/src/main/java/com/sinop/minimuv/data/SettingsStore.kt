@@ -40,6 +40,7 @@ class SettingsStore(private val context: Context) {
         val KEY_TOGETHER_SINCE = stringPreferencesKey("together_since")
         // Son bilinen profil listesi (JSON) — soğuk açılışta avatar/isim anında.
         val KEY_PROFILES_SNAPSHOT = stringPreferencesKey("profiles_snapshot")
+        val KEY_COLLAPSED_SECTIONS = stringPreferencesKey("collapsed_sections")
     }
 
     private val snapshotJson = kotlinx.serialization.json.Json {
@@ -57,6 +58,9 @@ class SettingsStore(private val context: Context) {
     val searchLang: Flow<String?> = context.dataStore.data.map { it[KEY_SEARCH_LANG] }
     val displayLang: Flow<String?> = context.dataStore.data.map { it[KEY_DISPLAY_LANG] }
     val togetherSince: Flow<String?> = context.dataStore.data.map { it[KEY_TOGETHER_SINCE] }
+    val collapsedSections: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+        prefs[KEY_COLLAPSED_SECTIONS]?.split(",")?.filter { it.isNotBlank() }?.toSet() ?: emptySet()
+    }
 
     /** null = henüz yüklenmedi; yüklendiyse içindeki değerler güvenilirdir. */
     val rawPrefs: Flow<androidx.datastore.preferences.core.Preferences> = context.dataStore.data
@@ -111,6 +115,16 @@ class SettingsStore(private val context: Context) {
 
     suspend fun saveDisplayLang(value: String) {
         context.dataStore.edit { it[KEY_DISPLAY_LANG] = value }
+    }
+
+    suspend fun saveCollapsedSections(sections: Set<String>) {
+        context.dataStore.edit { prefs ->
+            if (sections.isEmpty()) {
+                prefs.remove(KEY_COLLAPSED_SECTIONS)
+            } else {
+                prefs[KEY_COLLAPSED_SECTIONS] = sections.joinToString(",")
+            }
+        }
     }
 
     suspend fun saveTogetherSince(value: String?) {

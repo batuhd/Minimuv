@@ -45,11 +45,12 @@ class MinimuvMessagingService : FirebaseMessagingService() {
         when (type) {
             "ping" -> PingNotifier.process(context, profileId)
             "title_new", "title_status" -> {
-                val titles = runCatching { TitleRepository().getTitles() }.getOrNull() ?: return
-                TitleTransitionTracker.diff(context, profileId, titles).forEach { (title, text) ->
+                val titles = runCatching { TitleRepository().getTitlesLite() }.getOrNull() ?: return
+                TitleTransitionTracker.diff(context, profileId, titles).forEach { n ->
                     NotificationHelper.show(
-                        context, title, text,
-                        (title.hashCode() + System.currentTimeMillis()).toInt(),
+                        context, n.title, n.text,
+                        (n.title.hashCode() + System.currentTimeMillis()).toInt(),
+                        meta = n.meta,
                     )
                 }
             }

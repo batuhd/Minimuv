@@ -94,8 +94,16 @@ fun AchievementsScreen(onBack: () -> Unit = {}) {
     val newKeys = remember(newlyUnlocked) {
         newlyUnlocked.map { it.achievementKey }.toSet()
     }
+    // Kazanılan rozetler en son açılan tarihe göre sıralanır: en yeni en üstte.
     val earnedDefs = remember(unlocked) {
-        Achievements.ALL.filter { it.key in earnedAtByKey }
+        val defMap = Achievements.ALL.associateBy { it.key }
+        val sortedList = unlocked
+            .distinctBy { it.achievementKey }
+            .sortedByDescending { it.unlockedAt ?: "" }
+            .mapNotNull { defMap[it.achievementKey] }
+        val sortedKeys = sortedList.map { it.key }.toSet()
+        val remainingEarned = Achievements.ALL.filter { it.key in earnedAtByKey && it.key !in sortedKeys }
+        sortedList + remainingEarned
     }
     // Kilitliler tamamlanmaya en yakın olanlar önce gelsin: hedefe giden yol görünür olsun.
     val lockedDefs = remember(unlocked, stats) {

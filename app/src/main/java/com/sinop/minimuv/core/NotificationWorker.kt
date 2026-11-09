@@ -75,8 +75,14 @@ class NotificationWorker(
 
             val repo = TitleRepository()
             PingNotifier.process(context, profileId)
-            TitleTransitionTracker.diff(context, profileId, repo.getTitlesLite()).forEach { (title, text) ->
-                NotificationHelper.show(context, title, text, (title.hashCode() + System.currentTimeMillis()).toInt())
+            TitleTransitionTracker.diff(context, profileId, repo.getTitlesLite()).forEach { n ->
+                NotificationHelper.show(
+                    context,
+                    n.title,
+                    n.text,
+                    (n.title.hashCode() + System.currentTimeMillis()).toInt(),
+                    meta = n.meta,
+                )
             }
             MilestoneTracker.process(context, profileId)
             ScoreNotifier.process(context, profileId)

@@ -12,6 +12,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.sinop.minimuv.R
+import com.sinop.minimuv.data.NotificationLogStore
+import com.sinop.minimuv.data.NotificationMeta
 import com.sinop.minimuv.data.TitleRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
@@ -26,7 +28,11 @@ object NotificationHelper {
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID, "Partner Olayları", NotificationManager.IMPORTANCE_HIGH,
-            ).apply { description = "Partnerin bir şey izlediğinde veya eklediğinde" },
+            ).apply {
+                description = "Partnerin bir şey izlediğinde veya eklediğinde"
+                enableVibration(true)
+                enableLights(true)
+            },
         )
         manager.createNotificationChannel(
             NotificationChannel(
@@ -35,7 +41,18 @@ object NotificationHelper {
         )
     }
 
-    fun show(context: Context, title: String, text: String, id: Int, channel: String = CHANNEL_ID) {
+    /**
+     * Bildirimi gösterir. Gösterim başarılıysa [meta] doluysa aynı olay cihaz
+     * içi gelen kutusuna da yazılır — böylece tüm yollar tek noktadan kaydedilir.
+     */
+    suspend fun show(
+        context: Context,
+        title: String,
+        text: String,
+        id: Int,
+        channel: String = CHANNEL_ID,
+        meta: NotificationMeta? = null,
+    ) {
         if (Build.VERSION.SDK_INT >= 33 &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
             PackageManager.PERMISSION_GRANTED
@@ -54,11 +71,17 @@ object NotificationHelper {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setDefaults(NotificationCompat.DEFAULT_ALL)
             .setContentIntent(openApp)
             .setAutoCancel(true)
             .build()
-        runCatching {
+        val shown = runCatching {
             NotificationManagerCompat.from(context).notify(id, notification)
+        }.isSuccess
+        // Gösterilemeyen (izin yok vb.) olay gelen kutusuna da yazılmaz.
+        if (shown && meta != null) {
+            runCatching { NotificationLogStore(context.applicationContext).log(meta, title, text) }
         }
     }
 }
@@ -78,9 +101,7 @@ class PartnerEventWatcher(
         // Uygulama kapalıyken gelen yeni olaylar açılır açılmaz bildirilir
         PingNotifier.process(context, profileId)
         TitleTransitionTracker.diff(context, profileId, runCatching { repo.getTitlesLite() }.getOrDefault(emptyList()))
-            .forEach { (title, text) ->
-                NotificationHelper.show(context, title, text, (title.hashCode() + System.currentTimeMillis()).toInt())
-            }
+            .forEach { n -> notify(n) }
         MilestoneTracker.process(context, profileId)
         ScoreNotifier.process(context, profileId)
         NoteNotifier.process(context, profileId, NoteKind.TITLE)
@@ -131,9 +152,7 @@ class PartnerEventWatcher(
     private suspend fun onTitlesChanged() {
         try {
             val current = repo.getTitlesLite()
-            TitleTransitionTracker.diff(context, profileId, current).forEach { (title, text) ->
-                notify(title, text)
-            }
+            TitleTransitionTracker.diff(context, profileId, current).forEach { n -> notify(n) }
         } catch (_: Exception) {
             // çevrimdışı — sessizce geç
         }
@@ -144,7 +163,13 @@ class PartnerEventWatcher(
         MilestoneTracker.process(context, profileId)
     }
 
-    private fun notify(title: String, text: String) {
-        NotificationHelper.show(context, title, text, (title.hashCode() + System.currentTimeMillis()).toInt())
+    private suspend fun notify(n: TitleNotification) {
+        NotificationHelper.show(
+            context,
+            n.title,
+            n.text,
+            (n.title.hashCode() + System.currentTimeMillis()).toInt(),
+            meta = n.meta,
+        )
     }
 }

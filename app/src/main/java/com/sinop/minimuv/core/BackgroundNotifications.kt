@@ -2,6 +2,8 @@ package com.sinop.minimuv.core
 
 import android.content.Context
 import com.sinop.minimuv.data.EpisodeNote
+import com.sinop.minimuv.data.NotificationLogStore
+import com.sinop.minimuv.data.NotificationMeta
 import com.sinop.minimuv.data.ProfileRepository
 import com.sinop.minimuv.data.SettingsStore
 import com.sinop.minimuv.data.Title
@@ -77,11 +79,18 @@ object PingNotifier {
             }
             if (ping.fromProfile == profileId) return@forEach
             val sender = runCatching { profileRepo.getProfile(ping.fromProfile) }.getOrNull()
+            val senderName = sender?.displayName ?: "Partnerin"
             NotificationHelper.show(
                 context,
-                "💌 ${sender?.displayName ?: "Partnerin"} sana yazdı",
+                "💌 $senderName sana yazdı",
                 ping.message,
                 id = id.hashCode(),
+                meta = NotificationMeta(
+                    type = "ping",
+                    eventKey = "ping:$id",
+                    entryTitleEn = "💌 $senderName wrote to you",
+                    entryMessageEn = ping.message,
+                ),
             )
         }
     }
@@ -89,6 +98,25 @@ object PingNotifier {
 }
 
 // ── Başlık ekleme / durum geçişi bildirimleri ─────────────────────────────
+
+/** Gösterilecek başlık bildirimi + gelen kutusu metadatası. */
+data class TitleNotification(
+    val title: String,
+    val text: String,
+    val titleEn: String,
+    val textEn: String,
+    val titleId: String,
+    val eventKey: String,
+) {
+    val meta: NotificationMeta
+        get() = NotificationMeta(
+            type = eventKey.substringBefore(':'),
+            eventKey = eventKey,
+            titleId = titleId,
+            entryTitleEn = titleEn,
+            entryMessageEn = textEn,
+        )
+}
 
 object TitleTransitionTracker {
 
@@ -100,7 +128,7 @@ object TitleTransitionTracker {
     /** Mevcut başlık listesini son anlık görüntüyle karşılaştırır;
      *  gösterilecek bildirimleri (başlık, metin) listesi olarak döner.
      *  Arayan taraf NotificationHelper.show ile gösterir. */
-    suspend fun diff(context: Context, profileId: String, current: List<Title>): List<Pair<String, String>> =
+    suspend fun diff(context: Context, profileId: String, current: List<Title>): List<TitleNotification> =
         mutex.withLock {
             if (!initialized) {
                 initialized = true
@@ -113,7 +141,7 @@ object TitleTransitionTracker {
                 lastStatuses = runCatching { json.decodeFromString<Map<String, String>>(stored) }
                     .getOrDefault(emptyMap())
             }
-            val notes = mutableListOf<Pair<String, String>>()
+            val notes = mutableListOf<TitleNotification>()
             val byId = current.associateBy { it.id }
             byId.values.forEach { t ->
                 val old = lastStatuses[t.id]
@@ -141,24 +169,70 @@ object TitleTransitionTracker {
         }
     }
 
-    private fun newTitleNote(t: Title): Pair<String, String> = when (t.status) {
-        WatchStatus.PLAN.db -> "✨ ${t.title}" to "Sırada listesine yeni bir şey eklendi!"
-        WatchStatus.WATCHING.db -> "▶️ ${t.title}" to "Yeni bir serüven başladı!"
-        WatchStatus.COMPLETED.db -> "🎉 ${t.title}" to "Birlikte bitirdiniz! Tebrikler!"
-        WatchStatus.REWATCHING.db -> "🔁 ${t.title}" to "Yeniden izlemeye başladınız!"
-        WatchStatus.PAUSED.db -> "⏸️ ${t.title}" to "Duraklatılanlar listesine eklendi."
-        WatchStatus.DROPPED.db -> "🚪 ${t.title}" to "Bırakılanlara eklendi."
-        else -> "✨ ${t.title}" to "Yeni bir başlık eklendi!"
+    private fun newTitleNote(t: Title): TitleNotification {
+        val key = "title_new:${t.id}:${t.status}"
+        return when (t.status) {
+            WatchStatus.PLAN.db -> TitleNotification(
+                "✨ ${t.title}", "Sırada listesine yeni bir şey eklendi!",
+                "✨ ${t.title}", "Something new was added to the watchlist!", t.id, key,
+            )
+            WatchStatus.WATCHING.db -> TitleNotification(
+                "▶️ ${t.title}", "Yeni bir serüven başladı!",
+                "▶️ ${t.title}", "A new adventure begins!", t.id, key,
+            )
+            WatchStatus.COMPLETED.db -> TitleNotification(
+                "🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!",
+                "🎉 ${t.title}", "You finished it together! Congrats!", t.id, key,
+            )
+            WatchStatus.REWATCHING.db -> TitleNotification(
+                "🔁 ${t.title}", "Yeniden izlemeye başladınız!",
+                "🔁 ${t.title}", "You're rewatching it!", t.id, key,
+            )
+            WatchStatus.PAUSED.db -> TitleNotification(
+                "⏸️ ${t.title}", "Duraklatılanlar listesine eklendi.",
+                "⏸️ ${t.title}", "Added to the paused list.", t.id, key,
+            )
+            WatchStatus.DROPPED.db -> TitleNotification(
+                "🚪 ${t.title}", "Bırakılanlara eklendi.",
+                "🚪 ${t.title}", "Moved to dropped.", t.id, key,
+            )
+            else -> TitleNotification(
+                "✨ ${t.title}", "Yeni bir başlık eklendi!",
+                "✨ ${t.title}", "A new title was added!", t.id, key,
+            )
+        }
     }
 
-    private fun statusNote(old: String, t: Title): Pair<String, String> {
-        if (t.status == WatchStatus.WATCHING.db) return "▶️ ${t.title}" to "İzlemeye başladınız!"
-        if (t.status == WatchStatus.COMPLETED.db) return "🎉 ${t.title}" to "Birlikte bitirdiniz! Tebrikler!"
-        if (t.status == WatchStatus.REWATCHING.db) return "🔁 ${t.title}" to "Yeniden izlemeye başladınız!"
-        if (t.status == WatchStatus.PAUSED.db) return "⏸️ ${t.title}" to "Duraklatıldı — sonra devam ederiz."
-        if (t.status == WatchStatus.DROPPED.db) return "🚪 ${t.title}" to "Bırakıldı olarak işaretlendi."
-        if (t.status == WatchStatus.PLAN.db) return "🗓️ ${t.title}" to "Sıraya geri alındı."
-        return "🔄 ${t.title}" to "Durum güncellendi."
+    private fun statusNote(old: String, t: Title): TitleNotification {
+        val key = "title_status:${t.id}:$old->${t.status}"
+        if (t.status == WatchStatus.WATCHING.db) return TitleNotification(
+            "▶️ ${t.title}", "İzlemeye başladınız!",
+            "▶️ ${t.title}", "You started watching!", t.id, key,
+        )
+        if (t.status == WatchStatus.COMPLETED.db) return TitleNotification(
+            "🎉 ${t.title}", "Birlikte bitirdiniz! Tebrikler!",
+            "🎉 ${t.title}", "You finished it together! Congrats!", t.id, key,
+        )
+        if (t.status == WatchStatus.REWATCHING.db) return TitleNotification(
+            "🔁 ${t.title}", "Yeniden izlemeye başladınız!",
+            "🔁 ${t.title}", "You're rewatching it!", t.id, key,
+        )
+        if (t.status == WatchStatus.PAUSED.db) return TitleNotification(
+            "⏸️ ${t.title}", "Duraklatıldı — sonra devam ederiz.",
+            "⏸️ ${t.title}", "Paused — we'll continue later.", t.id, key,
+        )
+        if (t.status == WatchStatus.DROPPED.db) return TitleNotification(
+            "🚪 ${t.title}", "Bırakıldı olarak işaretlendi.",
+            "🚪 ${t.title}", "Marked as dropped.", t.id, key,
+        )
+        if (t.status == WatchStatus.PLAN.db) return TitleNotification(
+            "🗓️ ${t.title}", "Sıraya geri alındı.",
+            "🗓️ ${t.title}", "Moved back to the watchlist.", t.id, key,
+        )
+        return TitleNotification(
+            "🔄 ${t.title}", "Durum güncellendi.",
+            "🔄 ${t.title}", "Status updated.", t.id, key,
+        )
     }
 }
 
@@ -192,6 +266,13 @@ object AnniversaryChecker {
                             "${t.title} dizisine başlamıştık… Ne günlerdi!",
                             id = ("anniv_" + t.id).hashCode(),
                             channel = NotificationHelper.CHANNEL_ANNIVERSARY,
+                            meta = NotificationMeta(
+                                type = "anniversary",
+                                eventKey = "anniv:${t.id}:$today",
+                                titleId = t.id,
+                                entryTitleEn = "💌 Exactly $years years ago today",
+                                entryMessageEn = "We started ${t.title}… Those were the days!",
+                            ),
                         )
                     }
                 }
@@ -269,6 +350,12 @@ object MilestoneTracker {
                             "🎊 ${title.title}",
                             "İkiniz de $milestone. bölümü geçtiniz!",
                             id = title.id.hashCode(),
+                            meta = NotificationMeta(
+                                type = "milestone",
+                                eventKey = "milestone:${title.id}:$milestone",
+                                titleId = title.id,
+                                entryMessageEn = "You both passed episode $milestone!",
+                            ),
                         )
                     }
                 }
@@ -365,20 +452,33 @@ object ScoreNotifier {
                 val title = titles[s.titleId]
                 val author = profiles.firstOrNull { it.id == s.profileId }
                 val name = author?.displayName ?: "Partnerin"
+                val scoreText = String.format(java.util.Locale.US, "%.1f", current.toDouble())
                 if (current.isNotBlank()) {
+                    val meta = NotificationMeta(
+                        type = "score",
+                        eventKey = "score:$key:$current",
+                        titleId = s.titleId,
+                        entryMessageEn = if (previous.isNullOrBlank()) {
+                            "$name rated it $scoreText!"
+                        } else {
+                            "$name updated their rating to $scoreText."
+                        },
+                    )
                     if (previous.isNullOrBlank()) {
                         NotificationHelper.show(
                             context,
                             "⭐ ${title?.title ?: "Bir yapım"}",
-                            "$name ${String.format(java.util.Locale.US, "%.1f", current.toDouble())} puan verdi!",
+                            "$name $scoreText puan verdi!",
                             id = key.hashCode(),
+                            meta = meta,
                         )
                     } else {
                         NotificationHelper.show(
                             context,
                             "⭐ ${title?.title ?: "Bir yapım"}",
-                            "$name puanını ${String.format(java.util.Locale.US, "%.1f", current.toDouble())} olarak güncelledi.",
+                            "$name puanını $scoreText olarak güncelledi.",
                             id = key.hashCode(),
+                            meta = meta,
                         )
                     }
                 }
@@ -453,11 +553,21 @@ object NoteNotifier {
             }
             val author = profiles.firstOrNull { it.id == note.profileId }
             val title = titles[note.titleId]
+            val titleName = title?.title ?: "bir yapım"
+            val authorName = author?.displayName ?: "Partnerin"
+            val content = note.noteText.takeIf { it.isNotBlank() }
             NotificationHelper.show(
                 context,
-                "💬 ${title?.title ?: "Bir yapım"}",
-                "${author?.displayName ?: "Partnerin"} “${title?.title ?: "bir yapım"}” başlığına not ekledi.",
+                "💬 $titleName",
+                "$authorName “$titleName” başlığına not ekledi.",
                 id = note.id?.hashCode() ?: ts.hashCode(),
+                meta = NotificationMeta(
+                    type = "note",
+                    eventKey = "note:${note.id ?: ts}",
+                    titleId = note.titleId,
+                    entryMessage = content,
+                    entryMessageEn = content ?: "$authorName added a note to “$titleName”.",
+                ),
             )
         }
     }
@@ -491,7 +601,40 @@ object NoteNotifier {
                     .firstOrNull { it.profileId == profileId }
                     ?.currentEpisode ?: 0
             }
-            if (myProgress < note.episodeNumber) return@forEach
+            val author = profiles.firstOrNull { it.id == note.profileId }
+            val title = titles[note.titleId]
+            val titleName = title?.title ?: "bir yapım"
+            val authorName = author?.displayName ?: "Partnerin"
+            val content = note.noteText?.takeIf { it.isNotBlank() } ?: note.emojiReaction?.takeIf { it.isNotBlank() }
+            val eventKey = "episode_note:${note.id ?: ts}"
+            if (myProgress < note.episodeNumber) {
+                // Spoiler kilidi: bildirim gösterilmez (mevcut davranış), ama
+                // gelen kutusuna içerik sızdırmadan kilitli kayıt düşer. Su
+                // işareti ilerlemez; bölüme gelince gerçek metinle güncellenir
+                // (BUG-033).
+                runCatching {
+                    NotificationLogStore(context).log(
+                        meta = NotificationMeta(
+                            type = "episode_note",
+                            eventKey = eventKey,
+                            titleId = note.titleId,
+                            entryTitle = "💬 $titleName • Bölüm ${note.episodeNumber}",
+                            entryTitleEn = "💬 $titleName • Episode ${note.episodeNumber}",
+                            entryMessage = content,
+                            entryMessageEn = content,
+                            lockedMessage =
+                                "🔒 $authorName ${note.episodeNumber}. bölüm için bir not bıraktı. O bölüme gelince görünecek.",
+                            lockedMessageEn =
+                                "🔒 $authorName left a note for episode ${note.episodeNumber}. Watch it to reveal.",
+                            locked = true,
+                            episodeNumber = note.episodeNumber,
+                        ),
+                        shownTitle = "",
+                        shownMessage = "",
+                    )
+                }
+                return@forEach
+            }
             // Önce "son görülen"i kalıcı yaz, sonra göster (BUG-006).
             // Su işareti yalnızca gerçekten gösterilen notta ilerler; spoiler
             // nedeniyle atlanan not ileride tekrar değerlendirilir (BUG-033).
@@ -499,13 +642,21 @@ object NoteNotifier {
                 newLast = ts
                 runCatching { settings.saveLastEpisodeNoteAt(newLast) }
             }
-            val author = profiles.firstOrNull { it.id == note.profileId }
-            val title = titles[note.titleId]
             NotificationHelper.show(
                 context,
-                "💬 ${title?.title ?: "Bir yapım"} • Bölüm ${note.episodeNumber}",
-                "${author?.displayName ?: "Partnerin"} “${title?.title ?: "bir yapımın"}” ${note.episodeNumber}. bölümüne not ekledi.",
+                "💬 $titleName • Bölüm ${note.episodeNumber}",
+                "$authorName “$titleName” ${note.episodeNumber}. bölümüne not ekledi.",
                 id = note.id?.hashCode() ?: ts.hashCode(),
+                meta = NotificationMeta(
+                    type = "episode_note",
+                    eventKey = eventKey,
+                    titleId = note.titleId,
+                    entryTitle = "💬 $titleName • Bölüm ${note.episodeNumber}",
+                    entryTitleEn = "💬 $titleName • Episode ${note.episodeNumber}",
+                    entryMessage = content,
+                    entryMessageEn = content,
+                    episodeNumber = note.episodeNumber,
+                ),
             )
         }
     }

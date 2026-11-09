@@ -157,6 +157,7 @@ fun MainApp(settings: SettingsStore, profileId: String) {
     val context = LocalContext.current
     val savedListView by settings.listView.collectAsState(initial = null)
     val savedDisplayLang by settings.displayLang.collectAsState(initial = null)
+    val savedCollapsedSections by settings.collapsedSections.collectAsState(initial = null)
     val showNav = currentRoute in TAB_ROUTES
     var notificationAsked by rememberSaveable { mutableStateOf(false) }
 
@@ -281,10 +282,14 @@ fun MainApp(settings: SettingsStore, profileId: String) {
                     vm = vm,
                     viewMode = com.sinop.minimuv.ui.screens.list.ViewMode.fromDb(savedListView),
                     displayLang = savedDisplayLang,
+                    savedCollapsedSections = savedCollapsedSections,
                     onOpenTitle = { navController.navigate("detail/${it}") },
                     onEditTitle = { navController.navigate("detail/${it}?edit=true") },
                     onViewModeChange = { m ->
                         listScope.launch { settings.saveListView(m.name) }
+                    },
+                    onCollapsedSectionsChange = { sections ->
+                        listScope.launch { settings.saveCollapsedSections(sections) }
                     },
                     onOpenPlanOrder = { navController.navigate("plan_order") },
                 )

@@ -159,9 +159,11 @@ fun LibraryScreen(
     vm: ListViewModel,
     viewMode: ViewMode,
     displayLang: String?,
+    savedCollapsedSections: Set<String>? = null,
     onOpenTitle: (String) -> Unit,
     onEditTitle: (String) -> Unit = {},
     onViewModeChange: (ViewMode) -> Unit = {},
+    onCollapsedSectionsChange: (Set<String>) -> Unit = {},
     onOpenPlanOrder: () -> Unit = {},
 ) {
     val titles by vm.titles.collectAsStateWithLifecycle()
@@ -203,12 +205,14 @@ fun LibraryScreen(
         } else {
             val all = titles.orEmpty()
             val typeDb = filters.type?.db
-            val typeOk: (Title) -> Boolean = { typeDb == null || it.type == typeDb }
+            val typeOk: (Title) -> Boolean = remember(typeDb) {
+                { t -> typeDb == null || t.type == typeDb }
+            }
             val progressByTitle = remember(progressRows) {
                 progressRows.groupBy({ it.titleId }, { it.profileId to it.currentEpisode })
                     .mapValues { entry -> entry.value.associate { it.first to it.second } }
             }
-            val watching = remember(all, filters, progressRows) {
+            val watching = remember(all, typeDb, progressRows) {
                 all.filter { statusGroup(it.status) == WatchStatus.WATCHING.db && typeOk(it) }
                     .sortedBy { it.watchOrder ?: it.priorityOrder ?: Int.MAX_VALUE }
             }
@@ -218,6 +222,23 @@ fun LibraryScreen(
                 all.filter { it.status == WatchStatus.PLAN.db }
                     .sortedWith(compareBy({ it.priorityOrder ?: Int.MAX_VALUE }, { it.title }))
                     .map { it.id }
+            }
+
+            val completedItems = remember(all, typeDb) {
+                all.filter { it.status == WatchStatus.COMPLETED.db && typeOk(it) }.sortedByDescending { it.createdAt.orEmpty() }
+            }
+            val pausedItems = remember(all, typeDb) {
+                all.filter { it.status == WatchStatus.PAUSED.db && typeOk(it) }.sortedByDescending { it.createdAt.orEmpty() }
+            }
+            val droppedItems = remember(all, typeDb) {
+                all.filter { it.status == WatchStatus.DROPPED.db && typeOk(it) }.sortedByDescending { it.createdAt.orEmpty() }
+            }
+            val statusSections = remember(completedItems, pausedItems, droppedItems) {
+                listOf(
+                    "Tamamlandı" to completedItems,
+                    "Duraklattık" to pausedItems,
+                    "Bıraktık" to droppedItems,
+                )
             }
 
             // Sıralamayı lokal tut: sürükleme sırasında realtime zıplamasın
@@ -244,8 +265,16 @@ fun LibraryScreen(
                     continueOrder.addAll(watchingIds)
                 }
             }
-            val collapsedSecs = rememberSaveable(saver = CollapsedSectionsSaver) {
-                mutableStateListOf<String>()
+            val collapsedSecs = remember(savedCollapsedSections) {
+                (savedCollapsedSections ?: emptySet()).toMutableStateList()
+            }
+            val toggleSection: (String) -> Unit = { sectionLabel ->
+                if (sectionLabel in collapsedSecs) {
+                    collapsedSecs.remove(sectionLabel)
+                } else {
+                    collapsedSecs.add(sectionLabel)
+                }
+                onCollapsedSectionsChange(collapsedSecs.toSet())
             }
             val reorderableState = rememberReorderableLazyGridState(gridState) { from, to ->
                 if (!dragging) {
@@ -392,9 +421,7 @@ fun LibraryScreen(
                                 trailing = "İzliyoruz · ${watching.size}",
                                 collapsed = !secOpen,
                                 modifier = Modifier.padding(top = 12.dp),
-                                onToggle = {
-                                    if (secOpen) collapsedSecs.add("Devam edelim") else collapsedSecs.remove("Devam edelim")
-                                },
+                                onToggle = { toggleSection("Devam edelim") },
                             )
                         }
                         if (secOpen) {
@@ -446,9 +473,7 @@ fun LibraryScreen(
                                     trailing = "${planOrdered.size} yapım",
                                     collapsed = !secOpen,
                                     modifier = Modifier.weight(1f),
-                                    onToggle = {
-                                        if (secOpen) collapsedSecs.add("Sırada") else collapsedSecs.remove("Sırada")
-                                    },
+                                    onToggle = { toggleSection("Sırada") },
                                 )
                                 TextButton(onClick = onOpenPlanOrder) {
                                     Text("Sırala", color = tk.van, style = MaterialTheme.typography.labelLarge)
@@ -508,12 +533,7 @@ fun LibraryScreen(
                         }
                     }
 
-                    listOf(
-                        "Tamamlandı" to WatchStatus.COMPLETED.db,
-                        "Duraklattık" to WatchStatus.PAUSED.db,
-                        "Bıraktık" to WatchStatus.DROPPED.db,
-                    ).forEach { (label, db) ->
-                        val secItems = all.filter { it.status == db && typeOk(it) }.sortedByDescending { it.createdAt.orEmpty() }
+                    statusSections.forEach { (label, secItems) ->
                         if (secItems.isEmpty()) return@forEach
                         val secOpen = label !in collapsedSecs
                         item(span = { GridItemSpan(maxLineSpan) }) {
@@ -522,9 +542,7 @@ fun LibraryScreen(
                                 trailing = "${secItems.size} yapım",
                                 collapsed = !secOpen,
                                 modifier = Modifier.padding(top = 16.dp),
-                                onToggle = {
-                                    if (secOpen) collapsedSecs.add(label) else collapsedSecs.remove(label)
-                                },
+                                onToggle = { toggleSection(label) },
                             )
                         }
                         if (secOpen) {
@@ -532,6 +550,7 @@ fun LibraryScreen(
                                 items(
                                     secItems,
                                     key = { it.id },
+                                    contentType = { "row_library" },
                                     span = { GridItemSpan(maxLineSpan) },
                                 ) { t ->
                                     RowLibrary(
@@ -540,7 +559,11 @@ fun LibraryScreen(
                                     )
                                 }
                             } else {
-                                items(secItems, key = { it.id }) { t ->
+                                items(
+                                    secItems,
+                                    key = { it.id },
+                                    contentType = { "poster_tile" },
+                                ) { t ->
                                     PosterTile(
                                         t,
                                         displayLang,
@@ -1190,13 +1213,6 @@ private fun PosterTile(
                     color = Color.White,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
-                    style = TextStyle(
-                        shadow = androidx.compose.ui.graphics.Shadow(
-                            color = Color.Black.copy(alpha = 0.85f),
-                            offset = androidx.compose.ui.geometry.Offset(0f, 2f),
-                            blurRadius = 6f,
-                        ),
-                    ),
                 )
             }
         }
